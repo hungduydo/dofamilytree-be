@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { MembersService } from '../../src/members/members.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { getQueueToken } from '@nestjs/bull';
+import { QStashService } from '../../src/queue/qstash.service';
 import { QUEUE_AVATAR_UPLOAD, QUEUE_REPORT_GENERATE, QUEUE_NOTIFICATION } from '../../src/queue/queue.constants';
 
 const mockPrisma = {
@@ -26,9 +26,7 @@ const mockPrisma = {
   $transaction: jest.fn(),
 };
 
-const mockAvatarQueue = { add: jest.fn() };
-const mockReportQueue = { add: jest.fn() };
-const mockNotificationQueue = { add: jest.fn() };
+const mockQStashService = { publish: jest.fn() };
 
 describe('MembersService', () => {
   let service: MembersService;
@@ -38,9 +36,7 @@ describe('MembersService', () => {
       providers: [
         MembersService,
         { provide: PrismaService, useValue: mockPrisma },
-        { provide: getQueueToken(QUEUE_AVATAR_UPLOAD), useValue: mockAvatarQueue },
-        { provide: getQueueToken(QUEUE_REPORT_GENERATE), useValue: mockReportQueue },
-        { provide: getQueueToken(QUEUE_NOTIFICATION), useValue: mockNotificationQueue },
+        { provide: QStashService, useValue: mockQStashService },
       ],
     }).compile();
 
@@ -73,7 +69,8 @@ describe('MembersService', () => {
       mockPrisma.profile.create.mockResolvedValue({ id: 'p-2', fullName: 'Test Member' });
 
       await service.createMember(dto);
-      expect(mockNotificationQueue.add).toHaveBeenCalledWith(
+      expect(mockQStashService.publish).toHaveBeenCalledWith(
+        QUEUE_NOTIFICATION,
         expect.objectContaining({ type: 'NEW_MEMBER' }),
       );
     });
@@ -85,7 +82,7 @@ describe('MembersService', () => {
       mockPrisma.profile.create.mockResolvedValue({ id: 'p-3', fullName: 'New Member' });
 
       await service.createMember(dto);
-      expect(mockReportQueue.add).toHaveBeenCalled();
+      expect(mockQStashService.publish).toHaveBeenCalledWith(QUEUE_REPORT_GENERATE, {});
     });
   });
 
@@ -168,12 +165,15 @@ describe('MembersService', () => {
 
       const mockFile = { buffer: Buffer.from('img'), originalname: 'avatar.jpg', mimetype: 'image/jpeg' } as Express.Multer.File;
       await service.updateMemberProfile('uuid-1', { fullName: 'X', gender: 'M' }, mockFile);
-      expect(mockAvatarQueue.add).toHaveBeenCalled();
+      expect(mockQStashService.publish).toHaveBeenCalledWith(
+        QUEUE_AVATAR_UPLOAD,
+        expect.objectContaining({ memberId: 'uuid-1' }),
+      );
     });
   });
 
   describe('deleteMember', () => {
-    it('should cascade delete profile and userMetadata before member', async () => {
+    it('should cascade delete profile and userMetadata before member and queue report', async () => {
       mockPrisma.member.findUnique.mockResolvedValue({ id: 'uuid-1' });
       mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
       mockPrisma.profile.delete.mockResolvedValue({});
@@ -181,8 +181,8 @@ describe('MembersService', () => {
       mockPrisma.member.delete.mockResolvedValue({ id: 'uuid-1' });
 
       await service.deleteMember('uuid-1');
-      expect(mockPrisma.profile.delete).toHaveBeenCalled();
       expect(mockPrisma.member.delete).toHaveBeenCalledWith({ where: { id: 'uuid-1' } });
+      expect(mockQStashService.publish).toHaveBeenCalledWith(QUEUE_REPORT_GENERATE, {});
     });
 
     it('should throw NotFoundException when member not found', async () => {

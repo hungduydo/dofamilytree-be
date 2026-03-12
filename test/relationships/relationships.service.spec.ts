@@ -2,8 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { RelationshipsService } from '../../src/relationships/relationships.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { getQueueToken } from '@nestjs/bull';
-import { QUEUE_NOTIFICATION } from '@src/queue/queue.constants';
+import { QStashService } from '../../src/queue/qstash.service';
+import { QUEUE_NOTIFICATION } from '../../src/queue/queue.constants';
 
 const mockPrisma = {
   member: {
@@ -19,7 +19,7 @@ const mockPrisma = {
   $queryRaw: jest.fn(),
 };
 
-const mockNotificationQueue = { add: jest.fn() };
+const mockQStashService = { publish: jest.fn() };
 
 describe('RelationshipsService', () => {
   let service: RelationshipsService;
@@ -29,7 +29,7 @@ describe('RelationshipsService', () => {
       providers: [
         RelationshipsService,
         { provide: PrismaService, useValue: mockPrisma },
-        { provide: getQueueToken(QUEUE_NOTIFICATION), useValue: mockNotificationQueue },
+        { provide: QStashService, useValue: mockQStashService },
       ],
     }).compile();
 
@@ -45,6 +45,7 @@ describe('RelationshipsService', () => {
       mockPrisma.memberRelationship.findFirst.mockResolvedValue(null);
       mockPrisma.memberRelationship.create.mockResolvedValue({
         id: 'rel-1', parent_id: 'parent-1', child_id: 'child-1', type: 'BIOLOGICAL',
+        parent: { name: 'Parent' }, child: { name: 'Child' },
       });
 
       const result = await service.addRelationship({ parentId: 'parent-1', childId: 'child-1', type: 'BIOLOGICAL' });
@@ -83,6 +84,7 @@ describe('RelationshipsService', () => {
         .mockResolvedValueOnce({ id: 'member-2' });
       mockPrisma.memberRelationship.create.mockResolvedValue({
         id: 'rel-2', parent_id: 'member-1', child_id: 'member-2', type: 'SPOUSE',
+        parent: { name: 'M1' }, child: { name: 'M2' },
       });
 
       const result = await service.addRelationship({ parentId: 'member-1', childId: 'member-2', type: 'SPOUSE' });
@@ -96,10 +98,12 @@ describe('RelationshipsService', () => {
       mockPrisma.memberRelationship.findFirst.mockResolvedValue(null);
       mockPrisma.memberRelationship.create.mockResolvedValue({
         id: 'rel-3', parent_id: 'parent-1', child_id: 'child-1', type: 'BIOLOGICAL',
+        parent: { name: 'Parent' }, child: { name: 'Child' },
       });
 
       await service.addRelationship({ parentId: 'parent-1', childId: 'child-1', type: 'BIOLOGICAL' });
-      expect(mockNotificationQueue.add).toHaveBeenCalledWith(
+      expect(mockQStashService.publish).toHaveBeenCalledWith(
+        QUEUE_NOTIFICATION,
         expect.objectContaining({ type: 'NEW_RELATIONSHIP' }),
       );
     });

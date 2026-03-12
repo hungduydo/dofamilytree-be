@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { EventsService } from '../../src/events/events.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { getQueueToken } from '@nestjs/bull';
+import { QStashService } from '../../src/queue/qstash.service';
 import { QUEUE_NOTIFICATION } from '../../src/queue/queue.constants';
 
 const mockPrisma = {
@@ -22,7 +22,7 @@ const mockPrisma = {
   },
 };
 
-const mockNotificationQueue = { add: jest.fn() };
+const mockQStashService = { publish: jest.fn() };
 
 describe('EventsService', () => {
   let service: EventsService;
@@ -32,7 +32,7 @@ describe('EventsService', () => {
       providers: [
         EventsService,
         { provide: PrismaService, useValue: mockPrisma },
-        { provide: getQueueToken(QUEUE_NOTIFICATION), useValue: mockNotificationQueue },
+        { provide: QStashService, useValue: mockQStashService },
       ],
     }).compile();
 
@@ -132,8 +132,9 @@ describe('EventsService', () => {
         title: 'Họp Mặt Dòng Họ', date: new Date('2024-08-15'), highlight: true,
       });
       expect(result).toHaveProperty('id', 'evt-1');
-      expect(mockNotificationQueue.add).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'NEW_EVENT', payload: expect.objectContaining({ title: 'Họp Mặt Dòng Họ' }) }),
+      expect(mockQStashService.publish).toHaveBeenCalledWith(
+        QUEUE_NOTIFICATION,
+        expect.objectContaining({ type: 'NEW_EVENT' }),
       );
     });
   });

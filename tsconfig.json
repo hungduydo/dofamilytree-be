@@ -21,7 +21,7 @@
     "forceConsistentCasingInFileNames": false,
     "noFallthroughCasesInSwitch": false,
     "esModuleInterop": true,
-    "types": ["node", "multer"]
+    "types": ["node", "multer", "jest"]
   },
   "include": ["src/**/*", "test/**/*", "scripts/**/*", "api/**/*"],
   "exclude": ["node_modules", "dist"]

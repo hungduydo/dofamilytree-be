@@ -67,7 +67,7 @@ describe('TreeService', () => {
       const result = await service.getFamilyTreeChart();
       expect(mockPrisma.member.findMany).toHaveBeenCalled();
       expect(mockRedis.set).toHaveBeenCalledWith(
-        'tree:chart:full', expect.any(String), 'EX', 3600,
+        'tree:chart:full', expect.any(String), { ex: 3600 },
       );
       expect(result.nodes).toBeDefined();
     });
@@ -139,7 +139,7 @@ describe('TreeService', () => {
     it('should include cache status from Redis', async () => {
       mockPrisma.member.count.mockResolvedValue(10).mockResolvedValueOnce(2);
       mockPrisma.profile.aggregate.mockResolvedValue({ _max: { generation: 3 } });
-      mockRedis.get.mockResolvedValue('cached-data');
+      mockRedis.get.mockResolvedValue(JSON.stringify({ totalMembers: 10, totalGenerations: 3, deceased: 2, generatedAt: new Date().toISOString() }));
 
       const result = await service.getStats();
       expect(result).toHaveProperty('cacheStatus');

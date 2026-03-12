@@ -1,6 +1,6 @@
 # macOS
 .DS_Store
-.evn
+.env
 node_modules
 # Logs
 logs

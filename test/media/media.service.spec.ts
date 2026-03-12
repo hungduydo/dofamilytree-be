@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { MediaService } from '../../src/media/media.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { getQueueToken } from '@nestjs/bull';
+import { QStashService } from '../../src/queue/qstash.service';
 import { QUEUE_IMAGE_PROCESS } from '../../src/queue/queue.constants';
 
 const mockPrisma = {
@@ -14,7 +14,7 @@ const mockPrisma = {
   },
 };
 
-const mockImageProcessQueue = { add: jest.fn() };
+const mockQStashService = { publish: jest.fn() };
 
 // Mock Vercel Blob
 jest.mock('@vercel/blob', () => ({
@@ -29,7 +29,7 @@ describe('MediaService', () => {
       providers: [
         MediaService,
         { provide: PrismaService, useValue: mockPrisma },
-        { provide: getQueueToken(QUEUE_IMAGE_PROCESS), useValue: mockImageProcessQueue },
+        { provide: QStashService, useValue: mockQStashService },
       ],
     }).compile();
 
@@ -49,7 +49,8 @@ describe('MediaService', () => {
 
       const result = await service.uploadMedia(mockFile, 'uploader-1');
       expect(result).toHaveProperty('id', 'media-1');
-      expect(mockImageProcessQueue.add).toHaveBeenCalledWith(
+      expect(mockQStashService.publish).toHaveBeenCalledWith(
+        QUEUE_IMAGE_PROCESS,
         expect.objectContaining({
           mediaId: 'media-1',
           filename: 'photo.jpg',
@@ -64,7 +65,7 @@ describe('MediaService', () => {
         const mockFile = { buffer: Buffer.from('x'), originalname: 'img.png', mimetype, size: 500 } as Express.Multer.File;
 
         await service.uploadMedia(mockFile, 'uploader-1');
-        expect(mockImageProcessQueue.add).toHaveBeenCalled();
+        expect(mockQStashService.publish).toHaveBeenCalled();
         jest.clearAllMocks();
       }
     });
