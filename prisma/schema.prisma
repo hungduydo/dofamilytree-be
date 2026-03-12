@@ -1,0 +1,188 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id String @id @db.Uuid // Supabase auth.users ID
+
+  comments Comment[]
+}
+
+model Member {
+  id         String   @id @default(uuid()) @db.Uuid
+  private_id String?
+  name       String
+  normalized_name String?
+  avatar_url String?
+  gender     String? // Added field for gender
+  birthDate  String?
+  deathDate  String?
+  created_at DateTime @default(now())
+  profile     Profile?  // One-to-one optional relation
+  user_metadata UserMetadata? // Reciprocal field for UserMetadata
+
+  from_relationships Relationship[] @relation("FromMember")
+  to_relationships   Relationship[] @relation("ToMember")
+  comments           Comment[]
+  anniversaries      Anniversary[]
+
+  // v2 relationships
+  parent_relationships MemberRelationship[] @relation("RelParent")
+  child_relationships  MemberRelationship[] @relation("RelChild")
+
+  @@map("members")
+}
+
+model Profile {
+  id         String    @id @default(uuid()) @db.Uuid
+  member_id  String    @unique @db.Uuid // One-to-one relationship with Member
+  fullName   String
+  generation Int?
+  biography  String?
+  occupation String?
+  address    String?
+  notes    String?
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+
+  member Member @relation(fields: [member_id], references: [id])
+
+  @@map("profiles")
+}
+
+model Relationship {
+  id             String           @id @default(uuid()) @db.Uuid
+  from_member_id String           @db.Uuid
+  to_member_id   String           @db.Uuid
+  type           RelationshipType
+  created_at     DateTime         @default(now())
+
+  from_member Member @relation("FromMember", fields: [from_member_id], references: [id])
+  to_member   Member @relation("ToMember", fields: [to_member_id], references: [id])
+
+  // Constraint: each member can have only 1 parent (if type is PARENT)
+  // This will be enforced via application logic or a partial unique index in the database.
+
+  @@map("relationships")
+}
+
+enum RelationshipType {
+  PARENT
+  CHILD
+  SPOUSE
+}
+
+// v2 relationship nature (describes the nature of the parent-child/spouse bond)
+enum RelationshipNatureType {
+  BIOLOGICAL
+  ADOPTED
+  SPOUSE
+}
+
+model MemberRelationship {
+  id         String                 @id @default(uuid()) @db.Uuid
+  parent_id  String                 @db.Uuid
+  child_id   String                 @db.Uuid
+  type       RelationshipNatureType
+  note       String?
+  created_at DateTime               @default(now())
+
+  parent Member @relation("RelParent", fields: [parent_id], references: [id])
+  child  Member @relation("RelChild", fields: [child_id], references: [id])
+
+  @@map("member_relationships")
+}
+
+model Tree {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String?
+  description String?
+  image       String?
+  owner_id    String   @db.Uuid
+  show        Boolean  @default(false)
+  created_at  DateTime @default(now())
+
+  @@map("trees")
+}
+
+model Comment {
+  id               String   @id @default(uuid()) @db.Uuid
+  content          String
+  author_id        String   @db.Uuid
+  target_member_id String?  @db.Uuid
+  created_at       DateTime @default(now())
+
+  author        User    @relation(fields: [author_id], references: [id])
+  target_member Member? @relation(fields: [target_member_id], references: [id])
+
+  @@map("comments")
+}
+
+model Media {
+  id          String   @id @default(uuid()) @db.Uuid
+  file_path   String
+  uploader_id String   @db.Uuid
+  created_at  DateTime @default(now())
+
+  @@map("media")
+}
+
+model UserMetadata {
+  id              String    @id @default(uuid()) @db.Uuid
+  user_id         String    @unique @db.Uuid // Links to auth.users.id
+  profile_member_id String? @unique @db.Uuid // Links to Member.id
+  roles           String[]  // Array of role names/IDs
+
+  profile_member  Member?   @relation(fields: [profile_member_id], references: [id]) // Optional link to a Member
+
+  @@map("user_metadata")
+}
+
+model Cemetery {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  latitude    Float
+  longitude   Float
+  description String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@map("cemeteries")
+}
+
+model Anniversary {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String
+  date        DateTime
+  description String?
+  member_id   String?  @db.Uuid // Optional link to a member
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  member   Member?   @relation(fields: [member_id], references: [id])
+
+  @@map("anniversaries")
+}
+
+model Event {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String
+  description String?
+  images      String[] // Array of image URLs or paths
+  highlight   Boolean  @default(false)
+  date        DateTime?
+  location    String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@map("events")
+}
