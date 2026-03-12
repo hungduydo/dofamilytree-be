@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TreeService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
+const redis_1 = require("@upstash/redis");
 const CACHE_KEY_FULL = 'tree:chart:full';
 const CACHE_KEY_STATS = 'tree:stats';
 const CACHE_TTL = 3600;
@@ -27,7 +28,7 @@ let TreeService = class TreeService {
     async getFamilyTreeChart() {
         const cached = await this.redis.get(CACHE_KEY_FULL);
         if (cached)
-            return JSON.parse(cached);
+            return typeof cached === 'string' ? JSON.parse(cached) : cached;
         return this.buildAndCache();
     }
     async regenerateFamilyTreeChart() {
@@ -44,7 +45,7 @@ let TreeService = class TreeService {
         });
         const nodes = members.map((m) => this.memberToNode(m));
         const result = { nodes, generatedAt: new Date().toISOString() };
-        await this.redis.set(CACHE_KEY_FULL, JSON.stringify(result), 'EX', CACHE_TTL);
+        await this.redis.set(CACHE_KEY_FULL, JSON.stringify(result), { ex: CACHE_TTL });
         return result;
     }
     async getFamilySubTreeChart(memberId) {
@@ -119,19 +120,23 @@ let TreeService = class TreeService {
         return { nodes, generatedAt: new Date().toISOString() };
     }
     async getStats() {
+        const cached = await this.redis.get(CACHE_KEY_STATS);
+        if (cached) {
+            const report = typeof cached === 'string' ? JSON.parse(cached) : cached;
+            return { ...report, cacheStatus: 'hit' };
+        }
         const [totalMembers, deceasedCount, maxGen] = await Promise.all([
             this.prisma.member.count(),
             this.prisma.member.count({ where: { deathDate: { not: null } } }),
             this.prisma.profile.aggregate({ _max: { generation: true } }),
         ]);
-        const cacheExists = await this.redis.get(CACHE_KEY_FULL);
-        return {
+        const report = {
             totalMembers,
             totalGenerations: maxGen._max.generation || 0,
             deceased: deceasedCount,
-            cacheStatus: cacheExists ? 'hit' : 'miss',
             generatedAt: new Date().toISOString(),
         };
+        return { ...report, cacheStatus: 'miss' };
     }
     async getAllTrees() {
         return this.prisma.tree.findMany({ orderBy: { created_at: 'desc' } });
@@ -196,6 +201,7 @@ exports.TreeService = TreeService;
 exports.TreeService = TreeService = __decorate([
     (0, common_1.Injectable)(),
     __param(1, (0, common_1.Inject)('REDIS_CLIENT')),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService, Function])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        redis_1.Redis])
 ], TreeService);
 //# sourceMappingURL=tree.service.js.map

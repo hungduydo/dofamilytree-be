@@ -1,4 +1,4 @@
-import { Queue } from 'bull';
+import { QStashService } from '../queue/qstash.service';
 import { PrismaService } from '../prisma/prisma.service';
 export interface ImageProcessJobData {
     mediaId: string;
@@ -8,8 +8,8 @@ export interface ImageProcessJobData {
 }
 export declare class MediaService {
     private readonly prisma;
-    private imageProcessQueue;
-    constructor(prisma: PrismaService, imageProcessQueue: Queue);
+    private readonly qstashService;
+    constructor(prisma: PrismaService, qstashService: QStashService);
     uploadMedia(file: Express.Multer.File, uploaderId: string): Promise<{
         id: string;
         created_at: Date;

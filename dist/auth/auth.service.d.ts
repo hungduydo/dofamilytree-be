@@ -1,5 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
-import { Queue } from 'bull';
+import { QStashService } from '../queue/qstash.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -13,9 +13,9 @@ export declare const AVAILABLE_ROLES: {
 export declare class AuthService {
     private readonly prisma;
     private readonly jwtService;
-    private avatarQueue;
+    private readonly qstashService;
     private supabase;
-    constructor(prisma: PrismaService, jwtService: JwtService, avatarQueue: Queue);
+    constructor(prisma: PrismaService, jwtService: JwtService, qstashService: QStashService);
     register(dto: RegisterDto, avatarFile?: Express.Multer.File): Promise<{
         id: string;
         email: string | undefined;

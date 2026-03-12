@@ -8,18 +8,13 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MembersModule = void 0;
 const common_1 = require("@nestjs/common");
-const bull_1 = require("@nestjs/bull");
 const members_controller_1 = require("./members.controller");
 const members_service_1 = require("./members.service");
-const queue_constants_1 = require("../queue/queue.constants");
 let MembersModule = class MembersModule {
 };
 exports.MembersModule = MembersModule;
 exports.MembersModule = MembersModule = __decorate([
     (0, common_1.Module)({
-        imports: [
-            bull_1.BullModule.registerQueue({ name: queue_constants_1.QUEUE_AVATAR_UPLOAD }, { name: queue_constants_1.QUEUE_REPORT_GENERATE }, { name: queue_constants_1.QUEUE_NOTIFICATION }),
-        ],
         controllers: [members_controller_1.MembersController],
         providers: [members_service_1.MembersService],
         exports: [members_service_1.MembersService],

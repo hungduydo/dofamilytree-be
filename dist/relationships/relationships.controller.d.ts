@@ -56,9 +56,9 @@ export declare class RelationshipsController {
         type: import("@prisma/client").$Enums.RelationshipNatureType;
         id: string;
         created_at: Date;
+        note: string | null;
         parent_id: string;
         child_id: string;
-        note: string | null;
     })[]>;
     getParents(id: string): Promise<({
         parent: {
@@ -89,9 +89,9 @@ export declare class RelationshipsController {
         type: import("@prisma/client").$Enums.RelationshipNatureType;
         id: string;
         created_at: Date;
+        note: string | null;
         parent_id: string;
         child_id: string;
-        note: string | null;
     })[]>;
     getChildren(id: string): Promise<({
         child: {
@@ -122,9 +122,9 @@ export declare class RelationshipsController {
         type: import("@prisma/client").$Enums.RelationshipNatureType;
         id: string;
         created_at: Date;
+        note: string | null;
         parent_id: string;
         child_id: string;
-        note: string | null;
     })[]>;
     getSpouses(id: string): Promise<({
         parent: {
@@ -179,9 +179,9 @@ export declare class RelationshipsController {
         type: import("@prisma/client").$Enums.RelationshipNatureType;
         id: string;
         created_at: Date;
+        note: string | null;
         parent_id: string;
         child_id: string;
-        note: string | null;
     })[]>;
     getAncestors(id: string): Promise<any[]>;
     getDescendants(id: string): Promise<any[]>;
@@ -238,9 +238,9 @@ export declare class RelationshipsController {
         type: import("@prisma/client").$Enums.RelationshipNatureType;
         id: string;
         created_at: Date;
+        note: string | null;
         parent_id: string;
         child_id: string;
-        note: string | null;
     })[]>;
     addRelationship(dto: CreateRelationshipDto): Promise<{
         parent: {
@@ -295,16 +295,16 @@ export declare class RelationshipsController {
         type: import("@prisma/client").$Enums.RelationshipNatureType;
         id: string;
         created_at: Date;
+        note: string | null;
         parent_id: string;
         child_id: string;
-        note: string | null;
     }>;
     deleteRelationship(id: string): Promise<{
         type: import("@prisma/client").$Enums.RelationshipNatureType;
         id: string;
         created_at: Date;
+        note: string | null;
         parent_id: string;
         child_id: string;
-        note: string | null;
     }>;
 }

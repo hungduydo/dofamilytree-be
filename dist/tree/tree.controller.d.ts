@@ -27,20 +27,14 @@ export declare class TreeController {
         nodes: import("./tree.service").FamilyChartNode[];
         generatedAt: string;
     }>;
-    getStats(): Promise<{
-        totalMembers: number;
-        totalGenerations: number;
-        deceased: number;
-        cacheStatus: string;
-        generatedAt: string;
-    }>;
+    getStats(): Promise<any>;
     getHomeTrees(): Promise<{
         description: string | null;
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }[]>;
     getAllTrees(): Promise<{
@@ -48,8 +42,8 @@ export declare class TreeController {
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }[]>;
     getTreeById(id: string): Promise<{
@@ -57,8 +51,8 @@ export declare class TreeController {
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }>;
     createTree(dto: CreateTreeDto): Promise<{
@@ -66,8 +60,8 @@ export declare class TreeController {
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }>;
     updateTree(id: string, dto: UpdateTreeDto): Promise<{
@@ -75,8 +69,8 @@ export declare class TreeController {
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }>;
     deleteTree(id: string): Promise<{
@@ -84,8 +78,8 @@ export declare class TreeController {
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }>;
 }

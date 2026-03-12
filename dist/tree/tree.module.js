@@ -10,14 +10,13 @@ exports.TreeModule = void 0;
 const common_1 = require("@nestjs/common");
 const tree_controller_1 = require("./tree.controller");
 const tree_service_1 = require("./tree.service");
-const redis_provider_1 = require("../redis.provider");
 let TreeModule = class TreeModule {
 };
 exports.TreeModule = TreeModule;
 exports.TreeModule = TreeModule = __decorate([
     (0, common_1.Module)({
         controllers: [tree_controller_1.TreeController],
-        providers: [tree_service_1.TreeService, redis_provider_1.redisProvider],
+        providers: [tree_service_1.TreeService],
         exports: [tree_service_1.TreeService],
     })
 ], TreeModule);

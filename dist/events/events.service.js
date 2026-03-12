@@ -8,19 +8,16 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var __param = (this && this.__param) || function (paramIndex, decorator) {
-    return function (target, key) { decorator(target, key, paramIndex); }
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EventsService = void 0;
 const common_1 = require("@nestjs/common");
-const bull_1 = require("@nestjs/bull");
+const qstash_service_1 = require("../queue/qstash.service");
 const prisma_service_1 = require("../prisma/prisma.service");
 const queue_constants_1 = require("../queue/queue.constants");
 let EventsService = class EventsService {
-    constructor(prisma, notificationQueue) {
+    constructor(prisma, qstashService) {
         this.prisma = prisma;
-        this.notificationQueue = notificationQueue;
+        this.qstashService = qstashService;
     }
     async getAnniversaries(filter) {
         const where = {};
@@ -113,8 +110,9 @@ let EventsService = class EventsService {
                 images: dto.images ?? [],
             },
         });
-        await this.notificationQueue.add({
+        await this.qstashService.publish(queue_constants_1.QUEUE_NOTIFICATION, {
             type: 'NEW_EVENT',
+            message: `New event: ${event.title}`,
             payload: { id: event.id, title: event.title, date: event.date },
         });
         return event;
@@ -131,7 +129,7 @@ let EventsService = class EventsService {
 exports.EventsService = EventsService;
 exports.EventsService = EventsService = __decorate([
     (0, common_1.Injectable)(),
-    __param(1, (0, bull_1.InjectQueue)(queue_constants_1.QUEUE_NOTIFICATION)),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService, Object])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        qstash_service_1.QStashService])
 ], EventsService);
 //# sourceMappingURL=events.service.js.map

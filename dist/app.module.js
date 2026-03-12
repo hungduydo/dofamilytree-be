@@ -9,7 +9,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
-const bull_1 = require("@nestjs/bull");
 const prisma_module_1 = require("./prisma/prisma.module");
 const auth_module_1 = require("./auth/auth.module");
 const members_module_1 = require("./members/members.module");
@@ -19,6 +18,7 @@ const events_module_1 = require("./events/events.module");
 const media_module_1 = require("./media/media.module");
 const graves_module_1 = require("./graves/graves.module");
 const queue_module_1 = require("./queue/queue.module");
+const redis_module_1 = require("./redis.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -26,16 +26,7 @@ exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
         imports: [
             config_1.ConfigModule.forRoot({ isGlobal: true }),
-            bull_1.BullModule.forRoot({
-                url: process.env.REDIS_URL || undefined,
-                redis: process.env.REDIS_URL
-                    ? undefined
-                    : {
-                        host: process.env.REDIS_HOST || 'localhost',
-                        port: parseInt(process.env.REDIS_PORT || '6379'),
-                        password: process.env.REDIS_PASSWORD || undefined,
-                    },
-            }),
+            redis_module_1.RedisModule,
             prisma_module_1.PrismaModule,
             auth_module_1.AuthModule,
             queue_module_1.QueueModule,

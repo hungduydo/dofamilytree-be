@@ -8,21 +8,18 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.QueueModule = void 0;
 const common_1 = require("@nestjs/common");
-const bull_1 = require("@nestjs/bull");
-const avatar_upload_processor_1 = require("./processors/avatar-upload.processor");
-const report_generate_processor_1 = require("./processors/report-generate.processor");
-const notification_processor_1 = require("./processors/notification.processor");
-const queue_constants_1 = require("./queue.constants");
+const qstash_service_1 = require("./qstash.service");
+const tasks_service_1 = require("./tasks.service");
+const queue_controller_1 = require("./queue.controller");
 let QueueModule = class QueueModule {
 };
 exports.QueueModule = QueueModule;
 exports.QueueModule = QueueModule = __decorate([
+    (0, common_1.Global)(),
     (0, common_1.Module)({
-        imports: [
-            bull_1.BullModule.registerQueue({ name: queue_constants_1.QUEUE_AVATAR_UPLOAD }, { name: queue_constants_1.QUEUE_REPORT_GENERATE }, { name: queue_constants_1.QUEUE_NOTIFICATION }, { name: queue_constants_1.QUEUE_IMAGE_PROCESS }),
-        ],
-        providers: [avatar_upload_processor_1.AvatarUploadProcessor, report_generate_processor_1.ReportGenerateProcessor, notification_processor_1.NotificationProcessor],
-        exports: [bull_1.BullModule],
+        providers: [qstash_service_1.QStashService, tasks_service_1.TasksService],
+        controllers: [queue_controller_1.QueueController],
+        exports: [qstash_service_1.QStashService, tasks_service_1.TasksService],
     })
 ], QueueModule);
 //# sourceMappingURL=queue.module.js.map

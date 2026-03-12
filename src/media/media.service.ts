@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import { QStashService } from '../queue/qstash.service';
 import { del } from '@vercel/blob';
 import { PrismaService } from '../prisma/prisma.service';
 import { QUEUE_IMAGE_PROCESS } from '../queue/queue.constants';
@@ -16,7 +15,7 @@ export interface ImageProcessJobData {
 export class MediaService {
   constructor(
     private readonly prisma: PrismaService,
-    @InjectQueue(QUEUE_IMAGE_PROCESS) private imageProcessQueue: Queue,
+    private readonly qstashService: QStashService,
   ) {}
 
   async uploadMedia(file: Express.Multer.File, uploaderId: string) {
@@ -29,9 +28,9 @@ export class MediaService {
     });
 
     // Queue image processing (compress + upload to Vercel Blob)
-    await this.imageProcessQueue.add({
+    await this.qstashService.publish(QUEUE_IMAGE_PROCESS, {
       mediaId: media.id,
-      buffer: file.buffer,
+      buffer: file.buffer.toString('base64'),
       filename: file.originalname,
       mimetype: file.mimetype,
     });

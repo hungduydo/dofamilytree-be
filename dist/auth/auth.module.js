@@ -10,12 +10,10 @@ exports.AuthModule = void 0;
 const common_1 = require("@nestjs/common");
 const passport_1 = require("@nestjs/passport");
 const jwt_1 = require("@nestjs/jwt");
-const bull_1 = require("@nestjs/bull");
 const jwt_strategy_1 = require("./jwt.strategy");
 const auth_service_1 = require("./auth.service");
 const auth_controller_1 = require("./auth.controller");
 const prisma_module_1 = require("../prisma/prisma.module");
-const queue_constants_1 = require("../queue/queue.constants");
 let AuthModule = class AuthModule {
 };
 exports.AuthModule = AuthModule;
@@ -27,7 +25,6 @@ exports.AuthModule = AuthModule = __decorate([
                 secret: process.env.JWT_SECRET || 'secret',
                 signOptions: { expiresIn: '7d' },
             }),
-            bull_1.BullModule.registerQueue({ name: queue_constants_1.QUEUE_AVATAR_UPLOAD }),
             prisma_module_1.PrismaModule,
         ],
         controllers: [auth_controller_1.AuthController],

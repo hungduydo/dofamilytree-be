@@ -35,7 +35,7 @@ async function bootstrap(): Promise<Express> {
 }
 
 // Export the server for Vercel
-export default async (req: express.Request, res: express.Response) => {
+export default async (req: any, res: any) => {
   const server = await bootstrap();
-  server(req, res);
+  (server as any)(req, res);
 };

@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import { QStashService } from '../queue/qstash.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRelationshipDto, SearchRelationshipDto } from './dto/create-relationship.dto';
 import { QUEUE_NOTIFICATION } from '../queue/queue.constants';
@@ -9,7 +8,7 @@ import { QUEUE_NOTIFICATION } from '../queue/queue.constants';
 export class RelationshipsService {
   constructor(
     private readonly prisma: PrismaService,
-    @InjectQueue(QUEUE_NOTIFICATION) private notificationQueue: Queue,
+    private readonly qstashService: QStashService,
   ) {}
 
   async addRelationship(dto: CreateRelationshipDto) {
@@ -51,8 +50,9 @@ export class RelationshipsService {
       },
     });
 
-    await this.notificationQueue.add({
+    await this.qstashService.publish(QUEUE_NOTIFICATION, {
       type: 'NEW_RELATIONSHIP',
+      message: `New relationship: ${relationship.parent.name} -> ${relationship.child.name}`,
       payload: { parentId: dto.parentId, childId: dto.childId, type: dto.type },
     });
 

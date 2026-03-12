@@ -1,13 +1,11 @@
-import { Queue } from 'bull';
+import { QStashService } from '../queue/qstash.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
 export declare class MembersService {
     private readonly prisma;
-    private avatarQueue;
-    private reportQueue;
-    private notificationQueue;
-    constructor(prisma: PrismaService, avatarQueue: Queue, reportQueue: Queue, notificationQueue: Queue);
+    private readonly qstashService;
+    constructor(prisma: PrismaService, qstashService: QStashService);
     getAllMembers(page?: number, pageSize?: number): Promise<{
         data: ({
             profile: {
@@ -98,39 +96,6 @@ export declare class MembersService {
             updated_at: Date;
             member_id: string;
         } | null;
-        parent_relationships: ({
-            parent: {
-                profile: {
-                    fullName: string;
-                    generation: number | null;
-                    occupation: string | null;
-                    address: string | null;
-                    biography: string | null;
-                    id: string;
-                    created_at: Date;
-                    notes: string | null;
-                    updated_at: Date;
-                    member_id: string;
-                } | null;
-            } & {
-                name: string;
-                gender: string | null;
-                birthDate: string | null;
-                deathDate: string | null;
-                id: string;
-                private_id: string | null;
-                normalized_name: string | null;
-                avatar_url: string | null;
-                created_at: Date;
-            };
-        } & {
-            type: import("@prisma/client").$Enums.RelationshipNatureType;
-            id: string;
-            created_at: Date;
-            parent_id: string;
-            child_id: string;
-            note: string | null;
-        })[];
         child_relationships: ({
             child: {
                 profile: {
@@ -160,9 +125,42 @@ export declare class MembersService {
             type: import("@prisma/client").$Enums.RelationshipNatureType;
             id: string;
             created_at: Date;
+            note: string | null;
             parent_id: string;
             child_id: string;
+        })[];
+        parent_relationships: ({
+            parent: {
+                profile: {
+                    fullName: string;
+                    generation: number | null;
+                    occupation: string | null;
+                    address: string | null;
+                    biography: string | null;
+                    id: string;
+                    created_at: Date;
+                    notes: string | null;
+                    updated_at: Date;
+                    member_id: string;
+                } | null;
+            } & {
+                name: string;
+                gender: string | null;
+                birthDate: string | null;
+                deathDate: string | null;
+                id: string;
+                private_id: string | null;
+                normalized_name: string | null;
+                avatar_url: string | null;
+                created_at: Date;
+            };
+        } & {
+            type: import("@prisma/client").$Enums.RelationshipNatureType;
+            id: string;
+            created_at: Date;
             note: string | null;
+            parent_id: string;
+            child_id: string;
         })[];
     } & {
         name: string;

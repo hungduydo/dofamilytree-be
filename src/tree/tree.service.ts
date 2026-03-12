@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import type { Redis } from 'ioredis';
+import { Redis as UpstashRedis } from '@upstash/redis';
 
 const CACHE_KEY_FULL = 'tree:chart:full';
 const CACHE_KEY_STATS = 'tree:stats';
@@ -30,14 +30,14 @@ export interface FamilyChartNode {
 export class TreeService {
   constructor(
     private readonly prisma: PrismaService,
-    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
   ) { }
 
   // ─── Full chart ───────────────────────────────────────────────────────────
 
   async getFamilyTreeChart(): Promise<{ nodes: FamilyChartNode[]; generatedAt: string }> {
-    const cached = await this.redis.get(CACHE_KEY_FULL);
-    if (cached) return JSON.parse(cached);
+    const cached = await this.redis.get<any>(CACHE_KEY_FULL);
+    if (cached) return typeof cached === 'string' ? JSON.parse(cached) : cached;
     return this.buildAndCache();
   }
 
@@ -58,7 +58,7 @@ export class TreeService {
     const nodes: FamilyChartNode[] = members.map((m) => this.memberToNode(m));
 
     const result = { nodes, generatedAt: new Date().toISOString() };
-    await this.redis.set(CACHE_KEY_FULL, JSON.stringify(result), 'EX', CACHE_TTL);
+    await this.redis.set(CACHE_KEY_FULL, JSON.stringify(result), { ex: CACHE_TTL });
     return result;
   }
 
@@ -147,21 +147,26 @@ export class TreeService {
   // ─── Stats ────────────────────────────────────────────────────────────────
 
   async getStats() {
+    const cached = await this.redis.get<any>(CACHE_KEY_STATS);
+    if (cached) {
+      const report = typeof cached === 'string' ? JSON.parse(cached) : cached;
+      return { ...report, cacheStatus: 'hit' };
+    }
+
     const [totalMembers, deceasedCount, maxGen] = await Promise.all([
       this.prisma.member.count(),
       this.prisma.member.count({ where: { deathDate: { not: null } } }),
       this.prisma.profile.aggregate({ _max: { generation: true } }),
     ]);
 
-    const cacheExists = await this.redis.get(CACHE_KEY_FULL);
-
-    return {
+    const report = {
       totalMembers,
       totalGenerations: maxGen._max.generation || 0,
       deceased: deceasedCount,
-      cacheStatus: cacheExists ? 'hit' : 'miss',
       generatedAt: new Date().toISOString(),
     };
+
+    return { ...report, cacheStatus: 'miss' };
   }
 
   // ─── Tree CRUD ────────────────────────────────────────────────────────────

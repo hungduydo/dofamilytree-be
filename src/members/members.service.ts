@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import { QStashService } from '../queue/qstash.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
@@ -15,9 +14,7 @@ import {
 export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
-    @InjectQueue(QUEUE_AVATAR_UPLOAD) private avatarQueue: Queue,
-    @InjectQueue(QUEUE_REPORT_GENERATE) private reportQueue: Queue,
-    @InjectQueue(QUEUE_NOTIFICATION) private notificationQueue: Queue,
+    private readonly qstashService: QStashService,
   ) {}
 
   async getAllMembers(page = 1, pageSize = 10) {
@@ -104,8 +101,8 @@ export class MembersService {
 
     // Queue notifications and report update
     await Promise.all([
-      this.notificationQueue.add({ type: 'NEW_MEMBER', payload: { id: member.id, name: member.name } }),
-      this.reportQueue.add({}),
+      this.qstashService.publish(QUEUE_NOTIFICATION, { type: 'NEW_MEMBER', message: `New member: ${member.name}`, payload: { id: member.id, name: member.name } }),
+      this.qstashService.publish(QUEUE_REPORT_GENERATE, {}),
     ]);
 
     return member;
@@ -147,9 +144,9 @@ export class MembersService {
 
     // Queue avatar upload if file provided
     if (avatarFile) {
-      await this.avatarQueue.add({
+      await this.qstashService.publish(QUEUE_AVATAR_UPLOAD, {
         memberId: id,
-        buffer: avatarFile.buffer,
+        buffer: avatarFile.buffer.toString('base64'),
         filename: avatarFile.originalname,
         mimetype: avatarFile.mimetype,
       });
@@ -168,6 +165,6 @@ export class MembersService {
       await tx.member.delete({ where: { id } });
     });
 
-    await this.reportQueue.add({});
+    await this.qstashService.publish(QUEUE_REPORT_GENERATE, {});
   }
 }

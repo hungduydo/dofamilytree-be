@@ -8,14 +8,11 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var __param = (this && this.__param) || function (paramIndex, decorator) {
-    return function (target, key) { decorator(target, key, paramIndex); }
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = exports.AVAILABLE_ROLES = void 0;
 const common_1 = require("@nestjs/common");
 const jwt_1 = require("@nestjs/jwt");
-const bull_1 = require("@nestjs/bull");
+const qstash_service_1 = require("../queue/qstash.service");
 const supabase_js_1 = require("@supabase/supabase-js");
 const prisma_service_1 = require("../prisma/prisma.service");
 const vietnamese_helper_1 = require("../utils/vietnamese-helper");
@@ -28,10 +25,10 @@ exports.AVAILABLE_ROLES = [
     { id: 'admin-role-id', name: 'admin', permissions: ['manage:roles', 'full:access'] },
 ];
 let AuthService = class AuthService {
-    constructor(prisma, jwtService, avatarQueue) {
+    constructor(prisma, jwtService, qstashService) {
         this.prisma = prisma;
         this.jwtService = jwtService;
-        this.avatarQueue = avatarQueue;
+        this.qstashService = qstashService;
         this.supabase = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
     }
     async register(dto, avatarFile) {
@@ -79,9 +76,9 @@ let AuthService = class AuthService {
             return { member: newMember, userMetadata: meta };
         });
         if (avatarFile) {
-            await this.avatarQueue.add({
+            await this.qstashService.publish(queue_constants_1.QUEUE_AVATAR_UPLOAD, {
                 memberId: member.id,
-                buffer: avatarFile.buffer,
+                buffer: avatarFile.buffer.toString('base64'),
                 filename: avatarFile.originalname,
                 mimetype: avatarFile.mimetype,
             });
@@ -191,8 +188,8 @@ let AuthService = class AuthService {
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = __decorate([
     (0, common_1.Injectable)(),
-    __param(2, (0, bull_1.InjectQueue)(queue_constants_1.QUEUE_AVATAR_UPLOAD)),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        jwt_1.JwtService, Object])
+        jwt_1.JwtService,
+        qstash_service_1.QStashService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

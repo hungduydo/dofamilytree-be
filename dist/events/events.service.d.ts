@@ -1,10 +1,10 @@
-import { Queue } from 'bull';
+import { QStashService } from '../queue/qstash.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAnniversaryDto, UpdateAnniversaryDto, CreateEventDto, UpdateEventDto } from './dto/create-event.dto';
 export declare class EventsService {
     private readonly prisma;
-    private notificationQueue;
-    constructor(prisma: PrismaService, notificationQueue: Queue);
+    private readonly qstashService;
+    constructor(prisma: PrismaService, qstashService: QStashService);
     getAnniversaries(filter: {
         member_id?: string;
         month?: number;

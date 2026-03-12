@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -12,49 +9,44 @@ datasource db {
 }
 
 model User {
-  id String @id @db.Uuid // Supabase auth.users ID
-
+  id       String    @id @db.Uuid
   comments Comment[]
 }
 
 model Member {
-  id         String   @id @default(uuid()) @db.Uuid
-  private_id String?
-  name       String
-  normalized_name String?
-  avatar_url String?
-  gender     String? // Added field for gender
-  birthDate  String?
-  deathDate  String?
-  created_at DateTime @default(now())
-  profile     Profile?  // One-to-one optional relation
-  user_metadata UserMetadata? // Reciprocal field for UserMetadata
-
-  from_relationships Relationship[] @relation("FromMember")
-  to_relationships   Relationship[] @relation("ToMember")
-  comments           Comment[]
-  anniversaries      Anniversary[]
-
-  // v2 relationships
-  parent_relationships MemberRelationship[] @relation("RelParent")
+  id                   String               @id @default(uuid()) @db.Uuid
+  private_id           String?
+  name                 String
+  normalized_name      String?
+  avatar_url           String?
+  gender               String?
+  birthDate            String?
+  deathDate            String?
+  created_at           DateTime             @default(now())
+  anniversaries        Anniversary[]
+  comments             Comment[]
   child_relationships  MemberRelationship[] @relation("RelChild")
+  parent_relationships MemberRelationship[] @relation("RelParent")
+  profile              Profile?
+  from_relationships   Relationship[]       @relation("FromMember")
+  to_relationships     Relationship[]       @relation("ToMember")
+  user_metadata        UserMetadata?
 
   @@map("members")
 }
 
 model Profile {
-  id         String    @id @default(uuid()) @db.Uuid
-  member_id  String    @unique @db.Uuid // One-to-one relationship with Member
+  id         String   @id @default(uuid()) @db.Uuid
+  member_id  String   @unique @db.Uuid
   fullName   String
   generation Int?
   biography  String?
   occupation String?
   address    String?
-  notes    String?
-  created_at DateTime  @default(now())
-  updated_at DateTime  @updatedAt
-
-  member Member @relation(fields: [member_id], references: [id])
+  notes      String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  member     Member   @relation(fields: [member_id], references: [id])
 
   @@map("profiles")
 }
@@ -65,27 +57,10 @@ model Relationship {
   to_member_id   String           @db.Uuid
   type           RelationshipType
   created_at     DateTime         @default(now())
-
-  from_member Member @relation("FromMember", fields: [from_member_id], references: [id])
-  to_member   Member @relation("ToMember", fields: [to_member_id], references: [id])
-
-  // Constraint: each member can have only 1 parent (if type is PARENT)
-  // This will be enforced via application logic or a partial unique index in the database.
+  from_member    Member           @relation("FromMember", fields: [from_member_id], references: [id])
+  to_member      Member           @relation("ToMember", fields: [to_member_id], references: [id])
 
   @@map("relationships")
-}
-
-enum RelationshipType {
-  PARENT
-  CHILD
-  SPOUSE
-}
-
-// v2 relationship nature (describes the nature of the parent-child/spouse bond)
-enum RelationshipNatureType {
-  BIOLOGICAL
-  ADOPTED
-  SPOUSE
 }
 
 model MemberRelationship {
@@ -95,21 +70,20 @@ model MemberRelationship {
   type       RelationshipNatureType
   note       String?
   created_at DateTime               @default(now())
-
-  parent Member @relation("RelParent", fields: [parent_id], references: [id])
-  child  Member @relation("RelChild", fields: [child_id], references: [id])
+  child      Member                 @relation("RelChild", fields: [child_id], references: [id])
+  parent     Member                 @relation("RelParent", fields: [parent_id], references: [id])
 
   @@map("member_relationships")
 }
 
 model Tree {
   id          String   @id @default(uuid()) @db.Uuid
-  title       String?
+  owner_id    String   @db.Uuid
+  created_at  DateTime @default(now())
   description String?
   image       String?
-  owner_id    String   @db.Uuid
+  title       String?
   show        Boolean  @default(false)
-  created_at  DateTime @default(now())
 
   @@map("trees")
 }
@@ -120,9 +94,8 @@ model Comment {
   author_id        String   @db.Uuid
   target_member_id String?  @db.Uuid
   created_at       DateTime @default(now())
-
-  author        User    @relation(fields: [author_id], references: [id])
-  target_member Member? @relation(fields: [target_member_id], references: [id])
+  author           User     @relation(fields: [author_id], references: [id])
+  target_member    Member?  @relation(fields: [target_member_id], references: [id])
 
   @@map("comments")
 }
@@ -137,12 +110,11 @@ model Media {
 }
 
 model UserMetadata {
-  id              String    @id @default(uuid()) @db.Uuid
-  user_id         String    @unique @db.Uuid // Links to auth.users.id
-  profile_member_id String? @unique @db.Uuid // Links to Member.id
-  roles           String[]  // Array of role names/IDs
-
-  profile_member  Member?   @relation(fields: [profile_member_id], references: [id]) // Optional link to a Member
+  id                String   @id @default(uuid()) @db.Uuid
+  user_id           String   @unique @db.Uuid
+  profile_member_id String?  @unique @db.Uuid
+  roles             String[]
+  profile_member    Member?  @relation(fields: [profile_member_id], references: [id])
 
   @@map("user_metadata")
 }
@@ -164,25 +136,36 @@ model Anniversary {
   title       String
   date        DateTime
   description String?
-  member_id   String?  @db.Uuid // Optional link to a member
+  member_id   String?  @db.Uuid
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
-
-  member   Member?   @relation(fields: [member_id], references: [id])
+  member      Member?  @relation(fields: [member_id], references: [id])
 
   @@map("anniversaries")
 }
 
 model Event {
-  id          String   @id @default(uuid()) @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
   title       String
   description String?
-  images      String[] // Array of image URLs or paths
-  highlight   Boolean  @default(false)
+  images      String[]
+  highlight   Boolean   @default(false)
   date        DateTime?
   location    String?
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
 
   @@map("events")
+}
+
+enum RelationshipType {
+  PARENT
+  CHILD
+  SPOUSE
+}
+
+enum RelationshipNatureType {
+  BIOLOGICAL
+  ADOPTED
+  SPOUSE
 }

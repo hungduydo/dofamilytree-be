@@ -1,16 +1,19 @@
 import { Provider } from '@nestjs/common';
-import Redis from 'ioredis';
+import { Redis as UpstashRedis } from '@upstash/redis';
 
 export const redisProvider: Provider = {
   provide: 'REDIS_CLIENT',
   useFactory: () => {
-    if (process.env.REDIS_URL) {
-      return new Redis(process.env.REDIS_URL);
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    if (!url || !token) {
+      throw new Error('UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN is not defined');
     }
-    return new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD || undefined,
+
+    return new UpstashRedis({
+      url,
+      token,
     });
   },
 };

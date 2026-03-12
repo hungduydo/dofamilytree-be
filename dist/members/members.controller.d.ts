@@ -105,39 +105,6 @@ export declare class MembersController {
             updated_at: Date;
             member_id: string;
         } | null;
-        parent_relationships: ({
-            parent: {
-                profile: {
-                    fullName: string;
-                    generation: number | null;
-                    occupation: string | null;
-                    address: string | null;
-                    biography: string | null;
-                    id: string;
-                    created_at: Date;
-                    notes: string | null;
-                    updated_at: Date;
-                    member_id: string;
-                } | null;
-            } & {
-                name: string;
-                gender: string | null;
-                birthDate: string | null;
-                deathDate: string | null;
-                id: string;
-                private_id: string | null;
-                normalized_name: string | null;
-                avatar_url: string | null;
-                created_at: Date;
-            };
-        } & {
-            type: import("@prisma/client").$Enums.RelationshipNatureType;
-            id: string;
-            created_at: Date;
-            parent_id: string;
-            child_id: string;
-            note: string | null;
-        })[];
         child_relationships: ({
             child: {
                 profile: {
@@ -167,9 +134,42 @@ export declare class MembersController {
             type: import("@prisma/client").$Enums.RelationshipNatureType;
             id: string;
             created_at: Date;
+            note: string | null;
             parent_id: string;
             child_id: string;
+        })[];
+        parent_relationships: ({
+            parent: {
+                profile: {
+                    fullName: string;
+                    generation: number | null;
+                    occupation: string | null;
+                    address: string | null;
+                    biography: string | null;
+                    id: string;
+                    created_at: Date;
+                    notes: string | null;
+                    updated_at: Date;
+                    member_id: string;
+                } | null;
+            } & {
+                name: string;
+                gender: string | null;
+                birthDate: string | null;
+                deathDate: string | null;
+                id: string;
+                private_id: string | null;
+                normalized_name: string | null;
+                avatar_url: string | null;
+                created_at: Date;
+            };
+        } & {
+            type: import("@prisma/client").$Enums.RelationshipNatureType;
+            id: string;
+            created_at: Date;
             note: string | null;
+            parent_id: string;
+            child_id: string;
         })[];
     } & {
         name: string;

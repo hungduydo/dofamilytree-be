@@ -1,5 +1,5 @@
 import { PrismaService } from '../prisma/prisma.service';
-import type { Redis } from 'ioredis';
+import { Redis as UpstashRedis } from '@upstash/redis';
 export interface FamilyChartNode {
     id: string;
     rels: {
@@ -21,7 +21,7 @@ export interface FamilyChartNode {
 export declare class TreeService {
     private readonly prisma;
     private readonly redis;
-    constructor(prisma: PrismaService, redis: Redis);
+    constructor(prisma: PrismaService, redis: UpstashRedis);
     getFamilyTreeChart(): Promise<{
         nodes: FamilyChartNode[];
         generatedAt: string;
@@ -35,20 +35,14 @@ export declare class TreeService {
         nodes: FamilyChartNode[];
         generatedAt: string;
     }>;
-    getStats(): Promise<{
-        totalMembers: number;
-        totalGenerations: number;
-        deceased: number;
-        cacheStatus: string;
-        generatedAt: string;
-    }>;
+    getStats(): Promise<any>;
     getAllTrees(): Promise<{
         description: string | null;
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }[]>;
     getHomeTrees(): Promise<{
@@ -56,8 +50,8 @@ export declare class TreeService {
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }[]>;
     getTreeById(id: string): Promise<{
@@ -65,8 +59,8 @@ export declare class TreeService {
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }>;
     createTree(data: {
@@ -80,8 +74,8 @@ export declare class TreeService {
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }>;
     updateTree(id: string, data: Partial<{
@@ -94,8 +88,8 @@ export declare class TreeService {
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }>;
     deleteTree(id: string): Promise<{
@@ -103,8 +97,8 @@ export declare class TreeService {
         title: string | null;
         id: string;
         created_at: Date;
-        image: string | null;
         owner_id: string;
+        image: string | null;
         show: boolean;
     }>;
     private memberToNode;

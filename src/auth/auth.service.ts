@@ -8,8 +8,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import { QStashService } from '../queue/qstash.service';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
@@ -37,7 +36,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    @InjectQueue(QUEUE_AVATAR_UPLOAD) private avatarQueue: Queue,
+    private readonly qstashService: QStashService,
   ) {}
 
   async register(dto: RegisterDto, avatarFile?: Express.Multer.File) {
@@ -95,9 +94,9 @@ export class AuthService {
 
     // Queue avatar upload if file was provided
     if (avatarFile) {
-      await this.avatarQueue.add({
+      await this.qstashService.publish(QUEUE_AVATAR_UPLOAD, {
         memberId: member.id,
-        buffer: avatarFile.buffer,
+        buffer: avatarFile.buffer.toString('base64'),
         filename: avatarFile.originalname,
         mimetype: avatarFile.mimetype,
       });

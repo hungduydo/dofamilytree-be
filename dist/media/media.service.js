@@ -8,20 +8,17 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var __param = (this && this.__param) || function (paramIndex, decorator) {
-    return function (target, key) { decorator(target, key, paramIndex); }
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MediaService = void 0;
 const common_1 = require("@nestjs/common");
-const bull_1 = require("@nestjs/bull");
+const qstash_service_1 = require("../queue/qstash.service");
 const blob_1 = require("@vercel/blob");
 const prisma_service_1 = require("../prisma/prisma.service");
 const queue_constants_1 = require("../queue/queue.constants");
 let MediaService = class MediaService {
-    constructor(prisma, imageProcessQueue) {
+    constructor(prisma, qstashService) {
         this.prisma = prisma;
-        this.imageProcessQueue = imageProcessQueue;
+        this.qstashService = qstashService;
     }
     async uploadMedia(file, uploaderId) {
         const media = await this.prisma.media.create({
@@ -30,9 +27,9 @@ let MediaService = class MediaService {
                 uploader_id: uploaderId,
             },
         });
-        await this.imageProcessQueue.add({
+        await this.qstashService.publish(queue_constants_1.QUEUE_IMAGE_PROCESS, {
             mediaId: media.id,
-            buffer: file.buffer,
+            buffer: file.buffer.toString('base64'),
             filename: file.originalname,
             mimetype: file.mimetype,
         });
@@ -57,7 +54,7 @@ let MediaService = class MediaService {
 exports.MediaService = MediaService;
 exports.MediaService = MediaService = __decorate([
     (0, common_1.Injectable)(),
-    __param(1, (0, bull_1.InjectQueue)(queue_constants_1.QUEUE_IMAGE_PROCESS)),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService, Object])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        qstash_service_1.QStashService])
 ], MediaService);
 //# sourceMappingURL=media.service.js.map

@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import { QStashService } from '../queue/qstash.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateAnniversaryDto, UpdateAnniversaryDto,
@@ -12,7 +11,7 @@ import { QUEUE_NOTIFICATION } from '../queue/queue.constants';
 export class EventsService {
   constructor(
     private readonly prisma: PrismaService,
-    @InjectQueue(QUEUE_NOTIFICATION) private notificationQueue: Queue,
+    private readonly qstashService: QStashService,
   ) {}
 
   // ─── Anniversary ──────────────────────────────────────────────────────────
@@ -117,8 +116,9 @@ export class EventsService {
       },
     });
 
-    await this.notificationQueue.add({
+    await this.qstashService.publish(QUEUE_NOTIFICATION, {
       type: 'NEW_EVENT',
+      message: `New event: ${event.title}`,
       payload: { id: event.id, title: event.title, date: event.date },
     });
 

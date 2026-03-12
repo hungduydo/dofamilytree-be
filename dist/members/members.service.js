@@ -8,22 +8,17 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var __param = (this && this.__param) || function (paramIndex, decorator) {
-    return function (target, key) { decorator(target, key, paramIndex); }
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MembersService = void 0;
 const common_1 = require("@nestjs/common");
-const bull_1 = require("@nestjs/bull");
+const qstash_service_1 = require("../queue/qstash.service");
 const prisma_service_1 = require("../prisma/prisma.service");
 const vietnamese_helper_1 = require("../utils/vietnamese-helper");
 const queue_constants_1 = require("../queue/queue.constants");
 let MembersService = class MembersService {
-    constructor(prisma, avatarQueue, reportQueue, notificationQueue) {
+    constructor(prisma, qstashService) {
         this.prisma = prisma;
-        this.avatarQueue = avatarQueue;
-        this.reportQueue = reportQueue;
-        this.notificationQueue = notificationQueue;
+        this.qstashService = qstashService;
     }
     async getAllMembers(page = 1, pageSize = 10) {
         const skip = (page - 1) * pageSize;
@@ -99,8 +94,8 @@ let MembersService = class MembersService {
             return newMember;
         });
         await Promise.all([
-            this.notificationQueue.add({ type: 'NEW_MEMBER', payload: { id: member.id, name: member.name } }),
-            this.reportQueue.add({}),
+            this.qstashService.publish(queue_constants_1.QUEUE_NOTIFICATION, { type: 'NEW_MEMBER', message: `New member: ${member.name}`, payload: { id: member.id, name: member.name } }),
+            this.qstashService.publish(queue_constants_1.QUEUE_REPORT_GENERATE, {}),
         ]);
         return member;
     }
@@ -143,9 +138,9 @@ let MembersService = class MembersService {
             return updatedMember;
         });
         if (avatarFile) {
-            await this.avatarQueue.add({
+            await this.qstashService.publish(queue_constants_1.QUEUE_AVATAR_UPLOAD, {
                 memberId: id,
-                buffer: avatarFile.buffer,
+                buffer: avatarFile.buffer.toString('base64'),
                 filename: avatarFile.originalname,
                 mimetype: avatarFile.mimetype,
             });
@@ -161,15 +156,13 @@ let MembersService = class MembersService {
             await tx.userMetadata.deleteMany({ where: { profile_member_id: id } });
             await tx.member.delete({ where: { id } });
         });
-        await this.reportQueue.add({});
+        await this.qstashService.publish(queue_constants_1.QUEUE_REPORT_GENERATE, {});
     }
 };
 exports.MembersService = MembersService;
 exports.MembersService = MembersService = __decorate([
     (0, common_1.Injectable)(),
-    __param(1, (0, bull_1.InjectQueue)(queue_constants_1.QUEUE_AVATAR_UPLOAD)),
-    __param(2, (0, bull_1.InjectQueue)(queue_constants_1.QUEUE_REPORT_GENERATE)),
-    __param(3, (0, bull_1.InjectQueue)(queue_constants_1.QUEUE_NOTIFICATION)),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService, Object, Object, Object])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        qstash_service_1.QStashService])
 ], MembersService);
 //# sourceMappingURL=members.service.js.map

@@ -8,19 +8,15 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MediaModule = void 0;
 const common_1 = require("@nestjs/common");
-const bull_1 = require("@nestjs/bull");
 const media_controller_1 = require("./media.controller");
 const media_service_1 = require("./media.service");
-const image_process_processor_1 = require("../queue/processors/image-process.processor");
-const queue_constants_1 = require("../queue/queue.constants");
 let MediaModule = class MediaModule {
 };
 exports.MediaModule = MediaModule;
 exports.MediaModule = MediaModule = __decorate([
     (0, common_1.Module)({
-        imports: [bull_1.BullModule.registerQueue({ name: queue_constants_1.QUEUE_IMAGE_PROCESS })],
         controllers: [media_controller_1.MediaController],
-        providers: [media_service_1.MediaService, image_process_processor_1.ImageProcessProcessor],
+        providers: [media_service_1.MediaService],
         exports: [media_service_1.MediaService],
     })
 ], MediaModule);
