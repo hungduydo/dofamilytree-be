@@ -11,7 +11,7 @@ async function bootstrap() {
     app.enableCors();
     const config = new swagger_1.DocumentBuilder()
         .setTitle('Family Tree API v2')
-        .setDescription('NestJS + Redis + BullMQ')
+        .setDescription('NestJS + Upstash Redis + QStash')
         .setVersion('2.0')
         .addBearerAuth()
         .build();

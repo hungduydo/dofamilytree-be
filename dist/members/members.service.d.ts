@@ -1,3 +1,4 @@
+/// <reference types="multer" />
 import { QStashService } from '../queue/qstash.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMemberDto } from './dto/create-member.dto';
@@ -16,9 +17,9 @@ export declare class MembersService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -44,9 +45,9 @@ export declare class MembersService {
             biography: string | null;
             id: string;
             created_at: Date;
+            member_id: string;
             notes: string | null;
             updated_at: Date;
-            member_id: string;
         } | null;
     } & {
         name: string;
@@ -68,9 +69,9 @@ export declare class MembersService {
             biography: string | null;
             id: string;
             created_at: Date;
+            member_id: string;
             notes: string | null;
             updated_at: Date;
-            member_id: string;
         } | null;
     } & {
         name: string;
@@ -92,9 +93,9 @@ export declare class MembersService {
             biography: string | null;
             id: string;
             created_at: Date;
+            member_id: string;
             notes: string | null;
             updated_at: Date;
-            member_id: string;
         } | null;
         child_relationships: ({
             child: {
@@ -106,9 +107,9 @@ export declare class MembersService {
                     biography: string | null;
                     id: string;
                     created_at: Date;
+                    member_id: string;
                     notes: string | null;
                     updated_at: Date;
-                    member_id: string;
                 } | null;
             } & {
                 name: string;
@@ -139,9 +140,9 @@ export declare class MembersService {
                     biography: string | null;
                     id: string;
                     created_at: Date;
+                    member_id: string;
                     notes: string | null;
                     updated_at: Date;
-                    member_id: string;
                 } | null;
             } & {
                 name: string;

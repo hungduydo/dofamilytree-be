@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install)",
+      "Bash(npx prisma generate)",
+      "Bash(npx nest build)"
+    ]
+  }
+}

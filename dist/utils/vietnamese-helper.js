@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.removeVietnameseTones = removeVietnameseTones;
+exports.removeVietnameseTones = void 0;
 function removeVietnameseTones(str) {
     return str
         .normalize('NFD')
@@ -10,4 +10,5 @@ function removeVietnameseTones(str) {
         .toLowerCase()
         .trim();
 }
+exports.removeVietnameseTones = removeVietnameseTones;
 //# sourceMappingURL=vietnamese-helper.js.map

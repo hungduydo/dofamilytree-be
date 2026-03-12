@@ -13,9 +13,9 @@ export declare class AnniversariesController {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -33,8 +33,8 @@ export declare class AnniversariesController {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     })[]>;
     getUpcoming(): Promise<({
@@ -47,9 +47,9 @@ export declare class AnniversariesController {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -67,8 +67,8 @@ export declare class AnniversariesController {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     })[]>;
     getById(id: string): Promise<{
@@ -81,9 +81,9 @@ export declare class AnniversariesController {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -101,8 +101,8 @@ export declare class AnniversariesController {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     }>;
     create(dto: CreateAnniversaryDto): Promise<{
@@ -115,9 +115,9 @@ export declare class AnniversariesController {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -135,8 +135,8 @@ export declare class AnniversariesController {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     }>;
     update(id: string, dto: UpdateAnniversaryDto): Promise<{
@@ -156,8 +156,8 @@ export declare class AnniversariesController {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     }>;
     delete(id: string): Promise<{
@@ -165,8 +165,8 @@ export declare class AnniversariesController {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     }>;
 }

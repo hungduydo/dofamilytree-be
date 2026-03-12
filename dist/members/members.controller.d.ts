@@ -1,3 +1,4 @@
+/// <reference types="multer" />
 import { MembersService } from './members.service';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
@@ -14,9 +15,9 @@ export declare class MembersController {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -42,9 +43,9 @@ export declare class MembersController {
             biography: string | null;
             id: string;
             created_at: Date;
+            member_id: string;
             notes: string | null;
             updated_at: Date;
-            member_id: string;
         } | null;
     } & {
         name: string;
@@ -66,9 +67,9 @@ export declare class MembersController {
             biography: string | null;
             id: string;
             created_at: Date;
+            member_id: string;
             notes: string | null;
             updated_at: Date;
-            member_id: string;
         } | null;
     } & {
         name: string;
@@ -101,9 +102,9 @@ export declare class MembersController {
             biography: string | null;
             id: string;
             created_at: Date;
+            member_id: string;
             notes: string | null;
             updated_at: Date;
-            member_id: string;
         } | null;
         child_relationships: ({
             child: {
@@ -115,9 +116,9 @@ export declare class MembersController {
                     biography: string | null;
                     id: string;
                     created_at: Date;
+                    member_id: string;
                     notes: string | null;
                     updated_at: Date;
-                    member_id: string;
                 } | null;
             } & {
                 name: string;
@@ -148,9 +149,9 @@ export declare class MembersController {
                     biography: string | null;
                     id: string;
                     created_at: Date;
+                    member_id: string;
                     notes: string | null;
                     updated_at: Date;
-                    member_id: string;
                 } | null;
             } & {
                 name: string;

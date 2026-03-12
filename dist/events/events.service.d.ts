@@ -18,9 +18,9 @@ export declare class EventsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -38,8 +38,8 @@ export declare class EventsService {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     })[]>;
     getUpcomingAnniversaries(days?: number): Promise<({
@@ -52,9 +52,9 @@ export declare class EventsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -72,8 +72,8 @@ export declare class EventsService {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     })[]>;
     getAnniversaryById(id: string): Promise<{
@@ -86,9 +86,9 @@ export declare class EventsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -106,8 +106,8 @@ export declare class EventsService {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     }>;
     createAnniversary(dto: CreateAnniversaryDto): Promise<{
@@ -120,9 +120,9 @@ export declare class EventsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -140,8 +140,8 @@ export declare class EventsService {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     }>;
     updateAnniversary(id: string, dto: UpdateAnniversaryDto): Promise<{
@@ -161,8 +161,8 @@ export declare class EventsService {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     }>;
     deleteAnniversary(id: string): Promise<{
@@ -170,8 +170,8 @@ export declare class EventsService {
         title: string;
         id: string;
         created_at: Date;
-        updated_at: Date;
         member_id: string | null;
+        updated_at: Date;
         date: Date;
     }>;
     getEvents(filter: {

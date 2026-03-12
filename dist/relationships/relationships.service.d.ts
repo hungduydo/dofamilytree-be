@@ -15,9 +15,9 @@ export declare class RelationshipsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -39,9 +39,9 @@ export declare class RelationshipsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -72,9 +72,9 @@ export declare class RelationshipsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -96,9 +96,9 @@ export declare class RelationshipsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -129,9 +129,9 @@ export declare class RelationshipsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -162,9 +162,9 @@ export declare class RelationshipsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -195,9 +195,9 @@ export declare class RelationshipsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -219,9 +219,9 @@ export declare class RelationshipsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -254,9 +254,9 @@ export declare class RelationshipsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;
@@ -278,9 +278,9 @@ export declare class RelationshipsService {
                 biography: string | null;
                 id: string;
                 created_at: Date;
+                member_id: string;
                 notes: string | null;
                 updated_at: Date;
-                member_id: string;
             } | null;
         } & {
             name: string;

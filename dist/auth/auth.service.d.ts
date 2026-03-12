@@ -1,3 +1,4 @@
+/// <reference types="multer" />
 import { JwtService } from '@nestjs/jwt';
 import { QStashService } from '../queue/qstash.service';
 import { PrismaService } from '../prisma/prisma.service';

@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build": "prisma generate && nest build",
-    "vercel-build": "prisma db pull && prisma generate && nest build",
+    "vercel-build": "prisma generate && nest build",
     "dev": "nest start --watch",
     "start": "node dist/main",
     "test": "jest",
@@ -54,7 +54,7 @@
     "prisma": "^5.13.0",
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
+    "typescript": "~5.4.5"
   },
   "jest": {
     "moduleFileExtensions": [

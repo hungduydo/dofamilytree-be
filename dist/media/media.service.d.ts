@@ -1,3 +1,6 @@
+/// <reference types="node" />
+/// <reference types="node" />
+/// <reference types="multer" />
 import { QStashService } from '../queue/qstash.service';
 import { PrismaService } from '../prisma/prisma.service';
 export interface ImageProcessJobData {
