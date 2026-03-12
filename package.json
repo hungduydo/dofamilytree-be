@@ -2,6 +2,9 @@
   "name": "dofamilytree-backend-v2",
   "version": "2.0.0",
   "description": "Family tree API v2 - NestJS + Redis + BullMQ",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "prisma generate && nest build",
     "vercel-build": "prisma generate && nest build",
@@ -36,7 +39,8 @@
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
-    "sharp": "^0.33.3"
+    "sharp": "^0.33.3",
+    "express": "^4.18.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.3.2",

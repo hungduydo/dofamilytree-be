@@ -4,11 +4,11 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
-import * as express from 'express';
+import express, { Express } from 'express';
 
-let cachedServer: express.Express | null = null;
+let cachedServer: Express | null = null;
 
-async function bootstrap(): Promise<express.Express> {
+async function bootstrap(): Promise<Express> {
   if (cachedServer) return cachedServer;
 
   const server = express();
@@ -31,10 +31,11 @@ async function bootstrap(): Promise<express.Express> {
 
   await app.init();
   cachedServer = server;
-  return cachedServer;
+  return cachedServer as Express;
 }
 
-module.exports = async (req: any, res: any) => {
+// Export the server for Vercel
+export default async (req: express.Request, res: express.Response) => {
   const server = await bootstrap();
   server(req, res);
 };

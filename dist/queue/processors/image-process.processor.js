@@ -8,13 +8,16 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 var ImageProcessProcessor_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ImageProcessProcessor = void 0;
 const bull_1 = require("@nestjs/bull");
 const common_1 = require("@nestjs/common");
 const blob_1 = require("@vercel/blob");
-const sharp_1 = require("sharp");
+const sharp_1 = __importDefault(require("sharp"));
 const prisma_service_1 = require("../../prisma/prisma.service");
 const queue_constants_1 = require("../queue.constants");
 let ImageProcessProcessor = ImageProcessProcessor_1 = class ImageProcessProcessor {

@@ -1,7 +1,10 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.redisProvider = void 0;
-const ioredis_1 = require("ioredis");
+const ioredis_1 = __importDefault(require("ioredis"));
 exports.redisProvider = {
     provide: 'REDIS_CLIENT',
     useFactory: () => {
