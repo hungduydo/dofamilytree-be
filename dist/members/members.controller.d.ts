@@ -135,9 +135,9 @@ export declare class MembersController {
             type: import("@prisma/client").$Enums.RelationshipNatureType;
             id: string;
             created_at: Date;
+            note: string | null;
             parent_id: string;
             child_id: string;
-            note: string | null;
         })[];
         parent_relationships: ({
             parent: {
@@ -168,9 +168,9 @@ export declare class MembersController {
             type: import("@prisma/client").$Enums.RelationshipNatureType;
             id: string;
             created_at: Date;
+            note: string | null;
             parent_id: string;
             child_id: string;
-            note: string | null;
         })[];
     } & {
         name: string;

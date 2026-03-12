@@ -15,7 +15,8 @@
     "test:cov": "jest --coverage",
     "prisma:generate": "prisma generate",
     "migrate:relationships": "ts-node scripts/migrate-relationships.ts",
-    "swagger:export": "ts-node scripts/export-swagger.ts"
+    "swagger:export": "ts-node scripts/export-swagger.ts",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",

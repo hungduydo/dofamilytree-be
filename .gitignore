@@ -21,3 +21,5 @@ coverage
 # nyc test coverage
 .nyc_output
 dist
+.vercel
+.env*.local
