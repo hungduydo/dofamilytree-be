@@ -22,7 +22,7 @@ async function bootstrap(): Promise<Express> {
 
   const config = new DocumentBuilder()
     .setTitle('Family Tree API v2')
-    .setDescription('NestJS + Redis + BullMQ')
+    .setDescription('NestJS + Upstash Redis + QStash')
     .setVersion('2.0')
     .addBearerAuth()
     .build();

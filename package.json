@@ -1,13 +1,13 @@
 {
   "name": "dofamilytree-backend-v2",
   "version": "2.0.0",
-  "description": "Family tree API v2 - NestJS + Redis + BullMQ",
+  "description": "Family tree API v2 - NestJS + Upstash Redis + QStash",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "build": "prisma generate && nest build",
-    "vercel-build": "prisma generate && nest build",
+    "vercel-build": "prisma db pull && prisma generate && nest build",
     "dev": "nest start --watch",
     "start": "node dist/main",
     "test": "jest",
@@ -33,7 +33,6 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "express": "^4.18.2",
-    "ioredis": "^5.3.2",
     "multer": "^1.4.5-lts.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
