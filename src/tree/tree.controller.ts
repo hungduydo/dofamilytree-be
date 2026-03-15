@@ -3,6 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Public } from '../auth/public.decorator';
 import { TreeService } from './tree.service';
 
 class CreateTreeDto {
@@ -51,6 +52,7 @@ export class TreeController {
     return this.treeService.getStats();
   }
 
+  @Public()
   @Get('home')
   @ApiOperation({ summary: 'Get trees with show=true (for homepage)' })
   getHomeTrees() {

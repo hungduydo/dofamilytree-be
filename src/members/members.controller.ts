@@ -5,6 +5,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Public } from '../auth/public.decorator';
 import { MembersService } from './members.service';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
@@ -15,6 +16,20 @@ import { UpdateMemberDto } from './dto/update-member.dto';
 @Controller('members')
 export class MembersController {
   constructor(private readonly membersService: MembersService) {}
+
+  @Public()
+  @Get('committee')
+  @ApiOperation({ summary: 'Get committee/council members (public)' })
+  getCommitteeMembers() {
+    return this.membersService.getCommitteeMembers();
+  }
+
+  @Public()
+  @Get('notable')
+  @ApiOperation({ summary: 'Get notable/distinguished members (public)' })
+  getNotableMembers() {
+    return this.membersService.getNotableMembers();
+  }
 
   @Get()
   @ApiOperation({ summary: 'Get all members (paginated)' })

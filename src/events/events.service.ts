@@ -81,6 +81,18 @@ export class EventsService {
     return this.prisma.anniversary.delete({ where: { id } });
   }
 
+  // ─── Gallery (public homepage) ────────────────────────────────────────────
+
+  async getGalleryEvents() {
+    return this.prisma.event.findMany({
+      where: {
+        highlight: true,
+        images: { isEmpty: false },
+      },
+      orderBy: { date: 'desc' },
+    });
+  }
+
   // ─── Event ────────────────────────────────────────────────────────────────
 
   async getEvents(filter: { highlight?: boolean; fromDate?: Date; toDate?: Date }) {

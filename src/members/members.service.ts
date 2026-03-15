@@ -17,6 +17,59 @@ export class MembersService {
     private readonly qstashService: QStashService,
   ) {}
 
+  /**
+   * Committee members — members whose profile notes contain "committee" or "ban quản lý"
+   * Returns shape: { id, name, role, avatar }
+   */
+  async getCommitteeMembers() {
+    const members = await this.prisma.member.findMany({
+      where: {
+        profile: {
+          notes: { not: null },
+          OR: [
+            { notes: { contains: 'committee', mode: 'insensitive' } },
+            { notes: { contains: 'ban quản lý', mode: 'insensitive' } },
+            { notes: { contains: 'hội đồng', mode: 'insensitive' } },
+          ],
+        },
+      },
+      include: { profile: true },
+      orderBy: { created_at: 'asc' },
+    });
+
+    return members.map((m) => ({
+      id: m.id,
+      name: m.name,
+      role: m.profile?.occupation ?? '',
+      avatar: m.avatar_url ?? '',
+    }));
+  }
+
+  /**
+   * Notable members — members whose profile biography is not empty
+   * Returns shape: { id, name, description, avatar }
+   */
+  async getNotableMembers() {
+    const members = await this.prisma.member.findMany({
+      where: {
+        profile: {
+          biography: { not: null },
+          NOT: { biography: '' },
+        },
+      },
+      include: { profile: true },
+      orderBy: { created_at: 'asc' },
+      take: 9,
+    });
+
+    return members.map((m) => ({
+      id: m.id,
+      name: m.name,
+      description: m.profile?.biography ?? '',
+      avatar: m.avatar_url ?? '',
+    }));
+  }
+
   async getAllMembers(page = 1, pageSize = 10) {
     const skip = (page - 1) * pageSize;
     const take = Math.min(pageSize, 100);
@@ -99,11 +152,11 @@ export class MembersService {
       return newMember;
     });
 
-    // Queue notifications and report update
-    await Promise.all([
+    // Queue notifications and report update (best-effort, don't fail the operation)
+    Promise.all([
       this.qstashService.publish(QUEUE_NOTIFICATION, { type: 'NEW_MEMBER', message: `New member: ${member.name}`, payload: { id: member.id, name: member.name } }),
       this.qstashService.publish(QUEUE_REPORT_GENERATE, {}),
-    ]);
+    ]).catch(() => {});
 
     return member;
   }
@@ -165,6 +218,7 @@ export class MembersService {
       await tx.member.delete({ where: { id } });
     });
 
-    await this.qstashService.publish(QUEUE_REPORT_GENERATE, {});
+    // Best-effort queue notification — don't fail the delete
+    this.qstashService.publish(QUEUE_REPORT_GENERATE, {}).catch(() => {});
   }
 }

@@ -3,6 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Public } from '../auth/public.decorator';
 import { EventsService } from './events.service';
 import { CreateEventDto, UpdateEventDto } from './dto/create-event.dto';
 
@@ -12,6 +13,13 @@ import { CreateEventDto, UpdateEventDto } from './dto/create-event.dto';
 @Controller('events')
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
+
+  @Public()
+  @Get('gallery')
+  @ApiOperation({ summary: 'Get highlighted events with images for homepage gallery (public)' })
+  getGallery() {
+    return this.eventsService.getGalleryEvents();
+  }
 
   @Get()
   @ApiOperation({ summary: 'Get events (filter: highlight, fromDate, toDate)' })
