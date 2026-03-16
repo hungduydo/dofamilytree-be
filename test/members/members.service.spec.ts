@@ -26,7 +26,7 @@ const mockPrisma = {
   $transaction: jest.fn(),
 };
 
-const mockQStashService = { publish: jest.fn() };
+const mockQStashService = { publish: jest.fn().mockResolvedValue({}) };
 
 describe('MembersService', () => {
   let service: MembersService;
