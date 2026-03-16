@@ -3,7 +3,9 @@
     "allow": [
       "Bash(pnpm install)",
       "Bash(npx prisma generate)",
-      "Bash(npx nest build)"
+      "Bash(npx nest build)",
+      "Bash(npx prisma:*)",
+      "Bash(1:*)"
     ]
   }
 }

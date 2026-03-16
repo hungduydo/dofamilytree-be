@@ -33,21 +33,26 @@ model Member {
   to_relationships     Relationship[]       @relation("ToMember")
   user_metadata        UserMetadata?
 
+  @@index([normalized_name])
+  @@index([name])
   @@map("members")
 }
 
 model Profile {
-  id         String   @id @default(uuid()) @db.Uuid
-  member_id  String   @unique @db.Uuid
-  fullName   String
-  generation Int?
-  biography  String?
-  occupation String?
-  address    String?
-  notes      String?
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
-  member     Member   @relation(fields: [member_id], references: [id])
+  id            String   @id @default(uuid()) @db.Uuid
+  member_id     String   @unique @db.Uuid
+  fullName      String
+  generation    Int?
+  biography     String?
+  occupation    String?
+  address       String?
+  notes         String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+  committeeRole String?
+  isCommittee   Boolean  @default(false)
+  isNotable     Boolean  @default(false)
+  member        Member   @relation(fields: [member_id], references: [id])
 
   @@map("profiles")
 }
@@ -61,6 +66,8 @@ model Relationship {
   from_member    Member           @relation("FromMember", fields: [from_member_id], references: [id])
   to_member      Member           @relation("ToMember", fields: [to_member_id], references: [id])
 
+  @@index([from_member_id])
+  @@index([to_member_id])
   @@map("relationships")
 }
 
@@ -74,6 +81,8 @@ model MemberRelationship {
   child      Member                 @relation("RelChild", fields: [child_id], references: [id])
   parent     Member                 @relation("RelParent", fields: [parent_id], references: [id])
 
+  @@index([parent_id, type])
+  @@index([child_id, type])
   @@map("member_relationships")
 }
 
@@ -86,6 +95,7 @@ model Tree {
   title       String?
   show        Boolean  @default(false)
 
+  @@index([owner_id])
   @@map("trees")
 }
 
@@ -98,6 +108,8 @@ model Comment {
   author           User     @relation(fields: [author_id], references: [id])
   target_member    Member?  @relation(fields: [target_member_id], references: [id])
 
+  @@index([target_member_id])
+  @@index([author_id])
   @@map("comments")
 }
 
@@ -107,6 +119,7 @@ model Media {
   uploader_id String   @db.Uuid
   created_at  DateTime @default(now())
 
+  @@index([uploader_id])
   @@map("media")
 }
 
@@ -142,6 +155,7 @@ model Anniversary {
   updated_at  DateTime @updatedAt
   member      Member?  @relation(fields: [member_id], references: [id])
 
+  @@index([member_id])
   @@map("anniversaries")
 }
 
