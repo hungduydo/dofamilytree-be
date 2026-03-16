@@ -13,8 +13,9 @@ export class QStashService {
   }
 
   async publish(task: string, data: any) {
-    const appUrl = process.env.APP_URL || 'http://localhost:3002';
-    const callbackUrl = `${appUrl}/queue/callback/${task}`;
+    let appUrl = process.env.APP_URL || 'http://localhost:3002';
+    if (!/^https?:\/\//i.test(appUrl)) appUrl = `https://${appUrl}`;
+    const callbackUrl = `${appUrl}/v2/queue/callback/${task}`;
 
     this.logger.log(`Publishing task ${task} to QStash callback: ${callbackUrl}`);
 

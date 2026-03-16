@@ -133,7 +133,14 @@ describe('MembersService', () => {
       expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            normalized_name: expect.objectContaining({ contains: 'nguyen van a' }),
+            OR: expect.arrayContaining([
+              expect.objectContaining({
+                normalized_name: expect.objectContaining({ contains: 'nguyen van a' }),
+              }),
+              expect.objectContaining({
+                name: expect.objectContaining({ contains: 'nguyen van a' }),
+              }),
+            ]),
           }),
         }),
       );

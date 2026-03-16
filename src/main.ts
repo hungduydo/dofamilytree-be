@@ -10,7 +10,16 @@ async function bootstrap() {
   // Exclude Swagger path from global prefix so /docs resolves correctly
   app.setGlobalPrefix('v2', { exclude: ['docs', 'docs-json', 'docs-yaml'] });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  app.enableCors();
+  app.enableCors({
+    origin: [
+      'http://localhost:3001',
+      'https://family-website-nine.vercel.app',
+      ...(process.env.ALLOWED_ORIGINS
+        ? process.env.ALLOWED_ORIGINS.split(',')
+        : []),
+    ],
+    credentials: true,
+  });
 
   const config = new DocumentBuilder()
     .setTitle('Family Tree API v2')

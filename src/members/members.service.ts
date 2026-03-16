@@ -88,10 +88,14 @@ export class MembersService {
   }
 
   async searchMembers(query: string) {
+    if (!query?.trim()) return [];
     const normalized = removeVietnameseTones(query);
     return this.prisma.member.findMany({
       where: {
-        normalized_name: { contains: normalized, mode: 'insensitive' },
+        OR: [
+          { normalized_name: { contains: normalized, mode: 'insensitive' } },
+          { name: { contains: query, mode: 'insensitive' } },
+        ],
       },
       include: { profile: true },
       take: 50,
