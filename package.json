@@ -17,7 +17,8 @@
     "migrate:relationships": "ts-node scripts/migrate-relationships.ts",
     "swagger:export": "ts-node scripts/export-swagger.ts",
     "postinstall": "prisma generate",
-    "prepare": "husky"
+    "prepare": "husky",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
