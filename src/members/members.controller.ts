@@ -45,8 +45,12 @@ export class MembersController {
   @Get('search')
   @ApiOperation({ summary: 'Search members by name (Vietnamese-insensitive)' })
   @ApiQuery({ name: 'name', required: true })
-  searchMembers(@Query('name') name: string) {
-    return this.membersService.searchMembers(name);
+  @ApiQuery({ name: 'includeProfile', required: false, type: Boolean })
+  searchMembers(
+    @Query('name') name: string,
+    @Query('includeProfile') includeProfile?: string,
+  ) {
+    return this.membersService.searchMembers(name, includeProfile === 'true');
   }
 
   @Get(':id')

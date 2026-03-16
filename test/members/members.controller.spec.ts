@@ -34,7 +34,7 @@ describe('MembersController', () => {
   it('GET /members/search should call searchMembers with name query', async () => {
     mockMembersService.searchMembers.mockResolvedValue([]);
     await controller.searchMembers('nguyen');
-    expect(mockMembersService.searchMembers).toHaveBeenCalledWith('nguyen');
+    expect(mockMembersService.searchMembers).toHaveBeenCalledWith('nguyen', false);
   });
 
   it('GET /members/:id should call getMemberById', async () => {

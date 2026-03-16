@@ -87,7 +87,7 @@ export class MembersService {
     return { data, total, page, pageSize };
   }
 
-  async searchMembers(query: string) {
+  async searchMembers(query: string, includeProfile = false) {
     if (!query?.trim()) return [];
     const normalized = removeVietnameseTones(query);
     return this.prisma.member.findMany({
@@ -97,7 +97,7 @@ export class MembersService {
           { name: { contains: query, mode: 'insensitive' } },
         ],
       },
-      include: { profile: true },
+      include: includeProfile ? { profile: true } : undefined,
       take: 50,
     });
   }

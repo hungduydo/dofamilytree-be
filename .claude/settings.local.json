@@ -5,7 +5,11 @@
       "Bash(npx prisma generate)",
       "Bash(npx nest build)",
       "Bash(npx prisma:*)",
-      "Bash(1:*)"
+      "Bash(1:*)",
+      "Bash(lsof -ti :3002)",
+      "Bash(xargs kill -9)",
+      "Bash(npm run dev)",
+      "Bash(lsof -ti:3002)"
     ]
   }
 }

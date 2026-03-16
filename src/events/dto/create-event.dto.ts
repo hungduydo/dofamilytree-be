@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsDateString, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsUUID, IsDate } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateAnniversaryDto {
@@ -9,6 +9,8 @@ export class CreateAnniversaryDto {
   title: string;
 
   @ApiProperty({ example: '2024-03-15T00:00:00.000Z' })
+  @IsNotEmpty()
+  @IsDate()
   @Type(() => Date)
   date: Date;
 

@@ -50,8 +50,8 @@ export class TreeService {
     const members = await this.prisma.member.findMany({
       include: {
         profile: true,
-        parent_relationships: { include: { parent: true } },
-        child_relationships: { include: { child: true } },
+        parent_relationships: { include: { child: true } },
+        child_relationships: { include: { parent: true } },
       },
     });
 
@@ -135,8 +135,8 @@ export class TreeService {
       where: { id: { in: allMemberIds } },
       include: {
         profile: true,
-        parent_relationships: true,
-        child_relationships: true,
+        parent_relationships: { include: { child: true } },
+        child_relationships: { include: { parent: true } },
       },
     });
 
