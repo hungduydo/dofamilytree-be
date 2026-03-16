@@ -1,4 +1,10 @@
 {
   "version": 2,
+  "buildCommand": "pnpm run vercel-build",
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "dist/**"
+    }
+  },
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
 }
