@@ -19,6 +19,7 @@ export interface FamilyChartNode {
     gender: string;
     fn: string; // first name
     ln: string; // last name (surname)
+    label: string;
     birthday?: string;
     avatar?: string;
     generation?: number;
@@ -50,9 +51,10 @@ export class TreeService {
     const members = await this.prisma.member.findMany({
       include: {
         profile: true,
-        parent_relationships: { include: { child: true } },
+        parent_relationships: true,
         child_relationships: { include: { parent: true } },
       },
+      orderBy: { profile: { generation: { sort: 'asc', nulls: 'last' } } },
     });
 
     const nodes: FamilyChartNode[] = members.map((m) => this.memberToNode(m));
@@ -135,7 +137,7 @@ export class TreeService {
       where: { id: { in: allMemberIds } },
       include: {
         profile: true,
-        parent_relationships: { include: { child: true } },
+        parent_relationships: true,
         child_relationships: { include: { parent: true } },
       },
     });
@@ -205,21 +207,24 @@ export class TreeService {
     const fullName: string = m.profile?.fullName || m.name || '';
     const parts = fullName.trim().split(/\s+/);
     const ln = parts[0] || ''; // Vietnamese: surname first
-    const fn = parts.slice(1).join(' ') || parts[0] || '';
+    const fn = parts.length > 1 ? parts.slice(1).join(' ') : parts[0] || '';
 
-    const spouses = (m.child_relationships || [])
-      .filter((r: any) => r.type === 'SPOUSE')
-      .map((r: any) => r.parent_id)
-      .concat(
-        (m.parent_relationships || [])
-          .filter((r: any) => r.type === 'SPOUSE')
-          .map((r: any) => r.child_id),
-      );
+    // Spouses: SPOUSE records can use either side (parent_id or child_id) for each spouse
+    const spouses = [
+      ...(m.parent_relationships || [])
+        .filter((r: any) => r.type === 'SPOUSE')
+        .map((r: any) => r.child_id),
+      ...(m.child_relationships || [])
+        .filter((r: any) => r.type === 'SPOUSE')
+        .map((r: any) => r.parent_id),
+    ];
 
+    // Children: records where this member is the parent (non-SPOUSE)
     const children = (m.parent_relationships || [])
       .filter((r: any) => r.type !== 'SPOUSE')
       .map((r: any) => r.child_id);
 
+    // Parents: records where this member is the child (non-SPOUSE)
     const parents = (m.child_relationships || [])
       .filter((r: any) => r.type !== 'SPOUSE');
 
@@ -235,6 +240,7 @@ export class TreeService {
         gender: m.gender || 'U',
         fn,
         ln,
+        label: fullName,
         birthday: m.birthDate || undefined,
         avatar: m.avatar_url || undefined,
         generation: m.profile?.generation || undefined,

@@ -308,3 +308,4 @@ pnpm migrate:relationships
 ```
 
 Script dùng `upsert` (idempotent — chạy lại nhiều lần vẫn an toàn). Bảng cũ `relationships` giữ nguyên cho backend v1.
+lsof -ti:3002 | xargs kill -9 2>/dev/null; echo "done"
