@@ -22,6 +22,7 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
   },
+  $queryRaw: jest.fn(),
 };
 
 const mockRedis = {
@@ -71,6 +72,18 @@ describe('TreeService', () => {
       );
       expect(result.nodes).toBeDefined();
     });
+
+    it('falls back to DB build when Redis is unreachable (no 500)', async () => {
+      mockRedis.get.mockRejectedValue(new Error('fetch failed'));
+      mockRedis.set.mockRejectedValue(new Error('fetch failed'));
+      mockPrisma.member.findMany.mockResolvedValue([
+        { id: 'm1', name: 'A', gender: 'M', profile: { fullName: 'A', generation: 1 }, parent_relationships: [], child_relationships: [] },
+      ]);
+
+      const result = await service.getFamilyTreeChart();
+      expect(mockPrisma.member.findMany).toHaveBeenCalled();
+      expect(result.nodes).toHaveLength(1);
+    });
   });
 
   describe('regenerateFamilyTreeChart', () => {
@@ -87,63 +100,93 @@ describe('TreeService', () => {
   });
 
   describe('getFamilySubTreeChart', () => {
-    it('should return 4-generation BFS subtree for a member', async () => {
-      mockPrisma.member.findUnique.mockResolvedValue({
-        id: 'root', name: 'Root', gender: 'M',
-        profile: { fullName: 'Root', generation: 1 },
-        parent_relationships: [], // no spouses
-        child_relationships: [{ child_id: 'child-1' }],
-      });
+    it('collects subtree ids via one recursive CTE, then batch-loads node data', async () => {
+      // CTE returns the member ids in the subtree
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 'root' }, { id: 'child-1' }]);
       mockPrisma.member.findMany.mockResolvedValue([
-        { id: 'child-1', name: 'Child1', gender: 'M', profile: { fullName: 'Child1' }, parent_relationships: [], child_relationships: [] },
+        { id: 'root', name: 'Root', gender: 'M', profile: { fullName: 'Root', generation: 1 }, parent_relationships: [{ child_id: 'child-1', type: 'BIOLOGICAL' }], child_relationships: [] },
+        { id: 'child-1', name: 'Child1', gender: 'M', profile: { fullName: 'Child1' }, parent_relationships: [], child_relationships: [{ parent_id: 'root', type: 'BIOLOGICAL', parent: { gender: 'M' } }] },
       ]);
 
       const result = await service.getFamilySubTreeChart('root');
-      expect(result.nodes).toBeDefined();
-      expect(result.nodes.length).toBeGreaterThanOrEqual(1);
+      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      // single batched load, no per-node queries
+      expect(mockPrisma.member.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: { in: ['root', 'child-1'] } } }),
+      );
+      expect(result.nodes.map((n) => n.id).sort()).toEqual(['child-1', 'root']);
     });
 
-    it('should throw NotFoundException when root member not found', async () => {
-      mockPrisma.member.findUnique.mockResolvedValue(null);
+    it('should throw NotFoundException when the CTE returns no rows (member not found)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([]);
       await expect(service.getFamilySubTreeChart('bad-id')).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.member.findMany).not.toHaveBeenCalled();
     });
 
-    it('should not traverse more than 4 generations', async () => {
-      // 5-level deep family: root → child → grandchild → great → great-great
-      // Only first 4 generations should be returned
-      mockPrisma.member.findUnique.mockResolvedValue({
-        id: 'root', name: 'Root', gender: 'M', profile: { fullName: 'Root' },
-        parent_relationships: [], child_relationships: [],
-      });
-      mockPrisma.member.findMany.mockResolvedValue([]);
+    it('returns just the root when it has no relationships', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 'root' }]);
+      mockPrisma.member.findMany.mockResolvedValue([
+        { id: 'root', name: 'Root', gender: 'M', profile: { fullName: 'Root' }, parent_relationships: [], child_relationships: [] },
+      ]);
 
       const result = await service.getFamilySubTreeChart('root');
-      // Max 4 generations from root; with empty children, just root
-      expect(result.nodes.length).toBeLessThanOrEqual(50); // reasonable upper bound
+      expect(result.nodes).toHaveLength(1);
+      expect(result.nodes[0].id).toBe('root');
     });
   });
 
   describe('getStats', () => {
-    it('should return tree stats from DB', async () => {
+    it('should return full dashboard stats shape from DB on cache miss', async () => {
+      mockRedis.get.mockResolvedValue(null);
       mockPrisma.member.count
         .mockResolvedValueOnce(50) // total
         .mockResolvedValueOnce(10); // deceased
-      mockPrisma.profile.aggregate.mockResolvedValue({ _max: { generation: 5 } });
+      mockPrisma.profile.aggregate.mockResolvedValue({
+        _max: { generation: 5, updated_at: new Date('2024-01-15T00:00:00.000Z') },
+      });
+      // birthDates: one in 20th–21st century range, one out of range
+      mockPrisma.member.findMany.mockResolvedValue([
+        { birthDate: '1990-01-01' },
+        { birthDate: '1850-01-01' },
+      ]);
 
-      const result = await service.getStats();
+      const result: any = await service.getStats();
       expect(result.totalMembers).toBe(50);
-      expect(result.totalGenerations).toBe(5);
+      expect(result.generations).toBe(5);
+      expect(result.totalGenerations).toBe(5); // backward-compat alias
       expect(result.deceased).toBe(10);
+      expect(result.born20th21st).toBe(1);
+      expect(result.lastUpdate).toBe('2024-01-15');
+      expect(result.cacheStatus).toBe('miss');
     });
 
-    it('should include cache status from Redis', async () => {
-      mockPrisma.member.count.mockResolvedValue(10).mockResolvedValueOnce(2);
-      mockPrisma.profile.aggregate.mockResolvedValue({ _max: { generation: 3 } });
-      mockRedis.get.mockResolvedValue(JSON.stringify({ totalMembers: 10, totalGenerations: 3, deceased: 2, generatedAt: new Date().toISOString() }));
+    it('returns cache hit only when cached entry has the full shape', async () => {
+      mockRedis.get.mockResolvedValue(JSON.stringify({
+        totalMembers: 10, generations: 3, deceased: 2,
+        born20th21st: 5, lastUpdate: '2024-01-01', generatedAt: new Date().toISOString(),
+      }));
 
-      const result = await service.getStats();
-      expect(result).toHaveProperty('cacheStatus');
+      const result: any = await service.getStats();
       expect(result.cacheStatus).toBe('hit');
+      expect(result.born20th21st).toBe(5);
+      expect(mockPrisma.member.count).not.toHaveBeenCalled();
+    });
+
+    it('recomputes when cached entry is missing new fields (partial shape)', async () => {
+      // Old/partial cache without born20th21st + lastUpdate must be ignored
+      mockRedis.get.mockResolvedValue(JSON.stringify({
+        totalMembers: 10, totalGenerations: 3, deceased: 2, generatedAt: new Date().toISOString(),
+      }));
+      mockPrisma.member.count.mockResolvedValueOnce(10).mockResolvedValueOnce(2);
+      mockPrisma.profile.aggregate.mockResolvedValue({ _max: { generation: 3, updated_at: null } });
+      mockPrisma.member.findMany.mockResolvedValue([]);
+
+      const result: any = await service.getStats();
+      expect(result.cacheStatus).toBe('miss');
+      expect(result.born20th21st).toBe(0);
+      expect(result.lastUpdate).toBeNull();
+      expect(mockPrisma.member.count).toHaveBeenCalled();
     });
   });
 

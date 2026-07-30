@@ -44,16 +44,38 @@ export class TasksService {
     this.logger.log('Generating family tree report...');
 
     try {
-      const [totalMembers, maxGenProfile, deceasedCount] = await Promise.all([
-        this.prisma.member.count(),
-        this.prisma.profile.aggregate({ _max: { generation: true } }),
-        this.prisma.member.count({ where: { deathDate: { not: null } } }),
-      ]);
+      const [totalMembers, maxGenProfile, deceasedCount, birthMembers, latestProfile] =
+        await Promise.all([
+          this.prisma.member.count(),
+          this.prisma.profile.aggregate({ _max: { generation: true } }),
+          this.prisma.member.count({ where: { deathDate: { not: null } } }),
+          this.prisma.member.findMany({
+            where: { birthDate: { not: null } },
+            select: { birthDate: true },
+          }),
+          this.prisma.profile.aggregate({ _max: { updated_at: true } }),
+        ]);
 
+      let born20th21st = 0;
+      for (const m of birthMembers) {
+        const year = new Date(m.birthDate as string).getFullYear();
+        if (year >= 1901 && year <= 2100) born20th21st++;
+      }
+
+      const generations = maxGenProfile._max.generation || 0;
+      const lastUpdate = latestProfile._max.updated_at
+        ? latestProfile._max.updated_at.toISOString().split('T')[0]
+        : null;
+
+      // Must match TreeService.computeStats() so cache hits carry every field
+      // the dashboard reads.
       const report = {
         totalMembers,
-        totalGenerations: maxGenProfile._max.generation || 0,
+        generations,
+        totalGenerations: generations, // backward-compat alias
         deceased: deceasedCount,
+        born20th21st,
+        lastUpdate,
         generatedAt: new Date().toISOString(),
       };
 

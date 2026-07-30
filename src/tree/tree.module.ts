@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { TreeController } from './tree.controller';
+import { ReportController } from './report.controller';
 import { TreeService } from './tree.service';
 
 @Module({
-  controllers: [TreeController],
+  controllers: [TreeController, ReportController],
   providers: [TreeService],
   exports: [TreeService],
 })

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { QStashService } from '../queue/qstash.service';
+import { runInBackground } from '../utils/run-in-background';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
@@ -92,14 +93,18 @@ export class AuthService {
       return { member: newMember, userMetadata: meta };
     });
 
-    // Queue avatar upload if file was provided
+    // Queue avatar upload if file was provided — off the request path so the
+    // QStash round-trip doesn't block the response (waitUntil keeps it alive
+    // on Vercel so the job isn't dropped).
     if (avatarFile) {
-      await this.qstashService.publish(QUEUE_AVATAR_UPLOAD, {
-        memberId: member.id,
-        buffer: avatarFile.buffer.toString('base64'),
-        filename: avatarFile.originalname,
-        mimetype: avatarFile.mimetype,
-      });
+      runInBackground(
+        this.qstashService.publish(QUEUE_AVATAR_UPLOAD, {
+          memberId: member.id,
+          buffer: avatarFile.buffer.toString('base64'),
+          filename: avatarFile.originalname,
+          mimetype: avatarFile.mimetype,
+        }),
+      );
     }
 
     return {

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { QStashService } from '../queue/qstash.service';
+import { runInBackground } from '../utils/run-in-background';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
@@ -199,14 +200,16 @@ export class MembersService {
       return updatedMember;
     });
 
-    // Queue avatar upload if file provided
+    // Queue avatar upload if file provided — off the request path (see auth).
     if (avatarFile) {
-      await this.qstashService.publish(QUEUE_AVATAR_UPLOAD, {
-        memberId: id,
-        buffer: avatarFile.buffer.toString('base64'),
-        filename: avatarFile.originalname,
-        mimetype: avatarFile.mimetype,
-      });
+      runInBackground(
+        this.qstashService.publish(QUEUE_AVATAR_UPLOAD, {
+          memberId: id,
+          buffer: avatarFile.buffer.toString('base64'),
+          filename: avatarFile.originalname,
+          mimetype: avatarFile.mimetype,
+        }),
+      );
     }
 
     return updated;

@@ -40,7 +40,7 @@ describe('RelationshipsService', () => {
   describe('addRelationship', () => {
     it('should create BIOLOGICAL relationship successfully', async () => {
       mockPrisma.member.findUnique
-        .mockResolvedValueOnce({ id: 'parent-1' })
+        .mockResolvedValueOnce({ id: 'parent-1', gender: 'M' })
         .mockResolvedValueOnce({ id: 'child-1' });
       mockPrisma.memberRelationship.findFirst.mockResolvedValue(null);
       mockPrisma.memberRelationship.create.mockResolvedValue({
@@ -65,23 +65,55 @@ describe('RelationshipsService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw BadRequestException when child already has a parent (BIOLOGICAL/ADOPTED)', async () => {
+    it('should throw BadRequestException when child already has a parent of the same gender', async () => {
       mockPrisma.member.findUnique
-        .mockResolvedValueOnce({ id: 'parent-1' })
+        .mockResolvedValueOnce({ id: 'parent-1', gender: 'M' })
         .mockResolvedValueOnce({ id: 'child-1' });
-      mockPrisma.memberRelationship.findFirst.mockResolvedValue({
+      mockPrisma.memberRelationship.findFirst.mockResolvedValueOnce({
         id: 'existing-rel', type: 'BIOLOGICAL',
       });
 
       await expect(
         service.addRelationship({ parentId: 'parent-1', childId: 'child-1', type: 'BIOLOGICAL' }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow('This member already has a father');
+    });
+
+    it('allows adding a second parent of a different gender (father + mother)', async () => {
+      mockPrisma.member.findUnique
+        .mockResolvedValueOnce({ id: 'mother-1', gender: 'F' })
+        .mockResolvedValueOnce({ id: 'child-1' });
+      // same-gender-parent check: no existing mother
+      mockPrisma.memberRelationship.findFirst
+        .mockResolvedValueOnce(null)
+        // duplicate check: no exact duplicate
+        .mockResolvedValueOnce(null);
+      mockPrisma.memberRelationship.create.mockResolvedValue({
+        id: 'rel-mother', parent_id: 'mother-1', child_id: 'child-1', type: 'BIOLOGICAL',
+        parent: { name: 'Mother' }, child: { name: 'Child' },
+      });
+
+      const result = await service.addRelationship({ parentId: 'mother-1', childId: 'child-1', type: 'BIOLOGICAL' });
+      expect(result).toHaveProperty('id', 'rel-mother');
+    });
+
+    it('should throw BadRequestException when the exact same relationship already exists', async () => {
+      mockPrisma.member.findUnique
+        .mockResolvedValueOnce({ id: 'parent-1', gender: 'M' })
+        .mockResolvedValueOnce({ id: 'child-1' });
+      mockPrisma.memberRelationship.findFirst
+        .mockResolvedValueOnce(null) // no same-gender parent conflict
+        .mockResolvedValueOnce({ id: 'dup', parent_id: 'parent-1', child_id: 'child-1', type: 'BIOLOGICAL' });
+
+      await expect(
+        service.addRelationship({ parentId: 'parent-1', childId: 'child-1', type: 'BIOLOGICAL' }),
+      ).rejects.toThrow('This relationship already exists');
     });
 
     it('should allow SPOUSE relationship regardless of existing parents', async () => {
       mockPrisma.member.findUnique
         .mockResolvedValueOnce({ id: 'member-1' })
         .mockResolvedValueOnce({ id: 'member-2' });
+      mockPrisma.memberRelationship.findFirst.mockResolvedValue(null);
       mockPrisma.memberRelationship.create.mockResolvedValue({
         id: 'rel-2', parent_id: 'member-1', child_id: 'member-2', type: 'SPOUSE',
         parent: { name: 'M1' }, child: { name: 'M2' },
@@ -93,7 +125,7 @@ describe('RelationshipsService', () => {
 
     it('should queue notification after adding relationship', async () => {
       mockPrisma.member.findUnique
-        .mockResolvedValueOnce({ id: 'parent-1' })
+        .mockResolvedValueOnce({ id: 'parent-1', gender: 'M' })
         .mockResolvedValueOnce({ id: 'child-1' });
       mockPrisma.memberRelationship.findFirst.mockResolvedValue(null);
       mockPrisma.memberRelationship.create.mockResolvedValue({

@@ -1,9 +1,11 @@
 {
   "version": 2,
   "buildCommand": "pnpm run vercel-build",
+  "regions": ["sin1"],
   "functions": {
     "api/index.js": {
-      "includeFiles": "dist/**"
+      "includeFiles": "dist/**",
+      "maxDuration": 10
     }
   },
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]

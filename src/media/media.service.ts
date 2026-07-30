@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { QStashService } from '../queue/qstash.service';
+import { runInBackground } from '../utils/run-in-background';
 import { del } from '@vercel/blob';
 import { PrismaService } from '../prisma/prisma.service';
 import { QUEUE_IMAGE_PROCESS } from '../queue/queue.constants';
@@ -27,13 +28,16 @@ export class MediaService {
       },
     });
 
-    // Queue image processing (compress + upload to Vercel Blob)
-    await this.qstashService.publish(QUEUE_IMAGE_PROCESS, {
-      mediaId: media.id,
-      buffer: file.buffer.toString('base64'),
-      filename: file.originalname,
-      mimetype: file.mimetype,
-    });
+    // Queue image processing (compress + upload to Vercel Blob) off the request
+    // path so the response returns the pending record immediately.
+    runInBackground(
+      this.qstashService.publish(QUEUE_IMAGE_PROCESS, {
+        mediaId: media.id,
+        buffer: file.buffer.toString('base64'),
+        filename: file.originalname,
+        mimetype: file.mimetype,
+      }),
+    );
 
     return media;
   }

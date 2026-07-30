@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { QStashService } from '../queue/qstash.service';
+import { runInBackground } from '../utils/run-in-background';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateAnniversaryDto, UpdateAnniversaryDto,
@@ -128,11 +129,13 @@ export class EventsService {
       },
     });
 
-    await this.qstashService.publish(QUEUE_NOTIFICATION, {
-      type: 'NEW_EVENT',
-      message: `New event: ${event.title}`,
-      payload: { id: event.id, title: event.title, date: event.date },
-    });
+    runInBackground(
+      this.qstashService.publish(QUEUE_NOTIFICATION, {
+        type: 'NEW_EVENT',
+        message: `New event: ${event.title}`,
+        payload: { id: event.id, title: event.title, date: event.date },
+      }),
+    );
 
     return event;
   }

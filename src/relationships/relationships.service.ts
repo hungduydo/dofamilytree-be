@@ -24,17 +24,32 @@ export class RelationshipsService {
     if (!parent) throw new NotFoundException(`Parent member ${dto.parentId} not found`);
     if (!child) throw new NotFoundException(`Child member ${dto.childId} not found`);
 
-    // For BIOLOGICAL/ADOPTED: each member can have at most 1 parent
-    if (dto.type === 'BIOLOGICAL' || dto.type === 'ADOPTED') {
-      const existingParent = await this.prisma.memberRelationship.findFirst({
+    // A child can have at most one father and one mother — not "one parent
+    // total". Enforce per-gender, not per-relationship-count, since a real
+    // family tree needs both. Skipped when the parent's gender isn't
+    // recorded (M/F), since role can't be reliably determined then.
+    if (
+      (dto.type === 'BIOLOGICAL' || dto.type === 'ADOPTED') &&
+      (parent.gender === 'M' || parent.gender === 'F')
+    ) {
+      const existingSameGenderParent = await this.prisma.memberRelationship.findFirst({
         where: {
           child_id: dto.childId,
           type: { in: ['BIOLOGICAL', 'ADOPTED'] },
+          parent: { gender: parent.gender },
         },
       });
-      if (existingParent) {
-        throw new BadRequestException('A member can only have one biological or adopted parent');
+      if (existingSameGenderParent) {
+        const label = parent.gender === 'M' ? 'a father' : 'a mother';
+        throw new BadRequestException(`This member already has ${label}`);
       }
+    }
+
+    const duplicate = await this.prisma.memberRelationship.findFirst({
+      where: { parent_id: dto.parentId, child_id: dto.childId, type: dto.type },
+    });
+    if (duplicate) {
+      throw new BadRequestException('This relationship already exists');
     }
 
     const relationship = await this.prisma.memberRelationship.create({

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Redis as UpstashRedis } from '@upstash/redis';
 
@@ -29,21 +29,56 @@ export interface FamilyChartNode {
 
 @Injectable()
 export class TreeService {
+  private readonly logger = new Logger(TreeService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
   ) { }
 
+  // ─── Redis best-effort wrappers ───────────────────────────────────────────
+  // The cache is an optimization, never a hard dependency. If Upstash is
+  // unreachable (network blip, paused free-tier instance, missing creds),
+  // reads/writes degrade to a no-op so the DB-backed path still serves the
+  // request instead of 500ing.
+
+  private async safeCacheGet<T>(key: string): Promise<T | null> {
+    try {
+      const v = await this.redis.get<any>(key);
+      if (v == null) return null;
+      return (typeof v === 'string' ? JSON.parse(v) : v) as T;
+    } catch (err) {
+      this.logger.warn(`Redis GET ${key} failed, falling back to DB: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  private async safeCacheSet(key: string, value: unknown): Promise<void> {
+    try {
+      await this.redis.set(key, JSON.stringify(value), { ex: CACHE_TTL });
+    } catch (err) {
+      this.logger.warn(`Redis SET ${key} failed (non-fatal): ${(err as Error).message}`);
+    }
+  }
+
+  private async safeCacheDel(key: string): Promise<void> {
+    try {
+      await this.redis.del(key);
+    } catch (err) {
+      this.logger.warn(`Redis DEL ${key} failed (non-fatal): ${(err as Error).message}`);
+    }
+  }
+
   // ─── Full chart ───────────────────────────────────────────────────────────
 
   async getFamilyTreeChart(): Promise<{ nodes: FamilyChartNode[]; generatedAt: string }> {
-    const cached = await this.redis.get<any>(CACHE_KEY_FULL);
-    if (cached) return typeof cached === 'string' ? JSON.parse(cached) : cached;
+    const cached = await this.safeCacheGet<{ nodes: FamilyChartNode[]; generatedAt: string }>(CACHE_KEY_FULL);
+    if (cached) return cached;
     return this.buildAndCache();
   }
 
   async regenerateFamilyTreeChart() {
-    await this.redis.del(CACHE_KEY_FULL);
+    await this.safeCacheDel(CACHE_KEY_FULL);
     return this.buildAndCache();
   }
 
@@ -60,78 +95,70 @@ export class TreeService {
     const nodes: FamilyChartNode[] = members.map((m) => this.memberToNode(m));
 
     const result = { nodes, generatedAt: new Date().toISOString() };
-    await this.redis.set(CACHE_KEY_FULL, JSON.stringify(result), { ex: CACHE_TTL });
+    await this.safeCacheSet(CACHE_KEY_FULL, result);
     return result;
   }
 
   // ─── Subtree (4-generation BFS from root) ─────────────────────────────────
 
   async getFamilySubTreeChart(memberId: string) {
-    const root = await this.prisma.member.findUnique({
-      where: { id: memberId },
-      include: {
-        profile: true,
-        parent_relationships: true,
-        child_relationships: true,
-      },
-    });
-    if (!root) throw new NotFoundException(`Member ${memberId} not found`);
+    // Collect every member id in the 4-generation subtree (root + siblings at
+    // the root generation + spouses + descendants) in ONE recursive CTE,
+    // replacing the previous BFS that fired O(nodes × 3-4) sequential queries.
+    // Same pattern as relationships.service getAncestors/getDescendants.
+    // A node only expands while its generation < MAX-1 (so the deepest ring is
+    // leaves), mirroring the old BFS `continue` guard. UNION (not UNION ALL)
+    // dedupes (id, gen) rows so spouse/sibling cycles terminate.
+    const maxDepth = MAX_SUBTREE_GENERATIONS - 1;
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      WITH RECURSIVE sub AS (
+        SELECT id, 0 AS gen
+        FROM members
+        WHERE id = ${memberId}::uuid
 
-    const visitedIds = new Set<string>([memberId]);
-    const queue: Array<{ id: string; gen: number }> = [{ id: memberId, gen: 0 }];
-    const allMemberIds: string[] = [memberId];
+        UNION
 
-    while (queue.length > 0) {
-      const { id, gen } = queue.shift()!;
-      if (gen >= MAX_SUBTREE_GENERATIONS - 1) continue;
+        SELECT e.next_id, e.next_gen
+        FROM sub s
+        JOIN LATERAL (
+          -- spouse: same generation, either direction
+          SELECT CASE WHEN mr.parent_id = s.id THEN mr.child_id ELSE mr.parent_id END AS next_id,
+                 s.gen AS next_gen
+          FROM member_relationships mr
+          WHERE mr.type = 'SPOUSE'
+            AND (mr.parent_id = s.id OR mr.child_id = s.id)
+            AND s.gen < ${maxDepth}
 
-      const member = await this.prisma.member.findUnique({
-        where: { id },
-        include: { parent_relationships: true, child_relationships: true },
-      });
-      if (!member) continue;
+          UNION ALL
 
-      // Add spouses (same generation)
-      const spouseRels = await this.prisma.memberRelationship.findMany({
-        where: { OR: [{ parent_id: id }, { child_id: id }], type: 'SPOUSE' },
-      });
-      for (const rel of (spouseRels || [])) {
-        const spouseId = rel.parent_id === id ? rel.child_id : rel.parent_id;
-        if (!visitedIds.has(spouseId)) {
-          visitedIds.add(spouseId);
-          allMemberIds.push(spouseId);
-          queue.push({ id: spouseId, gen }); // same generation
-        }
-      }
+          -- children: next generation, while within the depth cap
+          SELECT mr.child_id, s.gen + 1
+          FROM member_relationships mr
+          WHERE mr.parent_id = s.id
+            AND mr.type IN ('BIOLOGICAL', 'ADOPTED')
+            AND s.gen < ${maxDepth}
 
-      // Add children (next generation)
-      for (const childRel of member.parent_relationships) {
-        if (!visitedIds.has(childRel.child_id)) {
-          visitedIds.add(childRel.child_id);
-          allMemberIds.push(childRel.child_id);
-          queue.push({ id: childRel.child_id, gen: gen + 1 });
-        }
-      }
+          UNION ALL
 
-      // Add siblings (same generation — share same parent)
-      if (gen === 0) {
-        const parentRels = await this.prisma.memberRelationship.findMany({
-          where: { child_id: id, type: { in: ['BIOLOGICAL', 'ADOPTED'] } },
-        });
-        for (const parentRel of (parentRels || [])) {
-          const siblings = await this.prisma.memberRelationship.findMany({
-            where: { parent_id: parentRel.parent_id, type: { in: ['BIOLOGICAL', 'ADOPTED'] } },
-          });
-          for (const sib of siblings) {
-            if (!visitedIds.has(sib.child_id)) {
-              visitedIds.add(sib.child_id);
-              allMemberIds.push(sib.child_id);
-              queue.push({ id: sib.child_id, gen });
-            }
-          }
-        }
-      }
+          -- siblings: only at the root generation (share a parent)
+          SELECT mr2.child_id, s.gen
+          FROM member_relationships mr1
+          JOIN member_relationships mr2
+            ON mr2.parent_id = mr1.parent_id
+           AND mr2.type IN ('BIOLOGICAL', 'ADOPTED')
+          WHERE mr1.child_id = s.id
+            AND mr1.type IN ('BIOLOGICAL', 'ADOPTED')
+            AND s.gen = 0
+        ) e ON true
+      )
+      SELECT DISTINCT id FROM sub
+    `;
+
+    if (rows.length === 0) {
+      throw new NotFoundException(`Member ${memberId} not found`);
     }
+
+    const allMemberIds = rows.map((r) => r.id);
 
     const subtreeMembers = await this.prisma.member.findMany({
       where: { id: { in: allMemberIds } },
@@ -149,26 +176,56 @@ export class TreeService {
   // ─── Stats ────────────────────────────────────────────────────────────────
 
   async getStats() {
-    const cached = await this.redis.get<any>(CACHE_KEY_STATS);
-    if (cached) {
-      const report = typeof cached === 'string' ? JSON.parse(cached) : cached;
-      return { ...report, cacheStatus: 'hit' };
+    const cached = await this.safeCacheGet<Record<string, unknown>>(CACHE_KEY_STATS);
+    // Only trust the cache if it carries the full shape the dashboard needs;
+    // older cache entries (or the background task's partial shape) are ignored
+    // so the UI never renders with missing fields.
+    if (cached && 'born20th21st' in cached && 'lastUpdate' in cached) {
+      return { ...cached, cacheStatus: 'hit' };
     }
 
-    const [totalMembers, deceasedCount, maxGen] = await Promise.all([
-      this.prisma.member.count(),
-      this.prisma.member.count({ where: { deathDate: { not: null } } }),
-      this.prisma.profile.aggregate({ _max: { generation: true } }),
-    ]);
+    const report = await this.computeStats();
+    await this.safeCacheSet(CACHE_KEY_STATS, report);
+    return { ...report, cacheStatus: 'miss' };
+  }
 
-    const report = {
+  // Computes the full report shape the frontend dashboard expects:
+  // { totalMembers, generations, deceased, born20th21st, lastUpdate }.
+  // `generation`/`totalGenerations` kept as aliases for backward compat.
+  async computeStats() {
+    const [totalMembers, deceasedCount, maxGen, birthMembers, latestProfile] =
+      await Promise.all([
+        this.prisma.member.count(),
+        this.prisma.member.count({ where: { deathDate: { not: null } } }),
+        this.prisma.profile.aggregate({ _max: { generation: true } }),
+        this.prisma.member.findMany({
+          where: { birthDate: { not: null } },
+          select: { birthDate: true },
+        }),
+        this.prisma.profile.aggregate({ _max: { updated_at: true } }),
+      ]);
+
+    // birthDate is a free-form String; count those parsing to a year in 1901–2100.
+    let born20th21st = 0;
+    for (const m of birthMembers) {
+      const year = new Date(m.birthDate as string).getFullYear();
+      if (year >= 1901 && year <= 2100) born20th21st++;
+    }
+
+    const generations = maxGen._max.generation || 0;
+    const lastUpdate = latestProfile._max.updated_at
+      ? latestProfile._max.updated_at.toISOString().split('T')[0]
+      : null;
+
+    return {
       totalMembers,
-      totalGenerations: maxGen._max.generation || 0,
+      generations,
+      totalGenerations: generations, // backward-compat alias
       deceased: deceasedCount,
+      born20th21st,
+      lastUpdate,
       generatedAt: new Date().toISOString(),
     };
-
-    return { ...report, cacheStatus: 'miss' };
   }
 
   // ─── Tree CRUD ────────────────────────────────────────────────────────────

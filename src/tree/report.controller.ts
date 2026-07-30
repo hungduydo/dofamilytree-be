@@ -1,0 +1,22 @@
+import { Controller, Get, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/jwt.guard';
+import { TreeService } from './tree.service';
+
+// Backwards-compatible endpoint the frontend dashboard consumes.
+// Wraps TreeService stats in the { data: { stats } } envelope the FE's
+// getCachedReport() expects (res.data.data.stats).
+@ApiTags('Report')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Controller('report')
+export class ReportController {
+  constructor(private readonly treeService: TreeService) {}
+
+  @Get('cached')
+  @ApiOperation({ summary: 'Cached family tree stats for the dashboard' })
+  async getCachedReport() {
+    const stats = await this.treeService.getStats();
+    return { data: { stats } };
+  }
+}

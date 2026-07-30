@@ -28,12 +28,14 @@ class UpdateTreeDto {
 export class TreeController {
   constructor(private readonly treeService: TreeService) {}
 
+  @Public()
   @Get('chart')
   @ApiOperation({ summary: 'Get full family tree chart (Redis cached, 1h TTL)' })
   getChart() {
     return this.treeService.getFamilyTreeChart();
   }
 
+  @Public()
   @Get('chart/:memberId')
   @ApiOperation({ summary: 'Get 4-generation subtree from member' })
   getSubTreeChart(@Param('memberId') memberId: string) {
