@@ -12,7 +12,8 @@
       "Bash(lsof -ti:3002)",
       "Bash(git add src/tree/tree.service.ts)",
       "Bash(git commit:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(node -e ' *)"
     ]
   }
 }
