@@ -1,0 +1,2267 @@
+
+openapi: 3.0.0
+paths:
+  /v2/status:
+    get:
+      operationId: AppController_getStatus
+      summary: Check API status
+      parameters: []
+      responses:
+        200:
+          description: ""
+      tags:
+        - System
+  /v2:
+    get:
+      operationId: AppController_getRoot
+      summary: API Root
+      parameters: []
+      responses:
+        200:
+          description: ""
+      tags:
+        - System
+  /v2/auth/register:
+    post:
+      operationId: AuthController_register
+      summary: "Register a new user (multipart: optional profilePicture)"
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/RegisterDto"
+      responses:
+        201:
+          description: ""
+      tags:
+        - Auth
+  /v2/auth/login:
+    post:
+      operationId: AuthController_login
+      summary: Login and receive JWT token
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginDto"
+      responses:
+        200:
+          description: ""
+      tags:
+        - Auth
+  /v2/auth/logout:
+    post:
+      operationId: AuthController_logout
+      summary: Logout (client should discard JWT)
+      parameters: []
+      responses:
+        200:
+          description: ""
+      tags:
+        - Auth
+      security:
+        - 
+          bearer: []
+  /v2/auth/change-password:
+    post:
+      operationId: AuthController_changePassword
+      summary: Change password (requires current password verification)
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordDto"
+      responses:
+        200:
+          description: ""
+      tags:
+        - Auth
+      security:
+        - 
+          bearer: []
+  /v2/auth/me:
+    get:
+      operationId: AuthController_getMe
+      summary: Get current authenticated user info
+      parameters: []
+      responses:
+        200:
+          description: ""
+      tags:
+        - Auth
+      security:
+        - 
+          bearer: []
+  /v2/auth/roles:
+    get:
+      operationId: AuthController_getRoles
+      summary: Get list of available roles
+      parameters: []
+      responses:
+        200:
+          description: ""
+      tags:
+        - Auth
+      security:
+        - 
+          bearer: []
+  /v2/auth/users/{userId}/roles:
+    put:
+      operationId: AuthController_assignRoles
+      summary: Assign roles to a user (admin only)
+      parameters:
+        - 
+          name: userId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRolesDto"
+      responses:
+        200:
+          description: ""
+      tags:
+        - Auth
+      security:
+        - 
+          bearer: []
+  /v2/queue/callback/{task}:
+    post:
+      operationId: QueueController_handleCallback
+      parameters:
+        - 
+          name: task
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        201:
+          description: ""
+  /v2/members/committee:
+    get:
+      operationId: MembersController_getCommitteeMembers
+      summary: Get committee/council members (public)
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommitteeMemberDto"
+      tags:
+        - Members
+      security:
+        - 
+          bearer: []
+  /v2/members/notable:
+    get:
+      operationId: MembersController_getNotableMembers
+      summary: Get notable/distinguished members (public)
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotableMemberDto"
+      tags:
+        - Members
+      security:
+        - 
+          bearer: []
+  /v2/members:
+    get:
+      operationId: MembersController_getAllMembers
+      summary: Get all members (paginated)
+      parameters:
+        - 
+          name: page
+          required: false
+          in: query
+          schema:
+            type: number
+        - 
+          name: pageSize
+          required: false
+          in: query
+          schema:
+            type: number
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedMembersResponseDto"
+      tags:
+        - Members
+      security:
+        - 
+          bearer: []
+    post:
+      operationId: MembersController_createMember
+      summary: Create new member + profile
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMemberDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberResponseDto"
+      tags:
+        - Members
+      security:
+        - 
+          bearer: []
+  /v2/members/search:
+    get:
+      operationId: MembersController_searchMembers
+      summary: Search members by name (Vietnamese-insensitive)
+      parameters:
+        - 
+          name: name
+          required: true
+          in: query
+          schema:
+            type: string
+        - 
+          name: includeProfile
+          required: false
+          in: query
+          schema:
+            type: boolean
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemberResponseDto"
+      tags:
+        - Members
+      security:
+        - 
+          bearer: []
+  /v2/members/{id}:
+    get:
+      operationId: MembersController_getMemberById
+      summary: Get member basic info
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberResponseDto"
+      tags:
+        - Members
+      security:
+        - 
+          bearer: []
+    delete:
+      operationId: MembersController_deleteMember
+      summary: "Delete member (cascade: profile, userMetadata)"
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: Deleted
+      tags:
+        - Members
+      security:
+        - 
+          bearer: []
+  /v2/members/{id}/profile:
+    get:
+      operationId: MembersController_getMemberProfile
+      summary: Get member with full profile + relationships
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberProfileResponseDto"
+      tags:
+        - Members
+      security:
+        - 
+          bearer: []
+    put:
+      operationId: MembersController_updateMemberProfile
+      summary: Update member profile (supports avatar upload)
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UpdateMemberDto"
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberResponseDto"
+      tags:
+        - Members
+      security:
+        - 
+          bearer: []
+  /v2/members/{id}/relationships:
+    get:
+      operationId: RelationshipsController_getRelationships
+      summary: Get all relationships for a member
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemberRelationshipResponseDto"
+      tags:
+        - Relationships
+      security:
+        - 
+          bearer: []
+  /v2/members/{id}/relationships/parents:
+    get:
+      operationId: RelationshipsController_getParents
+      summary: Get parents of a member
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemberRelationshipResponseDto"
+      tags:
+        - Relationships
+      security:
+        - 
+          bearer: []
+  /v2/members/{id}/relationships/children:
+    get:
+      operationId: RelationshipsController_getChildren
+      summary: Get children of a member
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemberRelationshipResponseDto"
+      tags:
+        - Relationships
+      security:
+        - 
+          bearer: []
+  /v2/members/{id}/relationships/spouses:
+    get:
+      operationId: RelationshipsController_getSpouses
+      summary: Get spouses of a member
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemberRelationshipResponseDto"
+      tags:
+        - Relationships
+      security:
+        - 
+          bearer: []
+  /v2/members/{id}/relationships/ancestors:
+    get:
+      operationId: RelationshipsController_getAncestors
+      summary: Get all ancestors (recursive)
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LineageMemberDto"
+      tags:
+        - Relationships
+      security:
+        - 
+          bearer: []
+  /v2/members/{id}/relationships/descendants:
+    get:
+      operationId: RelationshipsController_getDescendants
+      summary: Get all descendants (recursive)
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LineageMemberDto"
+      tags:
+        - Relationships
+      security:
+        - 
+          bearer: []
+  /v2/relationships/search:
+    get:
+      operationId: RelationshipsController_searchRelationships
+      summary: Search relationships by type, memberId, role
+      parameters:
+        - 
+          name: memberId
+          required: false
+          in: query
+          schema:
+            type: string
+        - 
+          name: type
+          required: false
+          in: query
+          schema:
+            enum:
+              - BIOLOGICAL
+              - ADOPTED
+              - SPOUSE
+            type: string
+        - 
+          name: role
+          required: false
+          in: query
+          schema:
+            enum:
+              - parent
+              - child
+              - spouse
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemberRelationshipResponseDto"
+      tags:
+        - Relationships
+      security:
+        - 
+          bearer: []
+  /v2/members/{memberId}/relationships:
+    post:
+      operationId: RelationshipsController_addRelationship
+      summary: Add relationship between two members
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRelationshipDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberRelationshipResponseDto"
+      tags:
+        - Relationships
+      security:
+        - 
+          bearer: []
+  /v2/relationships/{id}:
+    delete:
+      operationId: RelationshipsController_deleteRelationship
+      summary: Delete a relationship
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: Deleted
+      tags:
+        - Relationships
+      security:
+        - 
+          bearer: []
+  /v2/tree/chart:
+    get:
+      operationId: TreeController_getChart
+      summary: Get full family tree chart (Redis cached, 1h TTL)
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyTreeChartResponseDto"
+      tags:
+        - Tree
+      security:
+        - 
+          bearer: []
+  /v2/tree/chart/{memberId}:
+    get:
+      operationId: TreeController_getSubTreeChart
+      summary: Get 4-generation subtree from member
+      parameters:
+        - 
+          name: memberId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyTreeChartResponseDto"
+      tags:
+        - Tree
+      security:
+        - 
+          bearer: []
+  /v2/tree/regenerate:
+    post:
+      operationId: TreeController_regenerate
+      summary: Force regenerate tree chart + invalidate Redis cache
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyTreeChartResponseDto"
+      tags:
+        - Tree
+      security:
+        - 
+          bearer: []
+  /v2/tree/stats:
+    get:
+      operationId: TreeController_getStats
+      summary: Get tree statistics + cache status
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsResponseDto"
+      tags:
+        - Tree
+      security:
+        - 
+          bearer: []
+  /v2/tree/home:
+    get:
+      operationId: TreeController_getHomeTrees
+      summary: Get trees with show=true (for homepage)
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TreeRecordDto"
+      tags:
+        - Tree
+      security:
+        - 
+          bearer: []
+  /v2/tree:
+    get:
+      operationId: TreeController_getAllTrees
+      summary: List all tree records
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TreeRecordDto"
+      tags:
+        - Tree
+      security:
+        - 
+          bearer: []
+    post:
+      operationId: TreeController_createTree
+      summary: Create new tree record (branch)
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTreeDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TreeRecordDto"
+      tags:
+        - Tree
+      security:
+        - 
+          bearer: []
+  /v2/tree/{id}:
+    get:
+      operationId: TreeController_getTreeById
+      summary: Get tree by ID
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TreeRecordDto"
+      tags:
+        - Tree
+      security:
+        - 
+          bearer: []
+    put:
+      operationId: TreeController_updateTree
+      summary: Update tree record
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTreeDto"
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TreeRecordDto"
+      tags:
+        - Tree
+      security:
+        - 
+          bearer: []
+    delete:
+      operationId: TreeController_deleteTree
+      summary: Delete tree record
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: Deleted
+      tags:
+        - Tree
+      security:
+        - 
+          bearer: []
+  /v2/report/cached:
+    get:
+      operationId: ReportController_getCachedReport
+      summary: Cached family tree stats for the dashboard
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CachedReportResponseDto"
+      tags:
+        - Report
+      security:
+        - 
+          bearer: []
+  /v2/events/gallery:
+    get:
+      operationId: EventsController_getGallery
+      summary: Get highlighted events with images for homepage gallery (public)
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EventResponseDto"
+      tags:
+        - Events (Sự kiện dòng họ)
+      security:
+        - 
+          bearer: []
+  /v2/events:
+    get:
+      operationId: EventsController_getEvents
+      summary: "Get events (filter: highlight, fromDate, toDate)"
+      parameters:
+        - 
+          name: highlight
+          required: false
+          in: query
+          schema:
+            type: boolean
+        - 
+          name: fromDate
+          required: false
+          in: query
+          schema:
+            type: string
+        - 
+          name: toDate
+          required: false
+          in: query
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EventResponseDto"
+      tags:
+        - Events (Sự kiện dòng họ)
+      security:
+        - 
+          bearer: []
+    post:
+      operationId: EventsController_create
+      summary: Create event + emit notification queue
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEventDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventResponseDto"
+      tags:
+        - Events (Sự kiện dòng họ)
+      security:
+        - 
+          bearer: []
+  /v2/events/{id}:
+    get:
+      operationId: EventsController_getById
+      summary: Get event by ID
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventResponseDto"
+      tags:
+        - Events (Sự kiện dòng họ)
+      security:
+        - 
+          bearer: []
+    put:
+      operationId: EventsController_update
+      summary: Update event
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEventDto"
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventResponseDto"
+      tags:
+        - Events (Sự kiện dòng họ)
+      security:
+        - 
+          bearer: []
+    delete:
+      operationId: EventsController_delete
+      summary: Delete event
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: Deleted
+      tags:
+        - Events (Sự kiện dòng họ)
+      security:
+        - 
+          bearer: []
+  /v2/anniversaries:
+    get:
+      operationId: AnniversariesController_getAnniversaries
+      summary: Get anniversaries (filter by member_id, month)
+      parameters:
+        - 
+          name: member_id
+          required: false
+          in: query
+          schema:
+            type: string
+        - 
+          name: month
+          required: false
+          in: query
+          schema:
+            type: number
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnniversaryResponseDto"
+      tags:
+        - Anniversaries (Ngày giỗ)
+      security:
+        - 
+          bearer: []
+    post:
+      operationId: AnniversariesController_create
+      summary: Create anniversary (optional member link)
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAnniversaryDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnniversaryResponseDto"
+      tags:
+        - Anniversaries (Ngày giỗ)
+      security:
+        - 
+          bearer: []
+  /v2/anniversaries/upcoming:
+    get:
+      operationId: AnniversariesController_getUpcoming
+      summary: Get upcoming anniversaries (next 30 days)
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnniversaryResponseDto"
+      tags:
+        - Anniversaries (Ngày giỗ)
+      security:
+        - 
+          bearer: []
+  /v2/anniversaries/{id}:
+    get:
+      operationId: AnniversariesController_getById
+      summary: Get anniversary by ID
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnniversaryResponseDto"
+      tags:
+        - Anniversaries (Ngày giỗ)
+      security:
+        - 
+          bearer: []
+    put:
+      operationId: AnniversariesController_update
+      summary: Update anniversary
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAnniversaryDto"
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnniversaryResponseDto"
+      tags:
+        - Anniversaries (Ngày giỗ)
+      security:
+        - 
+          bearer: []
+    delete:
+      operationId: AnniversariesController_delete
+      summary: Delete anniversary
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: Deleted
+      tags:
+        - Anniversaries (Ngày giỗ)
+      security:
+        - 
+          bearer: []
+  /v2/media/upload:
+    post:
+      operationId: MediaController_uploadMedia
+      summary: Upload image → emit image-process queue (sharp compress + Vercel Blob)
+      parameters: []
+      responses:
+        201:
+          description: ""
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/media:
+    get:
+      operationId: MediaController_getMedia
+      summary: List media (filter by uploader_id)
+      parameters:
+        - 
+          name: uploader_id
+          required: false
+          in: query
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/media/{id}:
+    delete:
+      operationId: MediaController_deleteMedia
+      summary: Delete media record + Vercel Blob file
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: ""
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/graves:
+    get:
+      operationId: GravesController_getAllGraves
+      summary: List all graves (filter by name)
+      parameters:
+        - 
+          name: name
+          required: false
+          in: query
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GraveResponseDto"
+      tags:
+        - Graves (Mộ phần)
+      security:
+        - 
+          bearer: []
+    post:
+      operationId: GravesController_createGrave
+      summary: Create new grave with GPS coordinates
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGraveDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraveResponseDto"
+      tags:
+        - Graves (Mộ phần)
+      security:
+        - 
+          bearer: []
+  /v2/graves/nearby:
+    get:
+      operationId: GravesController_getNearbyGraves
+      summary: Find graves near coordinates (lat, lng, radiusKm)
+      parameters:
+        - 
+          name: lat
+          required: true
+          in: query
+          schema:
+            type: number
+        - 
+          name: lng
+          required: true
+          in: query
+          schema:
+            type: number
+        - 
+          name: radiusKm
+          required: false
+          in: query
+          schema:
+            type: number
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GraveResponseDto"
+      tags:
+        - Graves (Mộ phần)
+      security:
+        - 
+          bearer: []
+  /v2/graves/{id}:
+    get:
+      operationId: GravesController_getGraveById
+      summary: Get grave by ID
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraveResponseDto"
+      tags:
+        - Graves (Mộ phần)
+      security:
+        - 
+          bearer: []
+    put:
+      operationId: GravesController_updateGrave
+      summary: Update grave info + coordinates
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGraveDto"
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraveResponseDto"
+      tags:
+        - Graves (Mộ phần)
+      security:
+        - 
+          bearer: []
+    delete:
+      operationId: GravesController_deleteGrave
+      summary: Delete grave
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: Deleted
+      tags:
+        - Graves (Mộ phần)
+      security:
+        - 
+          bearer: []
+info:
+  title: Family Tree API v2
+  description: "## Vietnamese Family Tree Management API\n\n**Base URL:** `http://localhost:3002/v2`\n\n**Authentication:** Bearer JWT token (same as backend v1)\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ mới (BIOLOGICAL/ADOPTED/SPOUSE) + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày giỗ (filter by member, month, upcoming)\n- **Events** — Sự kiện dòng họ + notification queue\n- **Media** — Upload ảnh → nén bằng sharp → Vercel Blob\n- **Graves** — Mộ phần với tọa độ GPS + tìm kiếm gần nhất\n\n### Queue Jobs (QStash + Redis)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → Vercel Blob → cập nhật avatar_url |\n| image-process | Upload media | sharp resize + compress → Vercel Blob |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| notification | New member/relationship/event | Log (Phase 1) |\n"
+  version: 2.0.0
+  contact:
+    name: Family Tree Team
+    url: ""
+    email: ""
+tags: []
+servers: []
+components:
+  securitySchemes:
+    JWT:
+      scheme: bearer
+      bearerFormat: JWT
+      type: http
+      in: header
+  schemas:
+    RegisterDto:
+      type: object
+      properties:
+        email:
+          type: string
+          example: user@example.com
+        password:
+          type: string
+          example: password123
+          minLength: 6
+        fullName:
+          type: string
+          example: Nguyen Van A
+        gender:
+          type: string
+          example: male
+        birthDate:
+          type: string
+          example: 1990-01-15
+        deathDate:
+          type: string
+          example: 2020-05-10
+        generation:
+          type: number
+          example: 3
+        occupation:
+          type: string
+          example: Software Engineer
+        address:
+          type: string
+          example: Hanoi, Vietnam
+        biography:
+          type: string
+          example: A brief biography...
+      required:
+        - email
+        - password
+        - fullName
+    LoginDto:
+      type: object
+      properties:
+        email:
+          type: string
+          example: user@example.com
+        password:
+          type: string
+          example: password123
+      required:
+        - email
+        - password
+    ChangePasswordDto:
+      type: object
+      properties:
+        currentPassword:
+          type: string
+          example: oldPassword123
+        newPassword:
+          type: string
+          example: newPassword456
+          minLength: 6
+      required:
+        - currentPassword
+        - newPassword
+    AssignRolesDto:
+      type: object
+      properties:
+        roles:
+          example:
+            - member
+            - editor
+          type: array
+          items:
+            type: string
+      required:
+        - roles
+    CommitteeMemberDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        role:
+          type: string
+          example: Trưởng ban
+          description: Lấy từ profile.occupation
+        avatar:
+          type: string
+          format: uri
+      required:
+        - id
+        - name
+        - role
+        - avatar
+    NotableMemberDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          description: Lấy từ profile.biography
+        avatar:
+          type: string
+          format: uri
+      required:
+        - id
+        - name
+        - description
+        - avatar
+    ProfileResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        member_id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+          example: Nguyễn Văn A
+        generation:
+          type: object
+          nullable: true
+          example: 5
+        biography:
+          type: object
+          nullable: true
+        occupation:
+          type: object
+          nullable: true
+          example: Kỹ sư phần mềm
+        address:
+          type: object
+          nullable: true
+          example: Hà Nội
+        notes:
+          type: object
+          nullable: true
+        committeeRole:
+          type: object
+          nullable: true
+          description: Vai trò trong ban/hội đồng
+        isCommittee:
+          type: boolean
+          default: false
+        isNotable:
+          type: boolean
+          default: false
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - member_id
+        - fullName
+        - isCommittee
+        - isNotable
+        - created_at
+        - updated_at
+    MemberResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        private_id:
+          type: object
+          nullable: true
+        name:
+          type: string
+          example: Nguyễn Văn A
+        normalized_name:
+          type: object
+          nullable: true
+          description: Tên đã bỏ dấu để tìm kiếm
+        avatar_url:
+          type: object
+          nullable: true
+          format: uri
+        gender:
+          type: string
+          nullable: true
+          enum:
+            - M
+            - F
+            - O
+            - U
+        birthDate:
+          type: object
+          nullable: true
+          example: 1990-01-01
+        deathDate:
+          type: object
+          nullable: true
+          example: 2020-12-31
+        created_at:
+          type: string
+          format: date-time
+        profile:
+          nullable: true
+          allOf:
+            - 
+              $ref: "#/components/schemas/ProfileResponseDto"
+      required:
+        - id
+        - name
+        - created_at
+    PaginatedMembersResponseDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberResponseDto"
+        total:
+          type: number
+          example: 120
+          description: Tổng số thành viên
+        page:
+          type: number
+          example: 1
+        pageSize:
+          type: number
+          example: 10
+      required:
+        - data
+        - total
+        - page
+        - pageSize
+    CreateMemberDto:
+      type: object
+      properties:
+        fullName:
+          type: string
+          example: Nguyễn Văn A
+        gender:
+          type: string
+          example: M
+          enum:
+            - M
+            - F
+            - O
+            - U
+        birthDate:
+          type: string
+          example: 1990-01-01
+        deathDate:
+          type: string
+          example: 2020-12-31
+        occupation:
+          type: string
+          example: Kỹ sư phần mềm
+        address:
+          type: string
+          example: Hà Nội
+        biography:
+          type: string
+        generation:
+          type: number
+      required:
+        - fullName
+        - gender
+    RelatedMemberDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        private_id:
+          type: object
+          nullable: true
+        name:
+          type: string
+          example: Nguyễn Văn A
+        normalized_name:
+          type: object
+          nullable: true
+          description: Tên đã bỏ dấu để tìm kiếm
+        avatar_url:
+          type: object
+          nullable: true
+          format: uri
+        gender:
+          type: string
+          nullable: true
+          enum:
+            - M
+            - F
+            - O
+            - U
+        birthDate:
+          type: object
+          nullable: true
+          example: 1990-01-01
+        deathDate:
+          type: object
+          nullable: true
+          example: 2020-12-31
+        created_at:
+          type: string
+          format: date-time
+        profile:
+          nullable: true
+          allOf:
+            - 
+              $ref: "#/components/schemas/ProfileResponseDto"
+      required:
+        - id
+        - name
+        - created_at
+    ProfileRelationshipDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        parent_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - BIOLOGICAL
+            - ADOPTED
+            - SPOUSE
+        note:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        parent:
+          description: Có mặt cho quan hệ cha/mẹ
+          allOf:
+            - 
+              $ref: "#/components/schemas/RelatedMemberDto"
+        child:
+          description: Có mặt cho quan hệ con
+          allOf:
+            - 
+              $ref: "#/components/schemas/RelatedMemberDto"
+      required:
+        - id
+        - parent_id
+        - child_id
+        - type
+        - created_at
+    MemberProfileResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        private_id:
+          type: object
+          nullable: true
+        name:
+          type: string
+          example: Nguyễn Văn A
+        normalized_name:
+          type: object
+          nullable: true
+          description: Tên đã bỏ dấu để tìm kiếm
+        avatar_url:
+          type: object
+          nullable: true
+          format: uri
+        gender:
+          type: string
+          nullable: true
+          enum:
+            - M
+            - F
+            - O
+            - U
+        birthDate:
+          type: object
+          nullable: true
+          example: 1990-01-01
+        deathDate:
+          type: object
+          nullable: true
+          example: 2020-12-31
+        created_at:
+          type: string
+          format: date-time
+        profile:
+          nullable: true
+          allOf:
+            - 
+              $ref: "#/components/schemas/ProfileResponseDto"
+        parent_relationships:
+          description: Quan hệ mà member là con (chứa parent)
+          type: array
+          items:
+            $ref: "#/components/schemas/ProfileRelationshipDto"
+        child_relationships:
+          description: Quan hệ mà member là cha/mẹ (chứa child)
+          type: array
+          items:
+            $ref: "#/components/schemas/ProfileRelationshipDto"
+      required:
+        - id
+        - name
+        - created_at
+        - parent_relationships
+        - child_relationships
+    UpdateMemberDto:
+      type: object
+      properties:
+        fullName:
+          type: string
+        gender:
+          type: string
+          enum:
+            - M
+            - F
+            - O
+            - U
+        birthDate:
+          type: string
+        deathDate:
+          type: string
+        occupation:
+          type: string
+        address:
+          type: string
+        biography:
+          type: string
+        notes:
+          type: string
+        generation:
+          type: number
+    MemberRelationshipResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        parent_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - BIOLOGICAL
+            - ADOPTED
+            - SPOUSE
+        note:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        parent:
+          $ref: "#/components/schemas/MemberResponseDto"
+        child:
+          $ref: "#/components/schemas/MemberResponseDto"
+      required:
+        - id
+        - parent_id
+        - child_id
+        - type
+        - created_at
+    LineageMemberDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        gender:
+          type: string
+          nullable: true
+          enum:
+            - M
+            - F
+            - O
+            - U
+        avatar_url:
+          type: object
+          nullable: true
+          format: uri
+        depth:
+          type: number
+          example: 1
+          description: Số thế hệ cách member gốc
+      required:
+        - id
+        - name
+        - depth
+    CreateRelationshipDto:
+      type: object
+      properties:
+        parentId:
+          type: string
+          example: uuid-parent
+        childId:
+          type: string
+          example: uuid-child
+        type:
+          type: string
+          enum:
+            - BIOLOGICAL
+            - ADOPTED
+            - SPOUSE
+        note:
+          type: string
+          example: Con nuôi từ năm 1990
+      required:
+        - parentId
+        - childId
+        - type
+    FamilyChartRelsDto:
+      type: object
+      properties:
+        spouses:
+          type: array
+          items:
+            type: string
+            format: uuid
+        father:
+          type: string
+          format: uuid
+        mother:
+          type: string
+          format: uuid
+        children:
+          type: array
+          items:
+            type: string
+            format: uuid
+    FamilyChartDataDto:
+      type: object
+      properties:
+        gender:
+          type: string
+          enum:
+            - M
+            - F
+            - O
+            - U
+        fn:
+          type: string
+          description: First name
+        ln:
+          type: string
+          description: Last name / surname
+        label:
+          type: string
+        birthday:
+          type: string
+        avatar:
+          type: string
+          format: uri
+        generation:
+          type: number
+        desc:
+          type: string
+      required:
+        - gender
+        - fn
+        - ln
+        - label
+    FamilyChartNodeDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        rels:
+          $ref: "#/components/schemas/FamilyChartRelsDto"
+        data:
+          $ref: "#/components/schemas/FamilyChartDataDto"
+      required:
+        - id
+        - rels
+        - data
+    FamilyTreeChartResponseDto:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/FamilyChartNodeDto"
+        generatedAt:
+          type: string
+          format: date-time
+      required:
+        - nodes
+        - generatedAt
+    StatsResponseDto:
+      type: object
+      properties:
+        totalMembers:
+          type: number
+          example: 120
+        generations:
+          type: number
+          example: 5
+        totalGenerations:
+          type: number
+          example: 5
+          description: Alias của generations (backward-compat)
+        deceased:
+          type: number
+          example: 30
+          description: Số thành viên đã mất
+        born20th21st:
+          type: number
+          example: 80
+          description: Sinh trong khoảng 1901–2100
+        lastUpdate:
+          type: object
+          nullable: true
+          example: 2026-07-31
+        generatedAt:
+          type: string
+          format: date-time
+        cacheStatus:
+          type: string
+          enum:
+            - hit
+            - miss
+          description: Trạng thái Redis cache
+      required:
+        - totalMembers
+        - generations
+        - totalGenerations
+        - deceased
+        - born20th21st
+        - generatedAt
+        - cacheStatus
+    TreeRecordDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        owner_id:
+          type: string
+          format: uuid
+        title:
+          type: object
+          nullable: true
+        description:
+          type: object
+          nullable: true
+        image:
+          type: object
+          nullable: true
+          format: uri
+        show:
+          type: boolean
+          default: false
+          description: Hiện trên trang chủ
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - owner_id
+        - show
+        - created_at
+    CreateTreeDto:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        image:
+          type: string
+          format: uri
+        owner_id:
+          type: string
+          format: uuid
+        show:
+          type: boolean
+          default: false
+      required:
+        - owner_id
+    UpdateTreeDto:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        image:
+          type: string
+          format: uri
+        show:
+          type: boolean
+    CachedReportDataDto:
+      type: object
+      properties:
+        stats:
+          $ref: "#/components/schemas/StatsResponseDto"
+      required:
+        - stats
+    CachedReportResponseDto:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/CachedReportDataDto"
+      required:
+        - data
+    EventResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Giỗ tổ dòng họ
+        description:
+          type: object
+          nullable: true
+        images:
+          description: Ảnh sự kiện
+          type: array
+          items:
+            type: string
+            format: uri
+        highlight:
+          type: boolean
+          default: false
+          description: Nổi bật trên trang chủ
+        date:
+          type: string
+          nullable: true
+          format: date-time
+        location:
+          type: object
+          nullable: true
+          example: Nhà thờ họ
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - images
+        - highlight
+        - created_at
+        - updated_at
+    CreateEventDto:
+      type: object
+      properties:
+        title:
+          type: string
+          example: Họp Mặt Dòng Họ 2024
+        description:
+          type: string
+        date:
+          format: date-time
+          type: string
+          example: 2024-08-15T00:00:00.000Z
+        location:
+          type: string
+        highlight:
+          type: boolean
+          default: false
+        images:
+          type: array
+          items:
+            type: string
+      required:
+        - title
+    UpdateEventDto:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        date:
+          format: date-time
+          type: string
+        location:
+          type: string
+        highlight:
+          type: boolean
+        images:
+          type: array
+          items:
+            type: string
+    AnniversaryResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Giỗ cụ Nguyễn Văn A
+        date:
+          type: string
+          format: date-time
+        description:
+          type: object
+          nullable: true
+        member_id:
+          type: object
+          nullable: true
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        member:
+          nullable: true
+          allOf:
+            - 
+              $ref: "#/components/schemas/MemberResponseDto"
+      required:
+        - id
+        - title
+        - date
+        - created_at
+        - updated_at
+    CreateAnniversaryDto:
+      type: object
+      properties:
+        title:
+          type: string
+          example: Giỗ Ông Nội
+        date:
+          format: date-time
+          type: string
+          example: 2024-03-15T00:00:00.000Z
+        description:
+          type: string
+        member_id:
+          type: string
+          description: Link to a member (optional)
+      required:
+        - title
+        - date
+    UpdateAnniversaryDto:
+      type: object
+      properties:
+        title:
+          type: string
+        date:
+          format: date-time
+          type: string
+        description:
+          type: string
+        member_id:
+          type: string
+    GraveResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Nghĩa trang dòng họ Nguyễn
+        latitude:
+          type: number
+          example: 21.028511
+          description: Vĩ độ
+        longitude:
+          type: number
+          example: 105.804817
+          description: Kinh độ
+        description:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - latitude
+        - longitude
+        - created_at
+        - updated_at
+    CreateGraveDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Mộ Nguyễn Văn A
+        latitude:
+          type: number
+          example: 10.7769
+        longitude:
+          type: number
+          example: 106.7009
+        description:
+          type: string
+          example: Nghĩa trang Bình Hưng Hòa
+      required:
+        - name
+        - latitude
+        - longitude
+    UpdateGraveDto:
+      type: object
+      properties:
+        name:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        description:
+          type: string

@@ -1,10 +1,14 @@
 import {
   Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, HttpCode, HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags, ApiBearerAuth, ApiOperation, ApiQuery,
+  ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { GravesService } from './graves.service';
 import { CreateGraveDto, UpdateGraveDto } from './dto/create-grave.dto';
+import { GraveResponseDto } from './dto/grave-response.dto';
 
 @ApiTags('Graves (Mộ phần)')
 @ApiBearerAuth()
@@ -16,6 +20,7 @@ export class GravesController {
   @Get()
   @ApiOperation({ summary: 'List all graves (filter by name)' })
   @ApiQuery({ name: 'name', required: false })
+  @ApiOkResponse({ type: [GraveResponseDto] })
   getAllGraves(@Query('name') name?: string) {
     return this.gravesService.getAllGraves({ name });
   }
@@ -25,6 +30,7 @@ export class GravesController {
   @ApiQuery({ name: 'lat', required: true, type: Number })
   @ApiQuery({ name: 'lng', required: true, type: Number })
   @ApiQuery({ name: 'radiusKm', required: false, type: Number })
+  @ApiOkResponse({ type: [GraveResponseDto] })
   getNearbyGraves(
     @Query('lat') lat: string,
     @Query('lng') lng: string,
@@ -39,18 +45,21 @@ export class GravesController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get grave by ID' })
+  @ApiOkResponse({ type: GraveResponseDto })
   getGraveById(@Param('id') id: string) {
     return this.gravesService.getGraveById(id);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create new grave with GPS coordinates' })
+  @ApiCreatedResponse({ type: GraveResponseDto })
   createGrave(@Body() dto: CreateGraveDto) {
     return this.gravesService.createGrave(dto);
   }
 
   @Put(':id')
   @ApiOperation({ summary: 'Update grave info + coordinates' })
+  @ApiOkResponse({ type: GraveResponseDto })
   updateGrave(@Param('id') id: string, @Body() dto: UpdateGraveDto) {
     return this.gravesService.updateGrave(id, dto);
   }
@@ -58,6 +67,7 @@ export class GravesController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete grave' })
+  @ApiNoContentResponse({ description: 'Deleted' })
   deleteGrave(@Param('id') id: string) {
     return this.gravesService.deleteGrave(id);
   }
