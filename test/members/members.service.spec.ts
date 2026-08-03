@@ -3,7 +3,8 @@ import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { MembersService } from '../../src/members/members.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { QStashService } from '../../src/queue/qstash.service';
-import { QUEUE_AVATAR_UPLOAD, QUEUE_REPORT_GENERATE, QUEUE_NOTIFICATION } from '../../src/queue/queue.constants';
+import { TasksService } from '../../src/queue/tasks.service';
+import { QUEUE_REPORT_GENERATE, QUEUE_NOTIFICATION } from '../../src/queue/queue.constants';
 
 const mockPrisma = {
   member: {
@@ -27,6 +28,7 @@ const mockPrisma = {
 };
 
 const mockQStashService = { publish: jest.fn().mockResolvedValue({}) };
+const mockTasksService = { handleAvatarUpload: jest.fn().mockResolvedValue(undefined) };
 
 describe('MembersService', () => {
   let service: MembersService;
@@ -37,6 +39,7 @@ describe('MembersService', () => {
         MembersService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: QStashService, useValue: mockQStashService },
+        { provide: TasksService, useValue: mockTasksService },
       ],
     }).compile();
 
@@ -164,7 +167,7 @@ describe('MembersService', () => {
       await expect(service.updateMemberProfile('bad-id', { fullName: 'X', gender: 'M' })).rejects.toThrow(NotFoundException);
     });
 
-    it('should queue avatar upload when file is provided', async () => {
+    it('should upload the avatar directly when a file is provided', async () => {
       mockPrisma.member.findUnique.mockResolvedValue({ id: 'uuid-1', profile: { id: 'p-1' } });
       mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
       mockPrisma.member.update.mockResolvedValue({ id: 'uuid-1' });
@@ -172,8 +175,9 @@ describe('MembersService', () => {
 
       const mockFile = { buffer: Buffer.from('img'), originalname: 'avatar.jpg', mimetype: 'image/jpeg' } as Express.Multer.File;
       await service.updateMemberProfile('uuid-1', { fullName: 'X', gender: 'M' }, mockFile);
-      expect(mockQStashService.publish).toHaveBeenCalledWith(
-        QUEUE_AVATAR_UPLOAD,
+      // Called directly (not via QStash) — the callback webhook needs a publicly
+      // reachable APP_URL, which local dev doesn't have.
+      expect(mockTasksService.handleAvatarUpload).toHaveBeenCalledWith(
         expect.objectContaining({ memberId: 'uuid-1' }),
       );
     });

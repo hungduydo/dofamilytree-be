@@ -82,33 +82,50 @@ export class MembersService {
     }));
   }
 
-  async getAllMembers(page = 1, pageSize = 10) {
+  /**
+   * Table listing for the BO /members page: paginated, with full profile + tree,
+   * optionally filtered by `name` (Vietnamese-insensitive). Used by the admin table
+   * search — NOT the lightweight autocomplete search (see `searchMembers` below).
+   */
+  async getAllMembers(page = 1, pageSize = 10, name?: string) {
     const skip = (page - 1) * pageSize;
     const take = Math.min(pageSize, 100);
+    const where = this.nameSearchWhere(name);
 
     const [data, total] = await Promise.all([
       this.prisma.member.findMany({
+        where,
         skip,
         take,
         include: { profile: true, tree: true },
         orderBy: { created_at: 'desc' },
       }),
-      this.prisma.member.count(),
+      this.prisma.member.count({ where }),
     ]);
 
     return { data, total, page, pageSize };
   }
 
+  private nameSearchWhere(query?: string) {
+    if (!query?.trim()) return undefined;
+    const normalized = removeVietnameseTones(query);
+    return {
+      OR: [
+        { normalized_name: { contains: normalized, mode: 'insensitive' as const } },
+        { name: { contains: query, mode: 'insensitive' as const } },
+      ],
+    };
+  }
+
+  /**
+   * Lightweight search for select/autocomplete widgets (e.g. MemberAutocomplete):
+   * unpaginated, id+name by default. Set `includeProfile` only when a caller needs
+   * more than that (kept opt-in to stay cheap for the common typeahead case).
+   */
   async searchMembers(query: string, includeProfile = false) {
     if (!query?.trim()) return [];
-    const normalized = removeVietnameseTones(query);
     return this.prisma.member.findMany({
-      where: {
-        OR: [
-          { normalized_name: { contains: normalized, mode: 'insensitive' } },
-          { name: { contains: query, mode: 'insensitive' } },
-        ],
-      },
+      where: this.nameSearchWhere(query),
       include: includeProfile ? { profile: true } : undefined,
       take: 50,
     });

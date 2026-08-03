@@ -53,19 +53,21 @@ export class MembersController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all members (paginated)' })
+  @ApiOperation({ summary: 'Get all members (paginated, optional name filter for the BO table)' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
+  @ApiQuery({ name: 'name', required: false, description: 'Filter by name (Vietnamese-insensitive), used by the members table search' })
   @ApiOkResponse({ type: PaginatedMembersResponseDto })
   getAllMembers(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('pageSize', new DefaultValuePipe(10), ParseIntPipe) pageSize: number,
+    @Query('name') name?: string,
   ) {
-    return this.membersService.getAllMembers(page, pageSize);
+    return this.membersService.getAllMembers(page, pageSize, name);
   }
 
   @Get('search')
-  @ApiOperation({ summary: 'Search members by name (Vietnamese-insensitive)' })
+  @ApiOperation({ summary: 'Lightweight name search for select/autocomplete widgets (unpaginated)' })
   @ApiQuery({ name: 'name', required: true })
   @ApiQuery({ name: 'includeProfile', required: false, type: Boolean })
   @ApiOkResponse({ type: [MemberResponseDto] })

@@ -27,8 +27,14 @@ describe('MembersController', () => {
 
   it('GET /members should call getAllMembers with page and pageSize', async () => {
     mockMembersService.getAllMembers.mockResolvedValue({ data: [], total: 0 });
-    await controller.getAllMembers(1, 10);
-    expect(mockMembersService.getAllMembers).toHaveBeenCalledWith(1, 10);
+    await controller.getAllMembers(1, 10, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenCalledWith(1, 10, undefined);
+  });
+
+  it('GET /members should pass the name filter through for table search', async () => {
+    mockMembersService.getAllMembers.mockResolvedValue({ data: [], total: 0 });
+    await controller.getAllMembers(1, 10, 'nguyen');
+    expect(mockMembersService.getAllMembers).toHaveBeenCalledWith(1, 10, 'nguyen');
   });
 
   it('GET /members/search should call searchMembers with name query', async () => {
