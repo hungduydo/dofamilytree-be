@@ -20,12 +20,16 @@ export class GravesService {
   async getAllGraves(filter: { name?: string }) {
     return this.prisma.cemetery.findMany({
       where: filter.name ? { name: { contains: filter.name, mode: 'insensitive' } } : {},
+      include: { member: { include: { profile: true } } },
       orderBy: { created_at: 'desc' },
     });
   }
 
   async getGraveById(id: string) {
-    const grave = await this.prisma.cemetery.findUnique({ where: { id } });
+    const grave = await this.prisma.cemetery.findUnique({
+      where: { id },
+      include: { member: { include: { profile: true } } },
+    });
     if (!grave) throw new NotFoundException(`Grave ${id} not found`);
     return grave;
   }
@@ -33,11 +37,15 @@ export class GravesService {
   async getNearbyGraves(params: { lat: number; lng: number; radiusKm?: number }) {
     const radius = params.radiusKm ?? 10;
 
-    // Fetch all cemeteries then filter by Haversine distance
-    // For production: use PostGIS or bounding box pre-filter
-    const all = await this.prisma.cemetery.findMany();
+    // Fetch all cemeteries then filter by Haversine distance.
+    // Graves without confirmed GPS (null lat/lng) are excluded from proximity search.
+    // For production: use PostGIS or bounding box pre-filter.
+    const all = await this.prisma.cemetery.findMany({
+      where: { latitude: { not: null }, longitude: { not: null } },
+      include: { member: { include: { profile: true } } },
+    });
     return all.filter(
-      (g) => haversineDistance(params.lat, params.lng, g.latitude, g.longitude) <= radius,
+      (g) => haversineDistance(params.lat, params.lng, g.latitude as number, g.longitude as number) <= radius,
     );
   }
 

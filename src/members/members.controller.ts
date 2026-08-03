@@ -18,6 +18,7 @@ import {
   PaginatedMembersResponseDto,
   CommitteeMemberDto,
   NotableMemberDto,
+  MemberStatsResponseDto,
 } from './dto/member-response.dto';
 
 @ApiTags('Members')
@@ -41,6 +42,14 @@ export class MembersController {
   @ApiOkResponse({ type: [NotableMemberDto] })
   getNotableMembers() {
     return this.membersService.getNotableMembers();
+  }
+
+  @Public()
+  @Get('stats')
+  @ApiOperation({ summary: 'Aggregate member stats for header tiles (public)' })
+  @ApiOkResponse({ type: MemberStatsResponseDto })
+  getMemberStats() {
+    return this.membersService.getMemberStats();
   }
 
   @Get()

@@ -12,6 +12,7 @@ datasource db {
 model User {
   id       String    @id @db.Uuid
   comments Comment[]
+  memories Memory[]
 }
 
 model Member {
@@ -23,6 +24,7 @@ model Member {
   gender               String?
   birthDate            String?
   deathDate            String?
+  tree_id              String?              @db.Uuid
   created_at           DateTime             @default(now())
   anniversaries        Anniversary[]
   comments             Comment[]
@@ -32,27 +34,38 @@ model Member {
   from_relationships   Relationship[]       @relation("FromMember")
   to_relationships     Relationship[]       @relation("ToMember")
   user_metadata        UserMetadata?
+  tree                 Tree?                @relation(fields: [tree_id], references: [id])
+  cemeteries           Cemetery[]
+  media                Media[]
+  event_attendances    EventAttendee[]
+  life_events          LifeEvent[]
+  memories             Memory[]
 
   @@index([normalized_name])
   @@index([name])
+  @@index([tree_id])
   @@map("members")
 }
 
 model Profile {
-  id            String   @id @default(uuid()) @db.Uuid
-  member_id     String   @unique @db.Uuid
-  fullName      String
-  generation    Int?
-  biography     String?
-  occupation    String?
-  address       String?
-  notes         String?
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
-  committeeRole String?
-  isCommittee   Boolean  @default(false)
-  isNotable     Boolean  @default(false)
-  member        Member   @relation(fields: [member_id], references: [id])
+  id             String   @id @default(uuid()) @db.Uuid
+  member_id      String   @unique @db.Uuid
+  fullName       String
+  generation     Int?
+  biography      String?
+  occupation     String?
+  address        String?
+  notes          String?
+  phone          String?
+  contactEmail   String?
+  familyPosition String?
+  roleTags       String[] @default([])
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+  committeeRole  String?
+  isCommittee    Boolean  @default(false)
+  isNotable      Boolean  @default(false)
+  member         Member   @relation(fields: [member_id], references: [id])
 
   @@map("profiles")
 }
@@ -94,6 +107,7 @@ model Tree {
   image       String?
   title       String?
   show        Boolean  @default(false)
+  members     Member[]
 
   @@index([owner_id])
   @@map("trees")
@@ -114,13 +128,55 @@ model Comment {
 }
 
 model Media {
-  id          String   @id @default(uuid()) @db.Uuid
-  file_path   String
-  uploader_id String   @db.Uuid
-  created_at  DateTime @default(now())
+  id            String      @id @default(uuid()) @db.Uuid
+  file_path     String
+  uploader_id   String      @db.Uuid
+  uploader_name String?
+  title         String?
+  type          String?
+  member_id     String?     @db.Uuid
+  album_id      String?     @db.Uuid
+  views         Int         @default(0)
+  size_bytes    Int?
+  created_at    DateTime    @default(now())
+  member        Member?     @relation(fields: [member_id], references: [id])
+  album         MediaAlbum? @relation(fields: [album_id], references: [id])
 
   @@index([uploader_id])
+  @@index([member_id])
+  @@index([album_id])
   @@map("media")
+}
+
+model MediaAlbum {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  cover_url   String?
+  date        String?
+  created_at  DateTime @default(now())
+  media       Media[]
+
+  @@map("media_albums")
+}
+
+model Article {
+  id         String   @id @default(uuid()) @db.Uuid
+  title      String
+  excerpt    String?
+  content    String
+  category   String
+  date       DateTime @default(now())
+  views      Int      @default(0)
+  featured   Boolean  @default(false)
+  coverUrl   String?
+  author_id  String?  @db.Uuid
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([category])
+  @@index([featured])
+  @@map("articles")
 }
 
 model UserMetadata {
@@ -134,43 +190,103 @@ model UserMetadata {
 }
 
 model Cemetery {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String
-  latitude    Float
-  longitude   Float
-  description String?
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id               String        @id @default(uuid()) @db.Uuid
+  name             String
+  latitude         Float?
+  longitude        Float?
+  description      String?
+  member_id        String?       @db.Uuid
+  deathDate        String?
+  relocationDate   String?
+  constructionDate String?
+  created_at       DateTime      @default(now())
+  updated_at       DateTime      @updatedAt
+  member           Member?       @relation(fields: [member_id], references: [id])
+  anniversaries    Anniversary[]
 
+  @@index([member_id])
   @@map("cemeteries")
 }
 
 model Anniversary {
-  id          String   @id @default(uuid()) @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
   title       String
   date        DateTime
   description String?
-  member_id   String?  @db.Uuid
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
-  member      Member?  @relation(fields: [member_id], references: [id])
+  member_id   String?   @db.Uuid
+  cemetery_id String?   @db.Uuid
+  isLunar     Boolean   @default(false)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  member      Member?   @relation(fields: [member_id], references: [id])
+  cemetery    Cemetery? @relation(fields: [cemetery_id], references: [id])
 
   @@index([member_id])
+  @@index([cemetery_id])
   @@map("anniversaries")
 }
 
 model Event {
-  id          String    @id @default(uuid()) @db.Uuid
+  id          String          @id @default(uuid()) @db.Uuid
   title       String
   description String?
   images      String[]
-  highlight   Boolean   @default(false)
+  highlight   Boolean         @default(false)
   date        DateTime?
+  end_date    DateTime?
   location    String?
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
+  category    String?
+  isLunar     Boolean         @default(false)
+  created_at  DateTime        @default(now())
+  updated_at  DateTime        @updatedAt
+  attendees   EventAttendee[]
 
   @@map("events")
+}
+
+model EventAttendee {
+  id          String   @id @default(uuid()) @db.Uuid
+  event_id    String   @db.Uuid
+  member_id   String   @db.Uuid
+  rsvp_status String   @default("going")
+  created_at  DateTime @default(now())
+  event       Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  member      Member   @relation(fields: [member_id], references: [id])
+
+  @@unique([event_id, member_id])
+  @@index([event_id])
+  @@index([member_id])
+  @@map("event_attendees")
+}
+
+model LifeEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  member_id   String   @db.Uuid
+  date        String
+  title       String
+  description String?
+  category    String?
+  created_at  DateTime @default(now())
+  member      Member   @relation(fields: [member_id], references: [id], onDelete: Cascade)
+
+  @@index([member_id])
+  @@map("life_events")
+}
+
+model Memory {
+  id         String   @id @default(uuid()) @db.Uuid
+  member_id  String?  @db.Uuid
+  event_id   String?  @db.Uuid
+  author_id  String   @db.Uuid
+  text       String
+  photos     String[] @default([])
+  created_at DateTime @default(now())
+  member     Member?  @relation(fields: [member_id], references: [id])
+  author     User     @relation(fields: [author_id], references: [id])
+
+  @@index([member_id])
+  @@index([event_id])
+  @@map("memories")
 }
 
 enum RelationshipType {

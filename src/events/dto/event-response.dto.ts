@@ -21,8 +21,20 @@ export class EventResponseDto {
   @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
   date: string | null;
 
+  @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time', description: 'Ngày kết thúc' })
+  end_date: string | null;
+
   @ApiPropertyOptional({ nullable: true, example: 'Nhà thờ họ' })
   location: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Lễ', description: 'Loại sự kiện' })
+  category: string | null;
+
+  @ApiProperty({ default: false, description: 'Ngày theo âm lịch' })
+  isLunar: boolean;
+
+  @ApiProperty({ example: 0, description: 'Số người tham dự' })
+  attendeeCount: number;
 
   @ApiProperty({ type: String, format: 'date-time' })
   created_at: string;
@@ -48,6 +60,12 @@ export class AnniversaryResponseDto {
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   member_id: string | null;
 
+  @ApiPropertyOptional({ nullable: true, format: 'uuid', description: 'Mộ/nghĩa trang liên kết' })
+  cemetery_id: string | null;
+
+  @ApiProperty({ default: false, description: 'Ngày giỗ theo âm lịch' })
+  isLunar: boolean;
+
   @ApiProperty({ type: String, format: 'date-time' })
   created_at: string;
 
@@ -56,4 +74,7 @@ export class AnniversaryResponseDto {
 
   @ApiPropertyOptional({ type: () => MemberResponseDto, nullable: true })
   member?: MemberResponseDto | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Mộ/nghĩa trang liên kết' })
+  cemetery?: Record<string, any> | null;
 }

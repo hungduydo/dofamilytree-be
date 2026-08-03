@@ -6,6 +6,7 @@ import {
   ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Public } from '../auth/public.decorator';
 import { GravesService } from './graves.service';
 import { CreateGraveDto, UpdateGraveDto } from './dto/create-grave.dto';
 import { GraveResponseDto } from './dto/grave-response.dto';
@@ -17,6 +18,7 @@ import { GraveResponseDto } from './dto/grave-response.dto';
 export class GravesController {
   constructor(private readonly gravesService: GravesService) {}
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'List all graves (filter by name)' })
   @ApiQuery({ name: 'name', required: false })
@@ -25,6 +27,7 @@ export class GravesController {
     return this.gravesService.getAllGraves({ name });
   }
 
+  @Public()
   @Get('nearby')
   @ApiOperation({ summary: 'Find graves near coordinates (lat, lng, radiusKm)' })
   @ApiQuery({ name: 'lat', required: true, type: Number })
@@ -43,6 +46,7 @@ export class GravesController {
     });
   }
 
+  @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Get grave by ID' })
   @ApiOkResponse({ type: GraveResponseDto })

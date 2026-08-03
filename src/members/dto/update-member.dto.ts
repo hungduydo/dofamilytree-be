@@ -1,5 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, MaxLength, MinLength, IsIn } from 'class-validator';
+import { Transform } from 'class-transformer';
+import {
+  IsString, IsOptional, MaxLength, MinLength, IsIn, IsUUID, IsEmail, IsArray,
+} from 'class-validator';
+import { CLAN_ROLES, toRoleTagsArray } from './create-member.dto';
 
 export class UpdateMemberDto {
   @ApiPropertyOptional()
@@ -51,4 +55,38 @@ export class UpdateMemberDto {
   @ApiPropertyOptional()
   @IsOptional()
   generation?: number;
+
+  @ApiPropertyOptional({ enum: CLAN_ROLES, description: 'Vai trò trong tộc (map vào committeeRole/isCommittee)' })
+  @IsOptional()
+  @IsIn(CLAN_ROLES)
+  clanRole?: string;
+
+  @ApiPropertyOptional({ example: '0988 123 456' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  phone?: string;
+
+  @ApiPropertyOptional({ example: 'lienhe@gmail.com' })
+  @IsOptional()
+  @IsEmail()
+  contactEmail?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', description: 'Chi nhánh — FK tới Tree' })
+  @IsOptional()
+  @IsUUID()
+  tree_id?: string;
+
+  @ApiPropertyOptional({ example: 'Con trưởng' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  familyPosition?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @Transform(toRoleTagsArray)
+  @IsArray()
+  @IsString({ each: true })
+  roleTags?: string[];
 }

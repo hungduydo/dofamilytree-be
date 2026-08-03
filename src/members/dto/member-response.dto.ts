@@ -26,7 +26,19 @@ export class ProfileResponseDto {
   @ApiPropertyOptional({ nullable: true })
   notes: string | null;
 
-  @ApiPropertyOptional({ nullable: true, description: 'Vai trò trong ban/hội đồng' })
+  @ApiPropertyOptional({ nullable: true, example: '0988 123 456' })
+  phone: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'lienhe@gmail.com' })
+  contactEmail: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Con trưởng', description: 'Vị trí trong gia đình' })
+  familyPosition: string | null;
+
+  @ApiProperty({ type: [String], default: [], description: 'Vai trò trong dòng họ' })
+  roleTags: string[];
+
+  @ApiPropertyOptional({ nullable: true, description: 'Vai trò trong ban/hội đồng (clanRole)' })
   committeeRole: string | null;
 
   @ApiProperty({ default: false })
@@ -40,6 +52,15 @@ export class ProfileResponseDto {
 
   @ApiProperty({ type: String, format: 'date-time' })
   updated_at: string;
+}
+
+/** Compact branch (Tree) info nested on a member. */
+export class MemberTreeBriefDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Chi nhánh Phú Thọ' })
+  title: string | null;
 }
 
 /** Mirrors the Prisma `Member` model (with optional included `profile`). */
@@ -68,11 +89,35 @@ export class MemberResponseDto {
   @ApiPropertyOptional({ nullable: true, example: '2020-12-31' })
   deathDate: string | null;
 
+  @ApiPropertyOptional({ nullable: true, format: 'uuid', description: 'Chi nhánh — FK tới Tree' })
+  tree_id: string | null;
+
   @ApiProperty({ type: String, format: 'date-time' })
   created_at: string;
 
   @ApiPropertyOptional({ type: () => ProfileResponseDto, nullable: true })
   profile?: ProfileResponseDto | null;
+
+  @ApiPropertyOptional({ type: () => MemberTreeBriefDto, nullable: true })
+  tree?: MemberTreeBriefDto | null;
+}
+
+/** Aggregate figures for `GET /v2/members/stats`. */
+export class MemberStatsResponseDto {
+  @ApiProperty({ example: 1256 })
+  total: number;
+
+  @ApiProperty({ example: 648 })
+  male: number;
+
+  @ApiProperty({ example: 608 })
+  female: number;
+
+  @ApiProperty({ example: 28, description: 'Thành viên tạo mới trong tháng hiện tại' })
+  newThisMonth: number;
+
+  @ApiProperty({ example: 6, description: 'Số thế hệ (distinct generation)' })
+  generations: number;
 }
 
 /** Paginated envelope returned by `GET /v2/members`. */

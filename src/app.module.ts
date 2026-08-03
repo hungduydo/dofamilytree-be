@@ -9,6 +9,9 @@ import { TreeModule } from './tree/tree.module';
 import { EventsModule } from './events/events.module';
 import { MediaModule } from './media/media.module';
 import { GravesModule } from './graves/graves.module';
+import { LifeEventsModule } from './life-events/life-events.module';
+import { MemoriesModule } from './memories/memories.module';
+import { ArticlesModule } from './articles/articles.module';
 import { QueueModule } from './queue/queue.module';
 import { RedisModule } from './redis.module';
 
@@ -25,6 +28,9 @@ import { RedisModule } from './redis.module';
     EventsModule,
     MediaModule,
     GravesModule,
+    LifeEventsModule,
+    MemoriesModule,
+    ArticlesModule,
   ],
   controllers: [AppController],
 })

@@ -1,12 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { QStashService } from '../queue/qstash.service';
+import { TasksService } from '../queue/tasks.service';
 import { runInBackground } from '../utils/run-in-background';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
 import { removeVietnameseTones } from '../utils/vietnamese-helper';
 import {
-  QUEUE_AVATAR_UPLOAD,
   QUEUE_REPORT_GENERATE,
   QUEUE_NOTIFICATION,
 } from '../queue/queue.constants';
@@ -16,7 +16,18 @@ export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly qstashService: QStashService,
+    private readonly tasksService: TasksService,
   ) {}
+
+  /**
+   * Map the UI's clanRole onto the existing Profile.committeeRole/isCommittee columns.
+   * TRUONG_TOC / PHO_TRUONG_TOC => committee member; THANH_VIEN (or unset) => not a committee role.
+   */
+  private clanRoleToCommittee(clanRole?: string): { committeeRole: string | null; isCommittee: boolean } | undefined {
+    if (clanRole === undefined) return undefined;
+    if (clanRole === 'THANH_VIEN') return { committeeRole: null, isCommittee: false };
+    return { committeeRole: clanRole, isCommittee: true };
+  }
 
   /**
    * Committee members — members whose profile notes contain "committee" or "ban quản lý"
@@ -79,7 +90,7 @@ export class MembersService {
       this.prisma.member.findMany({
         skip,
         take,
-        include: { profile: true },
+        include: { profile: true, tree: true },
         orderBy: { created_at: 'desc' },
       }),
       this.prisma.member.count(),
@@ -106,7 +117,7 @@ export class MembersService {
   async getMemberById(id: string) {
     const member = await this.prisma.member.findUnique({
       where: { id },
-      include: { profile: true },
+      include: { profile: true, tree: true },
     });
     if (!member) throw new NotFoundException(`Member ${id} not found`);
     return member;
@@ -117,6 +128,7 @@ export class MembersService {
       where: { id },
       include: {
         profile: true,
+        tree: true,
         parent_relationships: { include: { parent: { include: { profile: true } } } },
         child_relationships: { include: { child: { include: { profile: true } } } },
       },
@@ -132,6 +144,8 @@ export class MembersService {
 
     const normalizedName = removeVietnameseTones(dto.fullName);
 
+    const committee = this.clanRoleToCommittee(dto.clanRole);
+
     const member = await this.prisma.$transaction(async (tx) => {
       const newMember = await tx.member.create({
         data: {
@@ -140,6 +154,7 @@ export class MembersService {
           gender: dto.gender,
           birthDate: dto.birthDate,
           deathDate: dto.deathDate,
+          tree_id: dto.tree_id,
         },
       });
 
@@ -151,6 +166,11 @@ export class MembersService {
           occupation: dto.occupation,
           address: dto.address,
           biography: dto.biography,
+          phone: dto.phone,
+          contactEmail: dto.contactEmail,
+          familyPosition: dto.familyPosition,
+          roleTags: dto.roleTags ?? [],
+          ...(committee ?? {}),
         },
       });
 
@@ -182,6 +202,7 @@ export class MembersService {
       if (dto.gender) memberData.gender = dto.gender;
       if (dto.birthDate !== undefined) memberData.birthDate = dto.birthDate;
       if (dto.deathDate !== undefined) memberData.deathDate = dto.deathDate;
+      if (dto.tree_id !== undefined) memberData.tree_id = dto.tree_id;
 
       const updatedMember = await tx.member.update({ where: { id }, data: memberData });
 
@@ -192,6 +213,12 @@ export class MembersService {
       if (dto.address !== undefined) profileData.address = dto.address;
       if (dto.biography !== undefined) profileData.biography = dto.biography;
       if (dto.notes !== undefined) profileData.notes = dto.notes;
+      if (dto.phone !== undefined) profileData.phone = dto.phone;
+      if (dto.contactEmail !== undefined) profileData.contactEmail = dto.contactEmail;
+      if (dto.familyPosition !== undefined) profileData.familyPosition = dto.familyPosition;
+      if (dto.roleTags !== undefined) profileData.roleTags = dto.roleTags;
+      const committee = this.clanRoleToCommittee(dto.clanRole);
+      if (committee) Object.assign(profileData, committee);
 
       if (Object.keys(profileData).length > 0 && existing.profile) {
         await tx.profile.update({ where: { member_id: id }, data: profileData });
@@ -200,10 +227,11 @@ export class MembersService {
       return updatedMember;
     });
 
-    // Queue avatar upload if file provided — off the request path (see auth).
+    // Upload avatar off the request path. Called directly (not via QStash) since the
+    // webhook callback requires a publicly reachable APP_URL, which local dev lacks.
     if (avatarFile) {
       runInBackground(
-        this.qstashService.publish(QUEUE_AVATAR_UPLOAD, {
+        this.tasksService.handleAvatarUpload({
           memberId: id,
           buffer: avatarFile.buffer.toString('base64'),
           filename: avatarFile.originalname,
@@ -213,6 +241,36 @@ export class MembersService {
     }
 
     return updated;
+  }
+
+  /**
+   * Aggregate figures for the /members header tiles (replaces the old client-side
+   * "fetch every member and count" approach and the FE MOCK_MEMBER_STATS constant).
+   */
+  async getMemberStats() {
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const [total, male, female, newThisMonth, generationRows] = await Promise.all([
+      this.prisma.member.count(),
+      this.prisma.member.count({ where: { gender: 'M' } }),
+      this.prisma.member.count({ where: { gender: 'F' } }),
+      this.prisma.member.count({ where: { created_at: { gte: startOfMonth } } }),
+      this.prisma.profile.findMany({
+        where: { generation: { not: null } },
+        distinct: ['generation'],
+        select: { generation: true },
+      }),
+    ]);
+
+    return {
+      total,
+      male,
+      female,
+      newThisMonth,
+      generations: generationRows.length,
+    };
   }
 
   async deleteMember(id: string) {
