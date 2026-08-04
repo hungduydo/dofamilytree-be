@@ -10,6 +10,7 @@ const mockMembersService = {
   getMemberProfile: jest.fn(),
   updateMemberProfile: jest.fn(),
   deleteMember: jest.fn(),
+  recomputeGenerations: jest.fn(),
 };
 
 describe('MembersController', () => {
@@ -28,19 +29,37 @@ describe('MembersController', () => {
   it('GET /members should call getAllMembers with page and pageSize', async () => {
     mockMembersService.getAllMembers.mockResolvedValue({ data: [], total: 0 });
     await controller.getAllMembers(1, 10, undefined);
-    expect(mockMembersService.getAllMembers).toHaveBeenCalledWith(1, 10, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenCalledWith(
+      1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined,
+    );
   });
 
   it('GET /members should pass the name filter through for table search', async () => {
     mockMembersService.getAllMembers.mockResolvedValue({ data: [], total: 0 });
     await controller.getAllMembers(1, 10, 'nguyen');
-    expect(mockMembersService.getAllMembers).toHaveBeenCalledWith(1, 10, 'nguyen');
+    expect(mockMembersService.getAllMembers).toHaveBeenCalledWith(
+      1, 10, 'nguyen', undefined, undefined, undefined, 'full', undefined, undefined,
+    );
+  });
+
+  it('GET /members truyền generation + sortBy + sortOrder đúng thứ tự', async () => {
+    mockMembersService.getAllMembers.mockResolvedValue({ data: [], total: 0 });
+    await controller.getAllMembers(1, 10, undefined, 3, 'generation', 'asc');
+    expect(mockMembersService.getAllMembers).toHaveBeenCalledWith(
+      1, 10, undefined, 3, 'generation', 'asc', 'full', undefined, undefined,
+    );
+  });
+
+  it('POST /members/generations/recompute uỷ quyền kèm id người gọi', async () => {
+    mockMembersService.recomputeGenerations.mockResolvedValue({ members: 5, updated: 5 });
+    await controller.recomputeGenerations({ id: 'user-1' });
+    expect(mockMembersService.recomputeGenerations).toHaveBeenCalledWith('user-1');
   });
 
   it('GET /members/search should call searchMembers with name query', async () => {
     mockMembersService.searchMembers.mockResolvedValue([]);
     await controller.searchMembers('nguyen');
-    expect(mockMembersService.searchMembers).toHaveBeenCalledWith('nguyen', false);
+    expect(mockMembersService.searchMembers).toHaveBeenCalledWith('nguyen');
   });
 
   it('GET /members/:id should call getMemberById', async () => {

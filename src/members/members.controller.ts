@@ -5,24 +5,42 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiConsumes,
-  ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
+  ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse, ApiExtraModels,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { Public } from '../auth/public.decorator';
-import { MembersService } from './members.service';
+import { ParseOptionalIntPipe } from '../utils/parse-optional-int.pipe';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { MembersService, MEMBER_SORT_FIELDS, MEMBER_GENDERS, MemberSortField, SortOrder } from './members.service';
+import { MEMBER_VIEWS, resolveView } from './members.view';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
 import {
   MemberResponseDto,
+  MemberLiteDto,
   MemberProfileResponseDto,
   PaginatedMembersResponseDto,
+  PaginatedMembersTableResponseDto,
+  PaginatedMembersLiteResponseDto,
+  MemberTableDto,
+  ProfileTableDto,
   CommitteeMemberDto,
   NotableMemberDto,
   MemberStatsResponseDto,
+  RecomputeGenerationsResponseDto,
 } from './dto/member-response.dto';
 
 @ApiTags('Members')
 @ApiBearerAuth()
+@ApiExtraModels(
+  // Đăng ký các biến thể `?view=` vào components.schemas mà không đụng paths —
+  // FE opt-in tường minh qua components['schemas'][...], type mặc định không đổi.
+  MemberLiteDto,
+  ProfileTableDto,
+  MemberTableDto,
+  PaginatedMembersTableResponseDto,
+  PaginatedMembersLiteResponseDto,
+)
 @UseGuards(JwtAuthGuard)
 @Controller('members')
 export class MembersController {
@@ -57,25 +75,59 @@ export class MembersController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   @ApiQuery({ name: 'name', required: false, description: 'Filter by name (Vietnamese-insensitive), used by the members table search' })
+  @ApiQuery({ name: 'generation', required: false, type: Number, description: 'Lọc theo thế hệ (giá trị hiệu lực trên member)' })
+  @ApiQuery({ name: 'sortBy', required: false, enum: MEMBER_SORT_FIELDS })
+  @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'] })
+  @ApiQuery({ name: 'tree_id', required: false, type: String, description: 'Lọc theo chi nhánh (UUID, FK tới Tree). Dropdown lấy từ GET /v2/tree.' })
+  @ApiQuery({ name: 'gender', required: false, enum: MEMBER_GENDERS, description: 'Lọc theo giới tính' })
+  @ApiQuery({
+    name: 'view',
+    required: false,
+    enum: MEMBER_VIEWS,
+    description:
+      'Độ chi tiết của payload. Bỏ trống = `full` (mặc định, KHÔNG đổi shape).\n' +
+      '- `full`  → PaginatedMembersResponseDto (mặc định)\n' +
+      '- `table` → PaginatedMembersTableResponseDto (bỏ biography/notes — dùng cho bảng data BO)\n' +
+      '- `lite`  → PaginatedMembersLiteResponseDto (id + name + avatar + generation)',
+  })
   @ApiOkResponse({ type: PaginatedMembersResponseDto })
   getAllMembers(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('pageSize', new DefaultValuePipe(10), ParseIntPipe) pageSize: number,
     @Query('name') name?: string,
+    // `any` là CỐ Ý, không phải `number`: global ValidationPipe({ transform: true })
+    // sẽ ép param kiểu `number` vắng mặt thành NaN → 400 cho mọi request không
+    // truyền `generation`. Xem ParseOptionalIntPipe để biết chi tiết.
+    @Query('generation', ParseOptionalIntPipe) generation?: any,
+    @Query('sortBy') sortBy?: MemberSortField,
+    @Query('sortOrder') sortOrder?: SortOrder,
+    // Các param dưới đây kiểu `string` ⇒ KHÔNG dính bẫy NaN của ParseOptionalIntPipe,
+    // không cần pipe. `resolveView` chuẩn hoá; allowlist gender nằm trong service.
+    @Query('view') view?: string,
+    @Query('tree_id') treeId?: string,
+    @Query('gender') gender?: string,
   ) {
-    return this.membersService.getAllMembers(page, pageSize, name);
+    return this.membersService.getAllMembers(
+      page, pageSize, name, generation, sortBy, sortOrder,
+      resolveView(view), treeId, gender,
+    );
+  }
+
+  @Post('generations/recompute')
+  @ApiOperation({
+    summary: 'Tính lại thế hệ cho toàn bộ thành viên (admin). Job nền vốn đã tự chạy sau mỗi lần ghi.',
+  })
+  @ApiOkResponse({ type: RecomputeGenerationsResponseDto })
+  recomputeGenerations(@CurrentUser() user: { id: string }) {
+    return this.membersService.recomputeGenerations(user.id);
   }
 
   @Get('search')
-  @ApiOperation({ summary: 'Lightweight name search for select/autocomplete widgets (unpaginated)' })
+  @ApiOperation({ summary: 'Search tên cho select/autocomplete (unpaginated, trả MemberLiteDto)' })
   @ApiQuery({ name: 'name', required: true })
-  @ApiQuery({ name: 'includeProfile', required: false, type: Boolean })
-  @ApiOkResponse({ type: [MemberResponseDto] })
-  searchMembers(
-    @Query('name') name: string,
-    @Query('includeProfile') includeProfile?: string,
-  ) {
-    return this.membersService.searchMembers(name, includeProfile === 'true');
+  @ApiOkResponse({ type: [MemberLiteDto] })
+  searchMembers(@Query('name') name: string) {
+    return this.membersService.searchMembers(name);
   }
 
   @Get(':id')

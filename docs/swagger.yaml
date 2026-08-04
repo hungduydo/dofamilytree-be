@@ -187,10 +187,27 @@ paths:
       security:
         - 
           bearer: []
+  /v2/members/stats:
+    get:
+      operationId: MembersController_getMemberStats
+      summary: Aggregate member stats for header tiles (public)
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberStatsResponseDto"
+      tags:
+        - Members
+      security:
+        - 
+          bearer: []
   /v2/members:
     get:
       operationId: MembersController_getAllMembers
-      summary: Get all members (paginated)
+      summary: Get all members (paginated, optional name filter for the BO table)
       parameters:
         - 
           name: page
@@ -202,6 +219,69 @@ paths:
           name: pageSize
           required: false
           in: query
+          schema:
+            type: number
+        - 
+          name: name
+          required: false
+          in: query
+          description: Filter by name (Vietnamese-insensitive), used by the members table search
+          schema:
+            type: string
+        - 
+          name: sortBy
+          required: false
+          in: query
+          schema:
+            enum:
+              - created_at
+              - name
+              - generation
+            type: string
+        - 
+          name: sortOrder
+          required: false
+          in: query
+          schema:
+            enum:
+              - asc
+              - desc
+            type: string
+        - 
+          name: view
+          required: false
+          in: query
+          description: "Độ chi tiết của payload. Bỏ trống = `full` (mặc định, KHÔNG đổi shape).\n- `full`  → PaginatedMembersResponseDto (mặc định)\n- `table` → PaginatedMembersTableResponseDto (bỏ biography/notes — dùng cho bảng data BO)\n- `lite`  → PaginatedMembersLiteResponseDto (id + name + avatar + generation)"
+          schema:
+            enum:
+              - lite
+              - table
+              - full
+            type: string
+        - 
+          name: tree_id
+          required: false
+          in: query
+          description: Lọc theo chi nhánh (UUID, FK tới Tree). Dropdown lấy từ GET /v2/tree.
+          schema:
+            type: string
+        - 
+          name: gender
+          required: false
+          in: query
+          description: Lọc theo giới tính
+          schema:
+            enum:
+              - M
+              - F
+              - O
+              - U
+            type: string
+        - 
+          name: generation
+          required: false
+          in: query
+          description: Lọc theo thế hệ (giá trị hiệu lực trên member)
           schema:
             type: number
       responses:
@@ -238,10 +318,27 @@ paths:
       security:
         - 
           bearer: []
+  /v2/members/generations/recompute:
+    post:
+      operationId: MembersController_recomputeGenerations
+      summary: Tính lại thế hệ cho toàn bộ thành viên (admin). Job nền vốn đã tự chạy sau mỗi lần ghi.
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecomputeGenerationsResponseDto"
+      tags:
+        - Members
+      security:
+        - 
+          bearer: []
   /v2/members/search:
     get:
       operationId: MembersController_searchMembers
-      summary: Search members by name (Vietnamese-insensitive)
+      summary: Search tên cho select/autocomplete (unpaginated, trả MemberLiteDto)
       parameters:
         - 
           name: name
@@ -249,12 +346,6 @@ paths:
           in: query
           schema:
             type: string
-        - 
-          name: includeProfile
-          required: false
-          in: query
-          schema:
-            type: boolean
       responses:
         200:
           description: ""
@@ -263,7 +354,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/MemberResponseDto"
+                  $ref: "#/components/schemas/MemberLiteDto"
       tags:
         - Members
       security:
@@ -840,7 +931,7 @@ paths:
   /v2/events:
     get:
       operationId: EventsController_getEvents
-      summary: "Get events (filter: highlight, fromDate, toDate)"
+      summary: "Get events (filter: highlight, fromDate, toDate, category)"
       parameters:
         - 
           name: highlight
@@ -856,6 +947,12 @@ paths:
             type: string
         - 
           name: toDate
+          required: false
+          in: query
+          schema:
+            type: string
+        - 
+          name: category
           required: false
           in: query
           schema:
@@ -881,6 +978,9 @@ paths:
       requestBody:
         required: true
         content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CreateEventDto"
           application/json:
             schema:
               $ref: "#/components/schemas/CreateEventDto"
@@ -932,6 +1032,9 @@ paths:
       requestBody:
         required: true
         content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UpdateEventDto"
           application/json:
             schema:
               $ref: "#/components/schemas/UpdateEventDto"
@@ -960,6 +1063,74 @@ paths:
       responses:
         204:
           description: Deleted
+      tags:
+        - Events (Sự kiện dòng họ)
+      security:
+        - 
+          bearer: []
+  /v2/events/{id}/attendees:
+    get:
+      operationId: EventsController_getAttendees
+      summary: List attendees of an event
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+      tags:
+        - Events (Sự kiện dòng họ)
+      security:
+        - 
+          bearer: []
+    post:
+      operationId: EventsController_addAttendee
+      summary: Add/update an attendee (RSVP) for an event
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddAttendeeDto"
+      responses:
+        201:
+          description: ""
+      tags:
+        - Events (Sự kiện dòng họ)
+      security:
+        - 
+          bearer: []
+  /v2/events/{id}/attendees/{memberId}:
+    delete:
+      operationId: EventsController_removeAttendee
+      summary: Remove an attendee from an event
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - 
+          name: memberId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: Removed
       tags:
         - Events (Sự kiện dòng họ)
       security:
@@ -1122,12 +1293,93 @@ paths:
   /v2/media:
     get:
       operationId: MediaController_getMedia
-      summary: List media (filter by uploader_id)
+      summary: List media (filter by uploader_id, member_id, type, album_id) — public library
       parameters:
         - 
           name: uploader_id
           required: false
           in: query
+          schema:
+            type: string
+        - 
+          name: member_id
+          required: false
+          in: query
+          schema:
+            type: string
+        - 
+          name: type
+          required: false
+          in: query
+          schema:
+            type: string
+        - 
+          name: album_id
+          required: false
+          in: query
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/media/albums:
+    get:
+      operationId: MediaController_getAlbums
+      summary: List media albums with counts (public)
+      parameters: []
+      responses:
+        200:
+          description: ""
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+    post:
+      operationId: MediaController_createAlbum
+      summary: Create a media album
+      parameters: []
+      responses:
+        201:
+          description: ""
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/media/albums/{id}:
+    delete:
+      operationId: MediaController_deleteAlbum
+      summary: Delete a media album (detaches its media)
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: ""
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/media/member/{memberId}:
+    get:
+      operationId: MediaController_getMemberMedia
+      summary: List documents/photos attached to a member (Tài liệu liên quan)
+      parameters:
+        - 
+          name: memberId
+          required: true
+          in: path
           schema:
             type: string
       responses:
@@ -1310,6 +1562,297 @@ paths:
       security:
         - 
           bearer: []
+  /v2/members/{memberId}/life-events:
+    get:
+      operationId: LifeEventsController_getByMember
+      summary: Get a member life-event timeline (public)
+      parameters:
+        - 
+          name: memberId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LifeEventResponseDto"
+      tags:
+        - Life Events (Quá trình sinh sống)
+      security:
+        - 
+          bearer: []
+    post:
+      operationId: LifeEventsController_create
+      summary: Add a life event to a member
+      parameters:
+        - 
+          name: memberId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLifeEventDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifeEventResponseDto"
+      tags:
+        - Life Events (Quá trình sinh sống)
+      security:
+        - 
+          bearer: []
+  /v2/members/{memberId}/life-events/{id}:
+    delete:
+      operationId: LifeEventsController_delete
+      summary: Delete a life event
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: Deleted
+      tags:
+        - Life Events (Quá trình sinh sống)
+      security:
+        - 
+          bearer: []
+  /v2/members/{memberId}/memories:
+    get:
+      operationId: MemoriesController_getByMember
+      summary: Get memories attached to a member (public)
+      parameters:
+        - 
+          name: memberId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemoryResponseDto"
+      tags:
+        - Memories (Kỷ niệm)
+      security:
+        - 
+          bearer: []
+    post:
+      operationId: MemoriesController_create
+      summary: Add a memory to a member (author = current user)
+      parameters:
+        - 
+          name: memberId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMemoryDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryResponseDto"
+      tags:
+        - Memories (Kỷ niệm)
+      security:
+        - 
+          bearer: []
+  /v2/members/{memberId}/memories/{id}:
+    delete:
+      operationId: MemoriesController_delete
+      summary: Delete a memory
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: Deleted
+      tags:
+        - Memories (Kỷ niệm)
+      security:
+        - 
+          bearer: []
+  /v2/articles:
+    get:
+      operationId: ArticlesController_getArticles
+      summary: "List articles (filter: category, year, search) — public"
+      parameters:
+        - 
+          name: category
+          required: false
+          in: query
+          schema:
+            type: string
+        - 
+          name: year
+          required: false
+          in: query
+          schema:
+            type: number
+        - 
+          name: search
+          required: false
+          in: query
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArticleResponseDto"
+      tags:
+        - Articles (Tin tức dòng họ)
+      security:
+        - 
+          bearer: []
+    post:
+      operationId: ArticlesController_create
+      summary: Create article
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateArticleDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArticleResponseDto"
+      tags:
+        - Articles (Tin tức dòng họ)
+      security:
+        - 
+          bearer: []
+  /v2/articles/{id}:
+    get:
+      operationId: ArticlesController_getById
+      summary: Get article by ID (public)
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArticleResponseDto"
+      tags:
+        - Articles (Tin tức dòng họ)
+      security:
+        - 
+          bearer: []
+    put:
+      operationId: ArticlesController_update
+      summary: Update article
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateArticleDto"
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArticleResponseDto"
+      tags:
+        - Articles (Tin tức dòng họ)
+      security:
+        - 
+          bearer: []
+    delete:
+      operationId: ArticlesController_delete
+      summary: Delete article
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: Deleted
+      tags:
+        - Articles (Tin tức dòng họ)
+      security:
+        - 
+          bearer: []
+  /v2/articles/{id}/view:
+    post:
+      operationId: ArticlesController_incrementView
+      summary: Increment article view count (public)
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: View counted
+      tags:
+        - Articles (Tin tức dòng họ)
+      security:
+        - 
+          bearer: []
 info:
   title: Family Tree API v2
   description: "## Vietnamese Family Tree Management API\n\n**Base URL:** `http://localhost:3002/v2`\n\n**Authentication:** Bearer JWT token (same as backend v1)\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ mới (BIOLOGICAL/ADOPTED/SPOUSE) + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày giỗ (filter by member, month, upcoming)\n- **Events** — Sự kiện dòng họ + notification queue\n- **Media** — Upload ảnh → nén bằng sharp → Vercel Blob\n- **Graves** — Mộ phần với tọa độ GPS + tìm kiếm gần nhất\n\n### Queue Jobs (QStash + Redis)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → Vercel Blob → cập nhật avatar_url |\n| image-process | Upload media | sharp resize + compress → Vercel Blob |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| notification | New member/relationship/event | Log (Phase 1) |\n"
@@ -1403,6 +1946,172 @@ components:
             type: string
       required:
         - roles
+    MemberLiteDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Nguyễn Văn A
+        avatar_url:
+          type: object
+          nullable: true
+          format: uri
+        generation:
+          type: number
+          nullable: true
+          example: 5
+          description: Thế hệ hiệu lực (đã tính sẵn). Xem MemberResponseDto.generation.
+      required:
+        - id
+        - name
+    ProfileTableDto:
+      type: object
+      properties:
+        occupation:
+          type: object
+          nullable: true
+          example: Kỹ sư phần mềm
+        address:
+          type: object
+          nullable: true
+          example: Hà Nội
+        phone:
+          type: object
+          nullable: true
+          example: 0988 123 456
+        familyPosition:
+          type: object
+          nullable: true
+          example: Con trưởng
+        roleTags:
+          default: []
+          type: array
+          items:
+            type: string
+        committeeRole:
+          type: object
+          nullable: true
+        isCommittee:
+          type: boolean
+          default: false
+        isNotable:
+          type: boolean
+          default: false
+      required:
+        - roleTags
+        - isCommittee
+        - isNotable
+    MemberTreeBriefDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: object
+          nullable: true
+          example: Chi nhánh Phú Thọ
+      required:
+        - id
+    MemberTableDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Nguyễn Văn A
+        avatar_url:
+          type: object
+          nullable: true
+          format: uri
+        gender:
+          type: string
+          nullable: true
+          enum:
+            - M
+            - F
+            - O
+            - U
+        birthDate:
+          type: object
+          nullable: true
+          example: 1990-01-01
+        deathDate:
+          type: object
+          nullable: true
+          example: 2020-12-31
+        tree_id:
+          type: object
+          nullable: true
+          format: uuid
+        generation:
+          type: number
+          nullable: true
+          example: 5
+        created_at:
+          type: string
+          format: date-time
+        profile:
+          nullable: true
+          allOf:
+            - 
+              $ref: "#/components/schemas/ProfileTableDto"
+        tree:
+          nullable: true
+          allOf:
+            - 
+              $ref: "#/components/schemas/MemberTreeBriefDto"
+      required:
+        - id
+        - name
+        - created_at
+    PaginatedMembersTableResponseDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberTableDto"
+        total:
+          type: number
+          example: 120
+        page:
+          type: number
+          example: 1
+        pageSize:
+          type: number
+          example: 10
+      required:
+        - data
+        - total
+        - page
+        - pageSize
+    PaginatedMembersLiteResponseDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberLiteDto"
+        total:
+          type: number
+          example: 120
+        page:
+          type: number
+          example: 1
+        pageSize:
+          type: number
+          example: 10
+      required:
+        - data
+        - total
+        - page
+        - pageSize
     CommitteeMemberDto:
       type: object
       properties:
@@ -1442,6 +2151,32 @@ components:
         - name
         - description
         - avatar
+    MemberStatsResponseDto:
+      type: object
+      properties:
+        total:
+          type: number
+          example: 1256
+        male:
+          type: number
+          example: 648
+        female:
+          type: number
+          example: 608
+        newThisMonth:
+          type: number
+          example: 28
+          description: Thành viên tạo mới trong tháng hiện tại
+        generations:
+          type: number
+          example: 6
+          description: Số thế hệ (distinct generation)
+      required:
+        - total
+        - male
+        - female
+        - newThisMonth
+        - generations
     ProfileResponseDto:
       type: object
       properties:
@@ -1455,9 +2190,10 @@ components:
           type: string
           example: Nguyễn Văn A
         generation:
-          type: object
+          type: number
           nullable: true
           example: 5
+          description: Thế hệ NHẬP TAY — ưu tiên hơn giá trị suy ra. Xem `member.generation` cho giá trị hiệu lực.
         biography:
           type: object
           nullable: true
@@ -1472,10 +2208,29 @@ components:
         notes:
           type: object
           nullable: true
+        phone:
+          type: object
+          nullable: true
+          example: 0988 123 456
+        contactEmail:
+          type: object
+          nullable: true
+          example: lienhe@gmail.com
+        familyPosition:
+          type: object
+          nullable: true
+          example: Con trưởng
+          description: Vị trí trong gia đình
+        roleTags:
+          default: []
+          description: Vai trò trong dòng họ
+          type: array
+          items:
+            type: string
         committeeRole:
           type: object
           nullable: true
-          description: Vai trò trong ban/hội đồng
+          description: Vai trò trong ban/hội đồng (clanRole)
         isCommittee:
           type: boolean
           default: false
@@ -1492,6 +2247,7 @@ components:
         - id
         - member_id
         - fullName
+        - roleTags
         - isCommittee
         - isNotable
         - created_at
@@ -1532,6 +2288,21 @@ components:
           type: object
           nullable: true
           example: 2020-12-31
+        tree_id:
+          type: object
+          nullable: true
+          format: uuid
+          description: Chi nhánh — FK tới Tree
+        generation:
+          type: number
+          nullable: true
+          example: 5
+          description: "Thế hệ (giá trị HIỆU LỰC, đã tính sẵn) = `profile.generation` nếu nhập tay, ngược lại suy ra từ quan hệ cha-con/vợ-chồng. Cập nhật bởi job nền `generation-recompute`. Muốn biết là nhập tay hay suy ra: `profile.generation != null`."
+        generation_updated_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: Lần cuối job nền ghi lại `generation`
         created_at:
           type: string
           format: date-time
@@ -1540,6 +2311,11 @@ components:
           allOf:
             - 
               $ref: "#/components/schemas/ProfileResponseDto"
+        tree:
+          nullable: true
+          allOf:
+            - 
+              $ref: "#/components/schemas/MemberTreeBriefDto"
       required:
         - id
         - name
@@ -1566,6 +2342,30 @@ components:
         - total
         - page
         - pageSize
+    RecomputeGenerationsResponseDto:
+      type: object
+      properties:
+        members:
+          type: number
+          example: 1256
+          description: Số thành viên đã duyệt
+        updated:
+          type: number
+          example: 12
+          description: Số dòng thực sự đổi giá trị
+        durationMs:
+          type: number
+          example: 840
+        warnings:
+          description: Bất thường trong dữ liệu (cycle, pin mâu thuẫn, cạnh tự trỏ)
+          type: array
+          items:
+            type: string
+      required:
+        - members
+        - updated
+        - durationMs
+        - warnings
     CreateMemberDto:
       type: object
       properties:
@@ -1596,57 +2396,36 @@ components:
           type: string
         generation:
           type: number
+        clanRole:
+          type: string
+          enum:
+            - TRUONG_TOC
+            - PHO_TRUONG_TOC
+            - THANH_VIEN
+          description: Vai trò trong tộc (map vào committeeRole/isCommittee)
+        phone:
+          type: string
+          example: 0988 123 456
+        contactEmail:
+          type: string
+          example: lienhe@gmail.com
+          description: Email liên hệ (khác email tài khoản)
+        tree_id:
+          type: string
+          format: uuid
+          description: Chi nhánh — FK tới Tree
+        familyPosition:
+          type: string
+          example: Con trưởng
+          description: Vị trí trong gia đình
+        roleTags:
+          description: Vai trò trong dòng họ (badges)
+          type: array
+          items:
+            type: string
       required:
         - fullName
         - gender
-    RelatedMemberDto:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        private_id:
-          type: object
-          nullable: true
-        name:
-          type: string
-          example: Nguyễn Văn A
-        normalized_name:
-          type: object
-          nullable: true
-          description: Tên đã bỏ dấu để tìm kiếm
-        avatar_url:
-          type: object
-          nullable: true
-          format: uri
-        gender:
-          type: string
-          nullable: true
-          enum:
-            - M
-            - F
-            - O
-            - U
-        birthDate:
-          type: object
-          nullable: true
-          example: 1990-01-01
-        deathDate:
-          type: object
-          nullable: true
-          example: 2020-12-31
-        created_at:
-          type: string
-          format: date-time
-        profile:
-          nullable: true
-          allOf:
-            - 
-              $ref: "#/components/schemas/ProfileResponseDto"
-      required:
-        - id
-        - name
-        - created_at
     ProfileRelationshipDto:
       type: object
       properties:
@@ -1675,12 +2454,12 @@ components:
           description: Có mặt cho quan hệ cha/mẹ
           allOf:
             - 
-              $ref: "#/components/schemas/RelatedMemberDto"
+              $ref: "#/components/schemas/MemberLiteDto"
         child:
           description: Có mặt cho quan hệ con
           allOf:
             - 
-              $ref: "#/components/schemas/RelatedMemberDto"
+              $ref: "#/components/schemas/MemberLiteDto"
       required:
         - id
         - parent_id
@@ -1723,6 +2502,21 @@ components:
           type: object
           nullable: true
           example: 2020-12-31
+        tree_id:
+          type: object
+          nullable: true
+          format: uuid
+          description: Chi nhánh — FK tới Tree
+        generation:
+          type: number
+          nullable: true
+          example: 5
+          description: "Thế hệ (giá trị HIỆU LỰC, đã tính sẵn) = `profile.generation` nếu nhập tay, ngược lại suy ra từ quan hệ cha-con/vợ-chồng. Cập nhật bởi job nền `generation-recompute`. Muốn biết là nhập tay hay suy ra: `profile.generation != null`."
+        generation_updated_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: Lần cuối job nền ghi lại `generation`
         created_at:
           type: string
           format: date-time
@@ -1731,6 +2525,11 @@ components:
           allOf:
             - 
               $ref: "#/components/schemas/ProfileResponseDto"
+        tree:
+          nullable: true
+          allOf:
+            - 
+              $ref: "#/components/schemas/MemberTreeBriefDto"
         parent_relationships:
           description: Quan hệ mà member là con (chứa parent)
           type: array
@@ -1773,6 +2572,30 @@ components:
           type: string
         generation:
           type: number
+        clanRole:
+          type: string
+          enum:
+            - TRUONG_TOC
+            - PHO_TRUONG_TOC
+            - THANH_VIEN
+          description: Vai trò trong tộc (map vào committeeRole/isCommittee)
+        phone:
+          type: string
+          example: 0988 123 456
+        contactEmail:
+          type: string
+          example: lienhe@gmail.com
+        tree_id:
+          type: string
+          format: uuid
+          description: Chi nhánh — FK tới Tree
+        familyPosition:
+          type: string
+          example: Con trưởng
+        roleTags:
+          type: array
+          items:
+            type: string
     MemberRelationshipResponseDto:
       type: object
       properties:
@@ -2078,10 +2901,28 @@ components:
           type: string
           nullable: true
           format: date-time
+        end_date:
+          type: string
+          nullable: true
+          format: date-time
+          description: Ngày kết thúc
         location:
           type: object
           nullable: true
           example: Nhà thờ họ
+        category:
+          type: object
+          nullable: true
+          example: Lễ
+          description: Loại sự kiện
+        isLunar:
+          type: boolean
+          default: false
+          description: Ngày theo âm lịch
+        attendeeCount:
+          type: number
+          example: 0
+          description: Số người tham dự
         created_at:
           type: string
           format: date-time
@@ -2093,6 +2934,8 @@ components:
         - title
         - images
         - highlight
+        - isLunar
+        - attendeeCount
         - created_at
         - updated_at
     CreateEventDto:
@@ -2107,8 +2950,21 @@ components:
           format: date-time
           type: string
           example: 2024-08-15T00:00:00.000Z
+        end_date:
+          format: date-time
+          type: string
+          example: 2024-08-16T00:00:00.000Z
+          description: Ngày kết thúc (sự kiện nhiều ngày)
         location:
           type: string
+        category:
+          type: string
+          example: Lễ
+          description: Loại sự kiện
+        isLunar:
+          type: boolean
+          default: false
+          description: Ngày theo âm lịch
         highlight:
           type: boolean
           default: false
@@ -2128,14 +2984,38 @@ components:
         date:
           format: date-time
           type: string
+        end_date:
+          format: date-time
+          type: string
         location:
           type: string
+        category:
+          type: string
+        isLunar:
+          type: boolean
         highlight:
           type: boolean
         images:
           type: array
           items:
             type: string
+        existingImages:
+          description: Ảnh hiện có được giữ lại (URL); ảnh mới upload sẽ nối vào sau
+          type: array
+          items:
+            type: string
+    AddAttendeeDto:
+      type: object
+      properties:
+        member_id:
+          type: string
+          format: uuid
+        rsvp_status:
+          type: string
+          example: going
+          description: going | maybe | declined
+      required:
+        - member_id
     AnniversaryResponseDto:
       type: object
       properties:
@@ -2155,6 +3035,15 @@ components:
           type: object
           nullable: true
           format: uuid
+        cemetery_id:
+          type: object
+          nullable: true
+          format: uuid
+          description: Mộ/nghĩa trang liên kết
+        isLunar:
+          type: boolean
+          default: false
+          description: Ngày giỗ theo âm lịch
         created_at:
           type: string
           format: date-time
@@ -2166,10 +3055,15 @@ components:
           allOf:
             - 
               $ref: "#/components/schemas/MemberResponseDto"
+        cemetery:
+          type: object
+          nullable: true
+          description: Mộ/nghĩa trang liên kết
       required:
         - id
         - title
         - date
+        - isLunar
         - created_at
         - updated_at
     CreateAnniversaryDto:
@@ -2187,6 +3081,13 @@ components:
         member_id:
           type: string
           description: Link to a member (optional)
+        cemetery_id:
+          type: string
+          description: Link to a cemetery/grave (optional)
+        isLunar:
+          type: boolean
+          default: false
+          description: Ngày giỗ theo âm lịch
       required:
         - title
         - date
@@ -2202,6 +3103,10 @@ components:
           type: string
         member_id:
           type: string
+        cemetery_id:
+          type: string
+        isLunar:
+          type: boolean
     GraveResponseDto:
       type: object
       properties:
@@ -2212,27 +3117,53 @@ components:
           type: string
           example: Nghĩa trang dòng họ Nguyễn
         latitude:
-          type: number
+          type: object
           example: 21.028511
-          description: Vĩ độ
+          nullable: true
+          description: Vĩ độ (null = chưa xác định GPS)
         longitude:
-          type: number
+          type: object
           example: 105.804817
-          description: Kinh độ
+          nullable: true
+          description: Kinh độ (null = chưa xác định GPS)
         description:
           type: object
           nullable: true
+        member_id:
+          type: object
+          nullable: true
+          format: uuid
+          description: Thành viên liên kết
+        deathDate:
+          type: object
+          nullable: true
+          example: 1950-03-20
+          description: Ngày mất
+        relocationDate:
+          type: object
+          nullable: true
+          example: 1960-11-05
+          description: Ngày cải táng
+        constructionDate:
+          type: object
+          nullable: true
+          example: 1960-12-01
+          description: Ngày xây dựng
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+        member:
+          nullable: true
+          description: Suy ra generation/gender/branch/clanRole từ đây
+          allOf:
+            - 
+              $ref: "#/components/schemas/MemberResponseDto"
       required:
         - id
         - name
-        - latitude
-        - longitude
         - created_at
         - updated_at
     CreateGraveDto:
@@ -2244,16 +3175,34 @@ components:
         latitude:
           type: number
           example: 10.7769
+          nullable: true
+          description: Null = chưa xác định GPS
         longitude:
           type: number
           example: 106.7009
+          nullable: true
+          description: Null = chưa xác định GPS
         description:
           type: string
           example: Nghĩa trang Bình Hưng Hòa
+        member_id:
+          type: string
+          format: uuid
+          description: Liên kết mộ ↔ thành viên (suy ra generation/gender/branch...)
+        deathDate:
+          type: string
+          example: 1950-03-20
+          description: Ngày mất
+        relocationDate:
+          type: string
+          example: 1960-11-05
+          description: Ngày cải táng
+        constructionDate:
+          type: string
+          example: 1960-12-01
+          description: Ngày xây dựng
       required:
         - name
-        - latitude
-        - longitude
     UpdateGraveDto:
       type: object
       properties:
@@ -2264,4 +3213,206 @@ components:
         longitude:
           type: number
         description:
+          type: string
+        member_id:
+          type: string
+          format: uuid
+        deathDate:
+          type: string
+        relocationDate:
+          type: string
+        constructionDate:
+          type: string
+    LifeEventResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        member_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          example: 1990-05-12
+        title:
+          type: string
+          example: Tốt nghiệp đại học
+        description:
+          type: object
+          nullable: true
+        category:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - member_id
+        - date
+        - title
+        - created_at
+    CreateLifeEventDto:
+      type: object
+      properties:
+        date:
+          type: string
+          example: 1990-05-12
+          description: Ngày diễn ra (chuỗi, giống Member.birthDate)
+        title:
+          type: string
+          example: Tốt nghiệp đại học
+        description:
+          type: string
+        category:
+          type: string
+          example: education
+          description: Loại mốc (học vấn, sự nghiệp...)
+      required:
+        - date
+        - title
+    MemoryResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        member_id:
+          type: object
+          nullable: true
+          format: uuid
+        event_id:
+          type: object
+          nullable: true
+          format: uuid
+        author_id:
+          type: string
+          format: uuid
+        text:
+          type: string
+        photos:
+          default: []
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - author_id
+        - text
+        - photos
+        - created_at
+    CreateMemoryDto:
+      type: object
+      properties:
+        text:
+          type: string
+          example: Kỷ niệm khó quên trong ngày họp mặt dòng họ...
+        photos:
+          description: Ảnh kỷ niệm
+          type: array
+          items:
+            type: string
+            format: uri
+        event_id:
+          type: string
+          format: uuid
+          description: Gắn với một sự kiện (tùy chọn)
+      required:
+        - text
+    ArticleResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        excerpt:
+          type: object
+          nullable: true
+        content:
+          type: string
+        category:
+          type: string
+          example: announcement
+        date:
+          type: string
+          format: date-time
+        views:
+          type: number
+          example: 0
+        featured:
+          type: boolean
+          default: false
+        coverUrl:
+          type: object
+          nullable: true
+          format: uri
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - content
+        - category
+        - date
+        - views
+        - featured
+        - created_at
+        - updated_at
+    CreateArticleDto:
+      type: object
+      properties:
+        title:
+          type: string
+          example: Lễ giỗ Tổ họ Đỗ năm 2026
+        content:
+          type: string
+          example: Nội dung đầy đủ của bài viết...
+        category:
+          type: string
+          example: announcement
+          description: announcement | activity | story | archive | construction | other
+        excerpt:
+          type: string
+          example: Tóm tắt ngắn hiển thị trên thẻ.
+        featured:
+          type: boolean
+          default: false
+        coverUrl:
+          type: string
+          format: uri
+        date:
+          format: date-time
+          type: string
+          example: 2026-02-20T00:00:00.000Z
+      required:
+        - title
+        - content
+        - category
+    UpdateArticleDto:
+      type: object
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+        category:
+          type: string
+        excerpt:
+          type: string
+        featured:
+          type: boolean
+        coverUrl:
+          type: string
+        date:
+          format: date-time
           type: string

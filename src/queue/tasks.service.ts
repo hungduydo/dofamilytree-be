@@ -2,7 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { put } from '@vercel/blob';
 import { Redis as UpstashRedis } from '@upstash/redis';
-import { removeVietnameseTones } from '../utils/vietnamese-helper';
+import { GenerationService } from '../generation/generation.service';
 
 @Injectable()
 export class TasksService {
@@ -11,6 +11,7 @@ export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
+    private readonly generationService: GenerationService,
   ) {}
 
   async handleAvatarUpload(data: { memberId: string; buffer: { type: string; data: number[] } | string; filename: string; mimetype: string }) {
@@ -44,10 +45,13 @@ export class TasksService {
     this.logger.log('Generating family tree report...');
 
     try {
-      const [totalMembers, maxGenProfile, deceasedCount, birthMembers, latestProfile] =
+      const [totalMembers, maxGenMember, deceasedCount, birthMembers, latestProfile] =
         await Promise.all([
           this.prisma.member.count(),
-          this.prisma.profile.aggregate({ _max: { generation: true } }),
+          // members.generation là giá trị HIỆU LỰC (nhập tay ưu tiên, ngược lại
+          // suy ra), nên đây mới là độ sâu thật của dòng họ. profiles.generation
+          // gần như luôn null vì không ai nhập tay.
+          this.prisma.member.aggregate({ _max: { generation: true } }),
           this.prisma.member.count({ where: { deathDate: { not: null } } }),
           this.prisma.member.findMany({
             where: { birthDate: { not: null } },
@@ -62,7 +66,7 @@ export class TasksService {
         if (year >= 1901 && year <= 2100) born20th21st++;
       }
 
-      const generations = maxGenProfile._max.generation || 0;
+      const generations = maxGenMember._max.generation || 0;
       const lastUpdate = latestProfile._max.updated_at
         ? latestProfile._max.updated_at.toISOString().split('T')[0]
         : null;
@@ -85,6 +89,14 @@ export class TasksService {
       this.logger.error('Failed to generate report', error);
       throw error;
     }
+  }
+
+  /**
+   * Tính lại `members.generation` cho toàn bộ thành viên. Giữ mỏng — logic nằm
+   * trong `GenerationService` để test được mà không phải dựng cả queue.
+   */
+  async handleGenerationRecompute() {
+    return this.generationService.recomputeAll();
   }
 
   async handleNotification(data: { type: string; message: string; payload?: any }) {

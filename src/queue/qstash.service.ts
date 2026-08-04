@@ -12,7 +12,13 @@ export class QStashService {
     });
   }
 
-  async publish(task: string, data: any) {
+  /**
+   * @param opts.delay Seconds to wait before QStash delivers the callback.
+   * @param opts.deduplicationId Collapses repeat publishes with the same id into
+   *   a single delivery. Combined with `delay` this gives cheap debouncing —
+   *   see `GenerationService.enqueueRecompute`.
+   */
+  async publish(task: string, data: any, opts?: { delay?: number; deduplicationId?: string }) {
     let appUrl = process.env.APP_URL || 'http://localhost:3002';
     if (!/^https?:\/\//i.test(appUrl)) appUrl = `https://${appUrl}`;
     const callbackUrl = `${appUrl}/v2/queue/callback/${task}`;
@@ -27,6 +33,8 @@ export class QStashService {
         headers: {
           'x-qstash-signature': 'required',
         },
+        ...(opts?.delay !== undefined ? { delay: opts.delay } : {}),
+        ...(opts?.deduplicationId ? { deduplicationId: opts.deduplicationId } : {}),
       });
     } catch (error) {
       this.logger.error(`Failed to publish task ${task} to QStash`, error);

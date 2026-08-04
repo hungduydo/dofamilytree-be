@@ -11,7 +11,15 @@ export class ProfileResponseDto {
   @ApiProperty({ example: 'Nguyễn Văn A' })
   fullName: string;
 
-  @ApiPropertyOptional({ nullable: true, example: 5 })
+  // `type: Number` là bắt buộc: TS `number | null` không reflect được, thiếu nó
+  // schema sinh ra `type: object`.
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 5,
+    description:
+      'Thế hệ NHẬP TAY — ưu tiên hơn giá trị suy ra. Xem `member.generation` cho giá trị hiệu lực.',
+  })
   generation: number | null;
 
   @ApiPropertyOptional({ nullable: true })
@@ -63,6 +71,29 @@ export class MemberTreeBriefDto {
   title: string | null;
 }
 
+/**
+ * Member tối giản — dùng cho `GET /v2/members/search` và cho người thân trong
+ * `GET /v2/members/:id/profile`. Khớp MEMBER_LITE_SELECT ở members.select.ts.
+ */
+export class MemberLiteDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ example: 'Nguyễn Văn A' })
+  name: string;
+
+  @ApiPropertyOptional({ nullable: true, format: 'uri' })
+  avatar_url: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 5,
+    description: 'Thế hệ hiệu lực (đã tính sẵn). Xem MemberResponseDto.generation.',
+  })
+  generation: number | null;
+}
+
 /** Mirrors the Prisma `Member` model (with optional included `profile`). */
 export class MemberResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -92,6 +123,25 @@ export class MemberResponseDto {
   @ApiPropertyOptional({ nullable: true, format: 'uuid', description: 'Chi nhánh — FK tới Tree' })
   tree_id: string | null;
 
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 5,
+    description:
+      'Thế hệ (giá trị HIỆU LỰC, đã tính sẵn) = `profile.generation` nếu nhập tay, ngược lại suy ra ' +
+      'từ quan hệ cha-con/vợ-chồng. Cập nhật bởi job nền `generation-recompute`. Muốn biết là nhập ' +
+      'tay hay suy ra: `profile.generation != null`.',
+  })
+  generation: number | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    format: 'date-time',
+    description: 'Lần cuối job nền ghi lại `generation`',
+  })
+  generation_updated_at: string | null;
+
   @ApiProperty({ type: String, format: 'date-time' })
   created_at: string;
 
@@ -120,6 +170,24 @@ export class MemberStatsResponseDto {
   generations: number;
 }
 
+/** Kết quả `POST /v2/members/generations/recompute`. */
+export class RecomputeGenerationsResponseDto {
+  @ApiProperty({ example: 1256, description: 'Số thành viên đã duyệt' })
+  members: number;
+
+  @ApiProperty({ example: 12, description: 'Số dòng thực sự đổi giá trị' })
+  updated: number;
+
+  @ApiProperty({ example: 840 })
+  durationMs: number;
+
+  @ApiProperty({
+    type: [String],
+    description: 'Bất thường trong dữ liệu (cycle, pin mâu thuẫn, cạnh tự trỏ)',
+  })
+  warnings: string[];
+}
+
 /** Paginated envelope returned by `GET /v2/members`. */
 export class PaginatedMembersResponseDto {
   @ApiProperty({ type: () => [MemberResponseDto] })
@@ -135,10 +203,108 @@ export class PaginatedMembersResponseDto {
   pageSize: number;
 }
 
-/** One related member nested inside a profile's relationships. */
-export class RelatedMemberDto extends MemberResponseDto {}
+// ─── Biến thể payload cho `?view=` của GET /v2/members ──────────────────────
+// Chỉ đăng ký qua @ApiExtraModels trên controller (vào components.schemas),
+// KHÔNG gắn vào paths — để type mặc định của FE không đổi. FE opt-in tường minh
+// qua components['schemas']['MemberTableDto'] / ['MemberLiteDto'].
 
-/** A member relationship edge as returned inside the full profile. */
+/** Subset profile trong `?view=table` — khớp PROFILE_TABLE_SELECT. */
+export class ProfileTableDto {
+  @ApiPropertyOptional({ nullable: true, example: 'Kỹ sư phần mềm' })
+  occupation: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Hà Nội' })
+  address: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '0988 123 456' })
+  phone: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Con trưởng' })
+  familyPosition: string | null;
+
+  @ApiProperty({ type: [String], default: [] })
+  roleTags: string[];
+
+  @ApiPropertyOptional({ nullable: true })
+  committeeRole: string | null;
+
+  @ApiProperty({ default: false })
+  isCommittee: boolean;
+
+  @ApiProperty({ default: false })
+  isNotable: boolean;
+}
+
+/** Member trong `?view=table` — khớp MEMBER_TABLE_SELECT (bỏ biography/notes). */
+export class MemberTableDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ example: 'Nguyễn Văn A' })
+  name: string;
+
+  @ApiPropertyOptional({ nullable: true, format: 'uri' })
+  avatar_url: string | null;
+
+  @ApiPropertyOptional({ nullable: true, enum: ['M', 'F', 'O', 'U'] })
+  gender: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '1990-01-01' })
+  birthDate: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '2020-12-31' })
+  deathDate: string | null;
+
+  @ApiPropertyOptional({ nullable: true, format: 'uuid' })
+  tree_id: string | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 5 })
+  generation: number | null;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  created_at: string;
+
+  @ApiPropertyOptional({ type: () => ProfileTableDto, nullable: true })
+  profile?: ProfileTableDto | null;
+
+  @ApiPropertyOptional({ type: () => MemberTreeBriefDto, nullable: true })
+  tree?: MemberTreeBriefDto | null;
+}
+
+/** Envelope cho `GET /v2/members?view=table`. */
+export class PaginatedMembersTableResponseDto {
+  @ApiProperty({ type: () => [MemberTableDto] })
+  data: MemberTableDto[];
+
+  @ApiProperty({ example: 120 })
+  total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 10 })
+  pageSize: number;
+}
+
+/** Envelope cho `GET /v2/members?view=lite`. */
+export class PaginatedMembersLiteResponseDto {
+  @ApiProperty({ type: () => [MemberLiteDto] })
+  data: MemberLiteDto[];
+
+  @ApiProperty({ example: 120 })
+  total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 10 })
+  pageSize: number;
+}
+
+/**
+ * Một cạnh quan hệ trả trong full profile. Người thân (`parent`/`child`) rút về
+ * MemberLiteDto — chỉ đủ render một chip/link, không kèm profile lồng.
+ */
 export class ProfileRelationshipDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -158,11 +324,11 @@ export class ProfileRelationshipDto {
   @ApiProperty({ type: String, format: 'date-time' })
   created_at: string;
 
-  @ApiPropertyOptional({ type: () => RelatedMemberDto, description: 'Có mặt cho quan hệ cha/mẹ' })
-  parent?: RelatedMemberDto;
+  @ApiPropertyOptional({ type: () => MemberLiteDto, description: 'Có mặt cho quan hệ cha/mẹ' })
+  parent?: MemberLiteDto;
 
-  @ApiPropertyOptional({ type: () => RelatedMemberDto, description: 'Có mặt cho quan hệ con' })
-  child?: RelatedMemberDto;
+  @ApiPropertyOptional({ type: () => MemberLiteDto, description: 'Có mặt cho quan hệ con' })
+  child?: MemberLiteDto;
 }
 
 /** Full profile returned by `GET /v2/members/:id/profile`. */

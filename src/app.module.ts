@@ -13,6 +13,7 @@ import { LifeEventsModule } from './life-events/life-events.module';
 import { MemoriesModule } from './memories/memories.module';
 import { ArticlesModule } from './articles/articles.module';
 import { QueueModule } from './queue/queue.module';
+import { GenerationModule } from './generation/generation.module';
 import { RedisModule } from './redis.module';
 
 @Module({
@@ -22,6 +23,7 @@ import { RedisModule } from './redis.module';
     PrismaModule,
     AuthModule,
     QueueModule,
+    GenerationModule,
     MembersModule,
     RelationshipsModule,
     TreeModule,

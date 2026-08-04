@@ -17,6 +17,7 @@ import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { AssignRolesDto } from './dto/assign-roles.dto';
 import { removeVietnameseTones } from '../utils/vietnamese-helper';
+import { GenerationService } from '../generation/generation.service';
 import { QUEUE_AVATAR_UPLOAD } from '../queue/queue.constants';
 
 export const AVAILABLE_ROLES = [
@@ -38,6 +39,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly qstashService: QStashService,
+    private readonly generationService: GenerationService,
   ) {}
 
   async register(dto: RegisterDto, avatarFile?: Express.Multer.File) {
@@ -66,6 +68,8 @@ export class AuthService {
           gender: gender ?? null,
           birthDate: birthDate ?? null,
           deathDate: deathDate ?? null,
+          // Mirror giá trị nhập tay sang cột hiệu lực, như createMember.
+          generation: generation ?? null,
         },
       });
 
@@ -92,6 +96,8 @@ export class AuthService {
 
       return { member: newMember, userMetadata: meta };
     });
+
+    this.generationService.enqueueRecompute();
 
     // Queue avatar upload if file was provided — off the request path so the
     // QStash round-trip doesn't block the response (waitUntil keeps it alive

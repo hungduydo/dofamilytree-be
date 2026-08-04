@@ -1,6 +1,6 @@
 import { Controller, Post, Body, Param, Logger, UnauthorizedException, Req } from '@nestjs/common';
 import { TasksService } from './tasks.service';
-import { QUEUE_AVATAR_UPLOAD, QUEUE_REPORT_GENERATE, QUEUE_NOTIFICATION, QUEUE_IMAGE_PROCESS } from './queue.constants';
+import { QUEUE_AVATAR_UPLOAD, QUEUE_REPORT_GENERATE, QUEUE_NOTIFICATION, QUEUE_IMAGE_PROCESS, QUEUE_GENERATION_RECOMPUTE } from './queue.constants';
 
 @Controller('queue')
 export class QueueController {
@@ -33,6 +33,9 @@ export class QueueController {
         break;
       case QUEUE_IMAGE_PROCESS:
         await this.tasksService.handleImageProcess(data);
+        break;
+      case QUEUE_GENERATION_RECOMPUTE:
+        await this.tasksService.handleGenerationRecompute();
         break;
       default:
         this.logger.warn(`Unknown task received: ${task}`);

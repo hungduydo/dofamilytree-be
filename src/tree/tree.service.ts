@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException, Inject, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Redis as UpstashRedis } from '@upstash/redis';
+import { SafeCache } from '../utils/safe-cache';
 
-const CACHE_KEY_FULL = 'tree:chart:full';
-const CACHE_KEY_STATS = 'tree:stats';
-const CACHE_TTL = 3600; // 1 hour
+import { CACHE_KEY_FULL, CACHE_KEY_STATS, CACHE_TTL } from './tree.cache-keys';
+
 const MAX_SUBTREE_GENERATIONS = 4;
 
 export interface FamilyChartNode {
@@ -31,42 +31,30 @@ export interface FamilyChartNode {
 export class TreeService {
   private readonly logger = new Logger(TreeService.name);
 
+  private readonly cache: SafeCache;
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
-  ) { }
+  ) {
+    // Cache là tối ưu hoá, không bao giờ là hard dependency — xem SafeCache.
+    this.cache = new SafeCache(this.redis, this.logger, CACHE_TTL);
+  }
 
   // ─── Redis best-effort wrappers ───────────────────────────────────────────
-  // The cache is an optimization, never a hard dependency. If Upstash is
-  // unreachable (network blip, paused free-tier instance, missing creds),
-  // reads/writes degrade to a no-op so the DB-backed path still serves the
-  // request instead of 500ing.
+  // Giữ ba wrapper mỏng để phần thân bên dưới không phải đổi; chúng uỷ thác
+  // thẳng cho SafeCache (dùng chung với MembersService).
 
-  private async safeCacheGet<T>(key: string): Promise<T | null> {
-    try {
-      const v = await this.redis.get<any>(key);
-      if (v == null) return null;
-      return (typeof v === 'string' ? JSON.parse(v) : v) as T;
-    } catch (err) {
-      this.logger.warn(`Redis GET ${key} failed, falling back to DB: ${(err as Error).message}`);
-      return null;
-    }
+  private safeCacheGet<T>(key: string): Promise<T | null> {
+    return this.cache.get<T>(key);
   }
 
-  private async safeCacheSet(key: string, value: unknown): Promise<void> {
-    try {
-      await this.redis.set(key, JSON.stringify(value), { ex: CACHE_TTL });
-    } catch (err) {
-      this.logger.warn(`Redis SET ${key} failed (non-fatal): ${(err as Error).message}`);
-    }
+  private safeCacheSet(key: string, value: unknown): Promise<void> {
+    return this.cache.set(key, value);
   }
 
-  private async safeCacheDel(key: string): Promise<void> {
-    try {
-      await this.redis.del(key);
-    } catch (err) {
-      this.logger.warn(`Redis DEL ${key} failed (non-fatal): ${(err as Error).message}`);
-    }
+  private safeCacheDel(key: string): Promise<void> {
+    return this.cache.del(key);
   }
 
   // ─── Full chart ───────────────────────────────────────────────────────────
@@ -89,7 +77,9 @@ export class TreeService {
         parent_relationships: true,
         child_relationships: { include: { parent: true } },
       },
-      orderBy: { profile: { generation: { sort: 'asc', nulls: 'last' } } },
+      // Cột hiệu lực nằm ngay trên `members` và có index — bỏ được join sang
+      // `profiles` (bảng không có index nào).
+      orderBy: { generation: { sort: 'asc', nulls: 'last' } },
     });
 
     const nodes: FamilyChartNode[] = members.map((m) => this.memberToNode(m));
@@ -197,7 +187,8 @@ export class TreeService {
       await Promise.all([
         this.prisma.member.count(),
         this.prisma.member.count({ where: { deathDate: { not: null } } }),
-        this.prisma.profile.aggregate({ _max: { generation: true } }),
+        // Phải khớp với TasksService.handleReportGenerate — xem chú thích ở đó.
+        this.prisma.member.aggregate({ _max: { generation: true } }),
         this.prisma.member.findMany({
           where: { birthDate: { not: null } },
           select: { birthDate: true },
@@ -300,7 +291,8 @@ export class TreeService {
         label: fullName,
         birthday: m.birthDate || undefined,
         avatar: m.avatar_url || undefined,
-        generation: m.profile?.generation || undefined,
+        // `??` chứ không phải `||`: thế hệ 0 nếu có phải sống sót.
+        generation: m.generation ?? m.profile?.generation ?? undefined,
         desc: m.deathDate ? `† ${m.deathDate}` : undefined,
       },
     };

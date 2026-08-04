@@ -35,6 +35,23 @@ cd ../backend && pnpm exec prisma migrate dev --name add_member_relationships
 pnpm migrate:relationships
 ```
 
+### Migration thủ công
+
+Một số thay đổi schema được áp thẳng lên Supabase thay vì qua `prisma migrate` (repo v2 không sở hữu
+`prisma/migrations`). DDL được lưu lại trong `prisma/manual-migrations/` để tài liệu hoá — **không có
+runner nào tự chạy chúng**. Chạy bằng `DIRECT_URL`, không phải `DATABASE_URL`:
+
+```bash
+psql "$DIRECT_URL" -f prisma/manual-migrations/001_add_member_generation.sql
+```
+
+Sau khi chạy, backfill dữ liệu thế hệ:
+
+```bash
+pnpm backfill:generations -- --dry-run   # xem phân bố trước
+pnpm backfill:generations
+```
+
 ---
 
 ## Chạy server

@@ -3,6 +3,7 @@ import { QStashService } from '../queue/qstash.service';
 import { runInBackground } from '../utils/run-in-background';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRelationshipDto, SearchRelationshipDto } from './dto/create-relationship.dto';
+import { GenerationService } from '../generation/generation.service';
 import { QUEUE_NOTIFICATION } from '../queue/queue.constants';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class RelationshipsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly qstashService: QStashService,
+    private readonly generationService: GenerationService,
   ) {}
 
   async addRelationship(dto: CreateRelationshipDto) {
@@ -73,6 +75,9 @@ export class RelationshipsService {
         payload: { parentId: dto.parentId, childId: dto.childId, type: dto.type },
       }),
     );
+
+    // Trigger chính: thêm một cạnh đổi thế hệ của cả nhánh bên dưới.
+    this.generationService.enqueueRecompute();
 
     return relationship;
   }
@@ -197,6 +202,11 @@ export class RelationshipsService {
   async deleteRelationship(id: string) {
     const rel = await this.prisma.memberRelationship.findUnique({ where: { id } });
     if (!rel) throw new NotFoundException(`Relationship ${id} not found`);
-    return this.prisma.memberRelationship.delete({ where: { id } });
+    const deleted = await this.prisma.memberRelationship.delete({ where: { id } });
+
+    // Gỡ một cạnh có thể biến cả một nhánh thành gốc mới.
+    this.generationService.enqueueRecompute();
+
+    return deleted;
   }
 }

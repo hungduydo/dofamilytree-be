@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { RelationshipsService } from '../../src/relationships/relationships.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { QStashService } from '../../src/queue/qstash.service';
+import { GenerationService } from '../../src/generation/generation.service';
 import { QUEUE_NOTIFICATION } from '../../src/queue/queue.constants';
 
 const mockPrisma = {
@@ -20,6 +21,7 @@ const mockPrisma = {
 };
 
 const mockQStashService = { publish: jest.fn() };
+const mockGenerationService = { enqueueRecompute: jest.fn(), recomputeAll: jest.fn() };
 
 describe('RelationshipsService', () => {
   let service: RelationshipsService;
@@ -30,6 +32,7 @@ describe('RelationshipsService', () => {
         RelationshipsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: QStashService, useValue: mockQStashService },
+        { provide: GenerationService, useValue: mockGenerationService },
       ],
     }).compile();
 
@@ -50,6 +53,8 @@ describe('RelationshipsService', () => {
 
       const result = await service.addRelationship({ parentId: 'parent-1', childId: 'child-1', type: 'BIOLOGICAL' });
       expect(result).toHaveProperty('id', 'rel-1');
+      // Trigger chính: thêm một cạnh đổi thế hệ của cả nhánh bên dưới.
+      expect(mockGenerationService.enqueueRecompute).toHaveBeenCalled();
     });
 
     it('should throw BadRequestException on self-relation', async () => {
@@ -267,6 +272,20 @@ describe('RelationshipsService', () => {
     it('should throw NotFoundException when relationship not found', async () => {
       mockPrisma.memberRelationship.findUnique.mockResolvedValue(null);
       await expect(service.deleteRelationship('bad-id')).rejects.toThrow(NotFoundException);
+    });
+
+    it('xếp hàng tính lại thế hệ — gỡ cạnh có thể biến cả nhánh thành gốc mới', async () => {
+      mockPrisma.memberRelationship.findUnique.mockResolvedValue({ id: 'rel-1' });
+      mockPrisma.memberRelationship.delete.mockResolvedValue({ id: 'rel-1' });
+
+      await service.deleteRelationship('rel-1');
+      expect(mockGenerationService.enqueueRecompute).toHaveBeenCalled();
+    });
+
+    it('KHÔNG xếp hàng khi quan hệ không tồn tại', async () => {
+      mockPrisma.memberRelationship.findUnique.mockResolvedValue(null);
+      await expect(service.deleteRelationship('bad-id')).rejects.toThrow(NotFoundException);
+      expect(mockGenerationService.enqueueRecompute).not.toHaveBeenCalled();
     });
   });
 });

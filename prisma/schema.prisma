@@ -26,6 +26,12 @@ model Member {
   deathDate            String?
   tree_id              String?              @db.Uuid
   created_at           DateTime             @default(now())
+  /// Thế hệ đã tính sẵn — giá trị HIỆU LỰC = profile.generation (nhập tay, ưu
+  /// tiên) nếu có, ngược lại suy ra từ member_relationships. Ghi bởi job nền
+  /// `generation-recompute`; đọc trực tiếp ở request path để không phải traverse
+  /// đồ thị. Nguồn sự thật cho phần nhập tay vẫn là profiles.generation.
+  generation            Int?
+  generation_updated_at DateTime?
   anniversaries        Anniversary[]
   comments             Comment[]
   child_relationships  MemberRelationship[] @relation("RelChild")
@@ -44,6 +50,19 @@ model Member {
   @@index([normalized_name])
   @@index([name])
   @@index([tree_id])
+  @@index([generation])
+  // Lọc + sắp xếp cho GET /v2/members — xem 002_member_search_and_filter_indexes.sql.
+  // `map:` tường minh để tên khớp CHÍNH XÁC file SQL (Prisma tự sinh tên dài hơn
+  // như members_generation_created_at_id_idx → migrate diff sẽ báo drift).
+  @@index([created_at(sort: Desc), id], map: "members_created_at_id_idx")
+  @@index([generation, created_at(sort: Desc), id], map: "members_generation_created_at_idx")
+  @@index([tree_id, created_at(sort: Desc), id], map: "members_tree_created_at_idx")
+  @@index([gender, created_at(sort: Desc), id], map: "members_gender_created_at_idx")
+  /// GIN trigram cho `ILIKE '%x%'` (nameSearchWhere). Cần extension pg_trgm.
+  /// `map:` tường minh để không đụng tên với btree members_normalized_name_idx /
+  /// members_name_idx ở trên (Prisma tự sinh tên trùng nếu không đặt).
+  @@index([normalized_name(ops: raw("gin_trgm_ops"))], type: Gin, map: "members_normalized_name_trgm_idx")
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "members_name_trgm_idx")
   @@map("members")
 }
 
@@ -67,6 +86,10 @@ model Profile {
   isNotable      Boolean  @default(false)
   member         Member   @relation(fields: [member_id], references: [id])
 
+  /// profiles_is_committee_idx / profiles_is_notable_idx là index PHẦN
+  /// (`WHERE "isCommittee"` / `WHERE "isNotable"`), Prisma KHÔNG biểu diễn được.
+  /// Chúng chỉ tồn tại trong 002_member_search_and_filter_indexes.sql —
+  /// `migrate diff` không thấy. Chuẩn bị cho Phase 2 (đổi predicate committee/notable).
   @@map("profiles")
 }
 

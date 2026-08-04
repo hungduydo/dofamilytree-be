@@ -8,6 +8,7 @@ const mockPrisma = {
     findMany: jest.fn(),
     findUnique: jest.fn(),
     count: jest.fn(),
+    aggregate: jest.fn(),
   },
   profile: {
     aggregate: jest.fn(),
@@ -84,6 +85,46 @@ describe('TreeService', () => {
       expect(mockPrisma.member.findMany).toHaveBeenCalled();
       expect(result.nodes).toHaveLength(1);
     });
+
+    it('ưu tiên members.generation hơn profile.generation', async () => {
+      mockRedis.get.mockResolvedValue(null);
+      mockPrisma.member.findMany.mockResolvedValue([
+        {
+          id: 'm1', name: 'A', gender: 'M', generation: 4,
+          profile: { fullName: 'A', generation: 1 },
+          parent_relationships: [], child_relationships: [],
+        },
+      ]);
+
+      const result = await service.getFamilyTreeChart();
+      expect(result.nodes[0].data.generation).toBe(4);
+    });
+
+    it('giữ nguyên thế hệ 0 (?? thay vì ||)', async () => {
+      mockRedis.get.mockResolvedValue(null);
+      mockPrisma.member.findMany.mockResolvedValue([
+        {
+          id: 'm1', name: 'A', gender: 'M', generation: 0,
+          profile: { fullName: 'A', generation: null },
+          parent_relationships: [], child_relationships: [],
+        },
+      ]);
+
+      const result = await service.getFamilyTreeChart();
+      expect(result.nodes[0].data.generation).toBe(0);
+    });
+
+    it('sắp xếp theo members.generation, không join sang profiles', async () => {
+      mockRedis.get.mockResolvedValue(null);
+      mockPrisma.member.findMany.mockResolvedValue([]);
+
+      await service.getFamilyTreeChart();
+      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: { generation: { sort: 'asc', nulls: 'last' } },
+        }),
+      );
+    });
   });
 
   describe('regenerateFamilyTreeChart', () => {
@@ -142,8 +183,11 @@ describe('TreeService', () => {
       mockPrisma.member.count
         .mockResolvedValueOnce(50) // total
         .mockResolvedValueOnce(10); // deceased
+      // generations giờ đọc từ members.generation (giá trị hiệu lực), còn
+      // lastUpdate vẫn từ profiles.updated_at.
+      mockPrisma.member.aggregate.mockResolvedValue({ _max: { generation: 5 } });
       mockPrisma.profile.aggregate.mockResolvedValue({
-        _max: { generation: 5, updated_at: new Date('2024-01-15T00:00:00.000Z') },
+        _max: { updated_at: new Date('2024-01-15T00:00:00.000Z') },
       });
       // birthDates: one in 20th–21st century range, one out of range
       mockPrisma.member.findMany.mockResolvedValue([
@@ -179,7 +223,8 @@ describe('TreeService', () => {
         totalMembers: 10, totalGenerations: 3, deceased: 2, generatedAt: new Date().toISOString(),
       }));
       mockPrisma.member.count.mockResolvedValueOnce(10).mockResolvedValueOnce(2);
-      mockPrisma.profile.aggregate.mockResolvedValue({ _max: { generation: 3, updated_at: null } });
+      mockPrisma.member.aggregate.mockResolvedValue({ _max: { generation: 3 } });
+      mockPrisma.profile.aggregate.mockResolvedValue({ _max: { updated_at: null } });
       mockPrisma.member.findMany.mockResolvedValue([]);
 
       const result: any = await service.getStats();
@@ -187,6 +232,20 @@ describe('TreeService', () => {
       expect(result.born20th21st).toBe(0);
       expect(result.lastUpdate).toBeNull();
       expect(mockPrisma.member.count).toHaveBeenCalled();
+    });
+
+    it('đọc generations từ members.generation, KHÔNG từ profiles.generation', async () => {
+      mockRedis.get.mockResolvedValue(null);
+      mockPrisma.member.count.mockResolvedValueOnce(4).mockResolvedValueOnce(1);
+      mockPrisma.member.aggregate.mockResolvedValue({ _max: { generation: 7 } });
+      // profiles.generation gần như luôn null vì không ai nhập tay — nếu
+      // computeStats còn đọc nó thì generations sẽ ra 0.
+      mockPrisma.profile.aggregate.mockResolvedValue({ _max: { updated_at: null } });
+      mockPrisma.member.findMany.mockResolvedValue([]);
+
+      const result: any = await service.getStats();
+      expect(mockPrisma.member.aggregate).toHaveBeenCalledWith({ _max: { generation: true } });
+      expect(result.generations).toBe(7);
     });
   });
 
