@@ -23,13 +23,13 @@ export function buildSwaggerConfig() {
         `- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n` +
         `- **Anniversaries** — Ngày giỗ (filter by member, month, upcoming)\n` +
         `- **Events** — Sự kiện dòng họ + notification queue\n` +
-        `- **Media** — Upload ảnh → nén bằng sharp → Vercel Blob\n` +
+        `- **Media** — Thư viện media: upload mọi loại (ảnh nén lossless bằng sharp; video/audio/tài liệu upload thẳng) → Vercel Blob; phân trang/lọc/tìm kiếm + thống kê + album\n` +
         `- **Graves** — Mộ phần với tọa độ GPS + tìm kiếm gần nhất\n\n` +
         `### Queue Jobs (QStash + Redis)\n` +
         `| Queue | Trigger | Action |\n` +
         `|-------|---------|--------|\n` +
         `| avatar-upload | Create/Update member với file | Upload → Vercel Blob → cập nhật avatar_url |\n` +
-        `| image-process | Upload media | sharp resize + compress → Vercel Blob |\n` +
+        `| media-process | Upload media | Ảnh: sharp nén lossless; khác: upload thẳng → Vercel Blob (off-request) |\n` +
         `| report-generate | Create/Delete member | Tính stats → lưu Redis |\n` +
         `| notification | New member/relationship/event | Log (Phase 1) |\n`,
     )

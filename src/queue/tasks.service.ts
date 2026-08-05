@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { put } from '@vercel/blob';
 import { Redis as UpstashRedis } from '@upstash/redis';
+import sharp from 'sharp';
 import { GenerationService } from '../generation/generation.service';
 
 @Injectable()
@@ -104,17 +105,50 @@ export class TasksService {
     // Future: send email or push notification
   }
 
-  async handleImageProcess(data: { mediaId: string; buffer: { type: string; data: number[] } | string; filename: string; mimetype: string }) {
-    const { mediaId, buffer, filename, mimetype } = data;
-    this.logger.log(`Processing image for media ${mediaId}`);
-    
-    const bufferObj = typeof buffer === 'string' 
-      ? Buffer.from(buffer, 'base64') 
-      : Buffer.from(buffer.data);
+  /**
+   * Nén ẢNH lossless (giữ nguyên kích thước & định dạng, không giảm chất lượng
+   * nhìn thấy) bằng sharp. `.rotate()` áp EXIF orientation TRƯỚC khi sharp strip
+   * metadata (mặc định) — nếu không ảnh chụp dọc sẽ bị xoay. Định dạng không nén
+   * được (gif…) trả nguyên buffer.
+   */
+  private async compressImageLossless(buffer: Buffer, mimetype: string): Promise<Buffer> {
+    const img = sharp(buffer).rotate();
+    switch (mimetype) {
+      case 'image/jpeg':
+        // mozjpeg tối ưu bảng Huffman; quality 100 ≈ không mất chất lượng nhìn thấy.
+        return img.jpeg({ mozjpeg: true, quality: 100 }).toBuffer();
+      case 'image/png':
+        return img.png({ compressionLevel: 9, effort: 10 }).toBuffer();
+      case 'image/webp':
+        return img.webp({ lossless: true, effort: 6 }).toBuffer();
+      default:
+        return buffer;
+    }
+  }
 
-    // Simplification for now: just upload to blob
+  /**
+   * Xử lý mọi loại media off-request: ẢNH → nén lossless rồi lên Blob; video /
+   * audio / tài liệu → upload thẳng. Cập nhật record sang `ready` (kèm size mới),
+   * hoặc `failed` khi lỗi để record không kẹt vĩnh viễn ở `pending`.
+   */
+  async handleMediaProcess(data: {
+    mediaId: string;
+    buffer: { type: string; data: number[] } | string;
+    filename: string;
+    mimetype: string;
+  }) {
+    const { mediaId, buffer, filename, mimetype } = data;
+    this.logger.log(`Processing media ${mediaId} (${mimetype})`);
+
+    const bufferObj =
+      typeof buffer === 'string' ? Buffer.from(buffer, 'base64') : Buffer.from(buffer.data);
+
     try {
-      const blob = await put(`media/${mediaId}/${filename}`, bufferObj, {
+      const outBuffer = mimetype.startsWith('image/')
+        ? await this.compressImageLossless(bufferObj, mimetype)
+        : bufferObj;
+
+      const blob = await put(`media/${mediaId}/${filename}`, outBuffer, {
         access: 'public',
         contentType: mimetype,
         token: process.env.BLOB_READ_WRITE_TOKEN,
@@ -122,13 +156,28 @@ export class TasksService {
 
       await this.prisma.media.update({
         where: { id: mediaId },
-        data: { file_path: blob.url },
+        data: { file_path: blob.url, size_bytes: outBuffer.length, status: 'ready' },
       });
 
-      this.logger.log(`Image processed and uploaded: ${blob.url}`);
+      this.logger.log(`Media ${mediaId} processed and uploaded: ${blob.url}`);
     } catch (error) {
-      this.logger.error(`Failed to process image for media ${mediaId}`, error);
+      this.logger.error(`Failed to process media ${mediaId}`, error);
+      // Đánh dấu failed để record không kẹt ở pending; nuốt lỗi update để không
+      // che mất lỗi gốc.
+      await this.prisma.media
+        .update({ where: { id: mediaId }, data: { status: 'failed' } })
+        .catch(() => {});
       throw error;
     }
+  }
+
+  /** Alias tương thích với callback QStash cũ (`image-process`). */
+  async handleImageProcess(data: {
+    mediaId: string;
+    buffer: { type: string; data: number[] } | string;
+    filename: string;
+    mimetype: string;
+  }) {
+    return this.handleMediaProcess(data);
   }
 }

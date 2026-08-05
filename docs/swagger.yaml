@@ -1280,11 +1280,21 @@ paths:
   /v2/media/upload:
     post:
       operationId: MediaController_uploadMedia
-      summary: Upload image → emit image-process queue (sharp compress + Vercel Blob)
+      summary: Upload media (ảnh → nén lossless bằng sharp; video/audio/tài liệu → upload thẳng)
       parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UploadMediaDto"
       responses:
         201:
           description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaResponseDto"
       tags:
         - Media
       security:
@@ -1293,10 +1303,34 @@ paths:
   /v2/media:
     get:
       operationId: MediaController_getMedia
-      summary: List media (filter by uploader_id, member_id, type, album_id) — public library
+      summary: Thư viện media — phân trang, lọc, tìm kiếm, sắp xếp (public)
       parameters:
         - 
-          name: uploader_id
+          name: page
+          required: false
+          in: query
+          schema:
+            type: number
+        - 
+          name: pageSize
+          required: false
+          in: query
+          description: Mặc định 12, tối đa 100
+          schema:
+            type: number
+        - 
+          name: type
+          required: false
+          in: query
+          schema:
+            enum:
+              - image
+              - video
+              - audio
+              - document
+            type: string
+        - 
+          name: album_id
           required: false
           in: query
           schema:
@@ -1308,20 +1342,91 @@ paths:
           schema:
             type: string
         - 
-          name: type
+          name: uploader_id
           required: false
           in: query
+          description: Lọc theo người đăng
           schema:
             type: string
         - 
-          name: album_id
+          name: event_id
+          required: false
+          in: query
+          description: Lọc theo sự kiện
+          schema:
+            type: string
+        - 
+          name: tag
+          required: false
+          in: query
+          description: Lọc theo một tag
+          schema:
+            type: string
+        - 
+          name: from
+          required: false
+          in: query
+          description: Từ ngày (ISO), lọc theo created_at
+          schema:
+            type: string
+        - 
+          name: to
+          required: false
+          in: query
+          description: Đến ngày (ISO)
+          schema:
+            type: string
+        - 
+          name: q
+          required: false
+          in: query
+          description: Tìm theo tên (VN-insensitive)
+          schema:
+            type: string
+        - 
+          name: sortBy
+          required: false
+          in: query
+          description: Mặc định created_at; views = "xem nhiều"
+          schema:
+            enum:
+              - created_at
+              - views
+              - title
+            type: string
+        - 
+          name: sortOrder
           required: false
           in: query
           schema:
+            enum:
+              - asc
+              - desc
             type: string
       responses:
         200:
           description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedMediaResponseDto"
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/media/stats:
+    get:
+      operationId: MediaController_getMediaStats
+      summary: Thống kê media + dung lượng lưu trữ (public)
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaStatsResponseDto"
       tags:
         - Media
       security:
@@ -1330,11 +1435,24 @@ paths:
   /v2/media/albums:
     get:
       operationId: MediaController_getAlbums
-      summary: List media albums with counts (public)
-      parameters: []
+      summary: Danh sách album kèm số lượng media (public)
+      parameters:
+        - 
+          name: limit
+          required: false
+          in: query
+          description: Giới hạn số album (Album nổi bật)
+          schema:
+            type: number
       responses:
         200:
           description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MediaAlbumResponseDto"
       tags:
         - Media
       security:
@@ -1342,11 +1460,21 @@ paths:
           bearer: []
     post:
       operationId: MediaController_createAlbum
-      summary: Create a media album
+      summary: Tạo album media
       parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAlbumDto"
       responses:
         201:
           description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaAlbumResponseDto"
       tags:
         - Media
       security:
@@ -1355,7 +1483,7 @@ paths:
   /v2/media/albums/{id}:
     delete:
       operationId: MediaController_deleteAlbum
-      summary: Delete a media album (detaches its media)
+      summary: Xoá album (gỡ liên kết media của album)
       parameters:
         - 
           name: id
@@ -1365,7 +1493,7 @@ paths:
             type: string
       responses:
         204:
-          description: ""
+          description: Deleted
       tags:
         - Media
       security:
@@ -1374,7 +1502,7 @@ paths:
   /v2/media/member/{memberId}:
     get:
       operationId: MediaController_getMemberMedia
-      summary: List documents/photos attached to a member (Tài liệu liên quan)
+      summary: Tài liệu/ảnh gắn với một thành viên (Tài liệu liên quan)
       parameters:
         - 
           name: memberId
@@ -1385,6 +1513,35 @@ paths:
       responses:
         200:
           description: ""
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MediaResponseDto"
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/media/{id}/view:
+    post:
+      operationId: MediaController_incrementViews
+      summary: Tăng lượt xem media (public)
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaViewResponseDto"
       tags:
         - Media
       security:
@@ -1393,7 +1550,7 @@ paths:
   /v2/media/{id}:
     delete:
       operationId: MediaController_deleteMedia
-      summary: Delete media record + Vercel Blob file
+      summary: Xoá media record + file trên Vercel Blob
       parameters:
         - 
           name: id
@@ -1403,7 +1560,7 @@ paths:
             type: string
       responses:
         204:
-          description: ""
+          description: Deleted
       tags:
         - Media
       security:
@@ -1855,7 +2012,7 @@ paths:
           bearer: []
 info:
   title: Family Tree API v2
-  description: "## Vietnamese Family Tree Management API\n\n**Base URL:** `http://localhost:3002/v2`\n\n**Authentication:** Bearer JWT token (same as backend v1)\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ mới (BIOLOGICAL/ADOPTED/SPOUSE) + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày giỗ (filter by member, month, upcoming)\n- **Events** — Sự kiện dòng họ + notification queue\n- **Media** — Upload ảnh → nén bằng sharp → Vercel Blob\n- **Graves** — Mộ phần với tọa độ GPS + tìm kiếm gần nhất\n\n### Queue Jobs (QStash + Redis)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → Vercel Blob → cập nhật avatar_url |\n| image-process | Upload media | sharp resize + compress → Vercel Blob |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| notification | New member/relationship/event | Log (Phase 1) |\n"
+  description: "## Vietnamese Family Tree Management API\n\n**Base URL:** `http://localhost:3002/v2`\n\n**Authentication:** Bearer JWT token (same as backend v1)\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ mới (BIOLOGICAL/ADOPTED/SPOUSE) + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày giỗ (filter by member, month, upcoming)\n- **Events** — Sự kiện dòng họ + notification queue\n- **Media** — Thư viện media: upload mọi loại (ảnh nén lossless bằng sharp; video/audio/tài liệu upload thẳng) → Vercel Blob; phân trang/lọc/tìm kiếm + thống kê + album\n- **Graves** — Mộ phần với tọa độ GPS + tìm kiếm gần nhất\n\n### Queue Jobs (QStash + Redis)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → Vercel Blob → cập nhật avatar_url |\n| media-process | Upload media | Ảnh: sharp nén lossless; khác: upload thẳng → Vercel Blob (off-request) |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| notification | New member/relationship/event | Log (Phase 1) |\n"
   version: 2.0.0
   contact:
     name: Family Tree Team
@@ -3107,6 +3264,242 @@ components:
           type: string
         isLunar:
           type: boolean
+    UploadMediaDto:
+      type: object
+      properties:
+        title:
+          type: string
+          example: Lễ giỗ Tổ 2024
+        type:
+          type: string
+          enum:
+            - image
+            - video
+            - audio
+            - document
+          description: Bỏ trống để backend tự phân loại từ MIME (image/video/audio/document).
+        member_id:
+          type: string
+          format: uuid
+          description: Gắn media với một thành viên
+        album_id:
+          type: string
+          format: uuid
+          description: Gắn media vào một album
+        event_id:
+          type: string
+          format: uuid
+          description: Gắn media với một sự kiện
+        uploader_name:
+          type: string
+          example: Nguyễn Văn An
+        duration_seconds:
+          type: number
+          example: 324
+          description: Thời lượng video/audio (giây) — FE trích xuất và gửi kèm.
+        tags:
+          description: Tag (mảng hoặc chuỗi CSV)
+          type: array
+          items:
+            type: string
+    MediaResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        file_path:
+          type: string
+          format: uri
+          description: URL Blob khi ready; /pending/... khi đang xử lý
+        title:
+          type: object
+          nullable: true
+          example: Lễ giỗ Tổ 2024
+        type:
+          type: string
+          nullable: true
+          enum:
+            - image
+            - video
+            - audio
+            - document
+        mime_type:
+          type: object
+          nullable: true
+          example: image/jpeg
+        size_bytes:
+          type: number
+          nullable: true
+          example: 2411724
+        duration_seconds:
+          type: number
+          nullable: true
+          example: 324
+          description: Thời lượng (giây)
+        views:
+          type: number
+          example: 2456
+          description: Lượt xem
+        tags:
+          default: []
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - ready
+            - failed
+          example: ready
+        member_id:
+          type: object
+          nullable: true
+          format: uuid
+        album_id:
+          type: object
+          nullable: true
+          format: uuid
+        event_id:
+          type: object
+          nullable: true
+          format: uuid
+        uploader_id:
+          type: string
+          format: uuid
+        uploader_name:
+          type: object
+          nullable: true
+          example: Nguyễn Văn An
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - file_path
+        - views
+        - tags
+        - status
+        - uploader_id
+        - created_at
+    PaginatedMediaResponseDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MediaResponseDto"
+        total:
+          type: number
+          example: 1256
+          description: Tổng số media khớp filter
+        page:
+          type: number
+          example: 1
+        pageSize:
+          type: number
+          example: 10
+      required:
+        - data
+        - total
+        - page
+        - pageSize
+    MediaStatsResponseDto:
+      type: object
+      properties:
+        total:
+          type: number
+          example: 1256
+        images:
+          type: number
+          example: 856
+        videos:
+          type: number
+          example: 128
+        audios:
+          type: number
+          example: 40
+        documents:
+          type: number
+          example: 24
+          description: Tài liệu (pdf/doc/…)
+        storageUsedBytes:
+          type: number
+          example: 26414656614
+          description: Tổng dung lượng đã dùng (bytes)
+        storageQuotaBytes:
+          type: number
+          example: 107374182400
+          description: Hạn mức lưu trữ (bytes)
+      required:
+        - total
+        - images
+        - videos
+        - audios
+        - documents
+        - storageUsedBytes
+        - storageQuotaBytes
+    MediaAlbumResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Lễ giỗ Tổ 2024
+        description:
+          type: object
+          nullable: true
+        cover_url:
+          type: object
+          nullable: true
+          format: uri
+        date:
+          type: object
+          nullable: true
+          example: 15/04/2024
+        created_at:
+          type: string
+          format: date-time
+        count:
+          type: number
+          example: 126
+          description: Số media trong album
+      required:
+        - id
+        - name
+        - created_at
+        - count
+    CreateAlbumDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Lễ giỗ Tổ 2024
+        description:
+          type: string
+          example: Hình ảnh ngày giỗ Tổ dòng họ
+        cover_url:
+          type: string
+          format: uri
+          description: Ảnh bìa album
+        date:
+          type: string
+          example: 15/04/2024
+          description: Nhãn ngày (chuỗi tự do)
+      required:
+        - name
+    MediaViewResponseDto:
+      type: object
+      properties:
+        views:
+          type: number
+          example: 2457
+          description: Lượt xem sau khi tăng
+      required:
+        - views
     GraveResponseDto:
       type: object
       properties:
