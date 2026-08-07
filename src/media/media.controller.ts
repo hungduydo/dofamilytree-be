@@ -24,6 +24,7 @@ import {
   MediaAlbumResponseDto,
   MediaStatsResponseDto,
   MediaViewResponseDto,
+  MediaProgressResponseDto,
 } from './dto/media-response.dto';
 
 @ApiTags('Media')
@@ -62,6 +63,13 @@ export class MediaController {
       duration_seconds: body.duration_seconds,
       tags: body.tags,
     });
+  }
+
+  @Get(':id/progress')
+  @ApiOperation({ summary: 'Theo dõi tiến độ upload media (đọc Redis, fallback DB nếu key hết hạn)' })
+  @ApiOkResponse({ type: MediaProgressResponseDto })
+  getUploadProgress(@Param('id') id: string) {
+    return this.mediaService.getUploadProgress(id);
   }
 
   @Public()
@@ -107,6 +115,12 @@ export class MediaController {
   @ApiOkResponse({ type: MediaStatsResponseDto })
   getMediaStats() {
     return this.mediaService.getMediaStats();
+  }
+
+  @Get('blob-storage-usage')
+  @ApiOperation({ summary: 'Dung lượng thực tế trên Vercel Blob (quét trực tiếp, để đối chiếu với /media/stats)' })
+  getBlobStorageUsage() {
+    return this.mediaService.getBlobStorageUsage();
   }
 
   @Public()

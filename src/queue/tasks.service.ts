@@ -4,6 +4,13 @@ import { put } from '@vercel/blob';
 import { Redis as UpstashRedis } from '@upstash/redis';
 import sharp from 'sharp';
 import { GenerationService } from '../generation/generation.service';
+import { mediaProgressKey, MEDIA_PROGRESS_TTL } from '../media/media.cache-keys';
+
+export type MediaUploadProgress = {
+  status: 'pending' | 'processing' | 'ready' | 'failed';
+  progress: number;
+  error?: string;
+};
 
 @Injectable()
 export class TasksService {
@@ -14,6 +21,18 @@ export class TasksService {
     @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
     private readonly generationService: GenerationService,
   ) {}
+
+  /**
+   * Ghi progress best-effort — KHÔNG BAO GIỜ được làm hỏng quá trình upload
+   * chỉ vì Redis chết (cùng triết lý SafeCache: cache là tối ưu hoá).
+   */
+  private async setMediaProgress(mediaId: string, data: MediaUploadProgress): Promise<void> {
+    try {
+      await this.redis.set(mediaProgressKey(mediaId), JSON.stringify(data), { ex: MEDIA_PROGRESS_TTL });
+    } catch (err) {
+      this.logger.warn(`Redis SET progress ${mediaId} failed (non-fatal): ${(err as Error).message}`);
+    }
+  }
 
   async handleAvatarUpload(data: { memberId: string; buffer: { type: string; data: number[] } | string; filename: string; mimetype: string }) {
     const { memberId, buffer, filename, mimetype } = data;
@@ -143,10 +162,14 @@ export class TasksService {
     const bufferObj =
       typeof buffer === 'string' ? Buffer.from(buffer, 'base64') : Buffer.from(buffer.data);
 
+    await this.setMediaProgress(mediaId, { status: 'processing', progress: 10 });
+
     try {
       const outBuffer = mimetype.startsWith('image/')
         ? await this.compressImageLossless(bufferObj, mimetype)
         : bufferObj;
+
+      await this.setMediaProgress(mediaId, { status: 'processing', progress: 50 });
 
       const blob = await put(`media/${mediaId}/${filename}`, outBuffer, {
         access: 'public',
@@ -154,11 +177,14 @@ export class TasksService {
         token: process.env.BLOB_READ_WRITE_TOKEN,
       });
 
+      await this.setMediaProgress(mediaId, { status: 'processing', progress: 90 });
+
       await this.prisma.media.update({
         where: { id: mediaId },
         data: { file_path: blob.url, size_bytes: outBuffer.length, status: 'ready' },
       });
 
+      await this.setMediaProgress(mediaId, { status: 'ready', progress: 100 });
       this.logger.log(`Media ${mediaId} processed and uploaded: ${blob.url}`);
     } catch (error) {
       this.logger.error(`Failed to process media ${mediaId}`, error);
@@ -167,6 +193,11 @@ export class TasksService {
       await this.prisma.media
         .update({ where: { id: mediaId }, data: { status: 'failed' } })
         .catch(() => {});
+      await this.setMediaProgress(mediaId, {
+        status: 'failed',
+        progress: 100,
+        error: (error as Error).message,
+      });
       throw error;
     }
   }

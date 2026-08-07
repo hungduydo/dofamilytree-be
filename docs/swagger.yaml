@@ -4,7 +4,7 @@ paths:
   /v2/status:
     get:
       operationId: AppController_getStatus
-      summary: Check API status
+      summary: Check API status (kèm health của Redis cache)
       parameters: []
       responses:
         200:
@@ -1300,6 +1300,29 @@ paths:
       security:
         - 
           bearer: []
+  /v2/media/{id}/progress:
+    get:
+      operationId: MediaController_getUploadProgress
+      summary: Theo dõi tiến độ upload media (đọc Redis, fallback DB nếu key hết hạn)
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaProgressResponseDto"
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
   /v2/media:
     get:
       operationId: MediaController_getMedia
@@ -1427,6 +1450,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MediaStatsResponseDto"
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/media/blob-storage-usage:
+    get:
+      operationId: MediaController_getBlobStorageUsage
+      summary: Dung lượng thực tế trên Vercel Blob (quét trực tiếp, để đối chiếu với /media/stats)
+      parameters: []
+      responses:
+        200:
+          description: ""
       tags:
         - Media
       security:
@@ -2022,11 +2058,12 @@ tags: []
 servers: []
 components:
   securitySchemes:
-    JWT:
+    bearer:
       scheme: bearer
       bearerFormat: JWT
       type: http
       in: header
+      description: Dán CHỈ token thô (lấy từ POST /v2/auth/login), KHÔNG kèm tiền tố "Bearer ".
   schemas:
     RegisterDto:
       type: object
@@ -3383,6 +3420,27 @@ components:
         - status
         - uploader_id
         - created_at
+    MediaProgressResponseDto:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - pending
+            - processing
+            - ready
+            - failed
+          example: processing
+        progress:
+          type: number
+          example: 50
+          description: 0–100
+        error:
+          type: string
+          description: Chỉ có khi status=failed
+      required:
+        - status
+        - progress
     PaginatedMediaResponseDto:
       type: object
       properties:

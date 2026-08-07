@@ -1,9 +1,9 @@
 import { Injectable, NotFoundException, Inject, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Redis as UpstashRedis } from '@upstash/redis';
-import { del } from '@vercel/blob';
+import { del, list } from '@vercel/blob';
 import { PrismaService } from '../prisma/prisma.service';
-import { TasksService } from '../queue/tasks.service';
+import { TasksService, MediaUploadProgress } from '../queue/tasks.service';
 import { runInBackground } from '../utils/run-in-background';
 import { SafeCache } from '../utils/safe-cache';
 import { removeVietnameseTones } from '../utils/vietnamese-helper';
@@ -14,6 +14,8 @@ import {
   MEDIA_CACHE_KEYS,
   MEDIA_CACHE_TTL_STATS,
   MEDIA_CACHE_TTL_ALBUMS,
+  mediaProgressKey,
+  MEDIA_PROGRESS_TTL,
 } from './media.cache-keys';
 import {
   MEDIA_SORT_FIELDS,
@@ -105,6 +107,10 @@ export class MediaService {
       },
     });
 
+    // Progress ban đầu — để client poll /media/:id/progress ngay sau response
+    // này thấy 'pending' thay vì fallback DB (tránh 1 round-trip Postgres thừa).
+    await this.cache.set(mediaProgressKey(media.id), { status: 'pending', progress: 0 }, MEDIA_PROGRESS_TTL);
+
     // Gọi TRỰC TIẾP handler off-request (giống avatar ở members.service), KHÔNG
     // qua QStash: payload base64 của ảnh lớn/video vượt trần message QStash, và
     // callback QStash cần APP_URL public mà dev-local không có.
@@ -121,6 +127,24 @@ export class MediaService {
     await this.invalidateMediaCaches();
 
     return media;
+  }
+
+  /**
+   * Progress upload — đọc Redis trước (nhanh, cập nhật theo từng bước xử lý ở
+   * TasksService). Nếu key đã hết hạn (upload xong từ lâu / Redis lỗi), fallback
+   * đọc `status` từ Postgres — nguồn sự thật cuối cùng, luôn đúng dù mất progress
+   * chi tiết.
+   */
+  async getUploadProgress(id: string): Promise<MediaUploadProgress> {
+    const cached = await this.cache.get<MediaUploadProgress>(mediaProgressKey(id));
+    if (cached) return cached;
+
+    const media = await this.prisma.media.findUnique({ where: { id }, select: { status: true } });
+    if (!media) throw new NotFoundException(`Media ${id} not found`);
+
+    if (media.status === 'ready') return { status: 'ready', progress: 100 };
+    if (media.status === 'failed') return { status: 'failed', progress: 100 };
+    return { status: 'pending', progress: 0 };
   }
 
   /**
@@ -243,6 +267,27 @@ export class MediaService {
       // Prisma ném P2025 khi id không tồn tại.
       throw new NotFoundException(`Media ${id} not found`);
     }
+  }
+
+  /**
+   * Tổng dung lượng thực tế trên Vercel Blob, quét trực tiếp qua API `list`
+   * (khác `getMediaStats` — vốn SUM `size_bytes` trong DB, nhanh nhưng có thể
+   * lệch nếu có blob mồ côi hoặc record thiếu size_bytes). Không cache vì đây
+   * là thao tác đối chiếu/kiểm tra, không phải path hiển thị thường xuyên.
+   */
+  async getBlobStorageUsage(): Promise<{ totalBytes: number; totalFiles: number }> {
+    let cursor: string | undefined;
+    let totalBytes = 0;
+    let totalFiles = 0;
+
+    do {
+      const response = await list({ cursor, limit: 1000, token: process.env.BLOB_READ_WRITE_TOKEN });
+      for (const blob of response.blobs) totalBytes += blob.size;
+      totalFiles += response.blobs.length;
+      cursor = response.cursor;
+    } while (cursor);
+
+    return { totalBytes, totalFiles };
   }
 
   // ─── Albums ─────────────────────────────────────────────────────────────────

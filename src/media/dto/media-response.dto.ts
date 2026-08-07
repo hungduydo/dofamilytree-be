@@ -122,3 +122,15 @@ export class MediaViewResponseDto {
   @ApiProperty({ example: 2457, description: 'Lượt xem sau khi tăng' })
   views: number;
 }
+
+/** Kết quả `GET /v2/media/:id/progress`. */
+export class MediaProgressResponseDto {
+  @ApiProperty({ enum: ['pending', 'processing', 'ready', 'failed'], example: 'processing' })
+  status: 'pending' | 'processing' | 'ready' | 'failed';
+
+  @ApiProperty({ example: 50, description: '0–100' })
+  progress: number;
+
+  @ApiPropertyOptional({ description: 'Chỉ có khi status=failed' })
+  error?: string;
+}

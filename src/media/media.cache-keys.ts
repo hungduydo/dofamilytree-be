@@ -18,3 +18,11 @@ export const MEDIA_CACHE_KEYS = [
 export const MEDIA_CACHE_TTL_STATS = 300;
 /** Albums đổi hiếm hơn. */
 export const MEDIA_CACHE_TTL_ALBUMS = 900;
+
+/**
+ * Khoá progress upload — 1 record/media, sống rất ngắn (quá trình nén + lên
+ * Blob chỉ vài giây). TTL 5 phút đủ dư để client poll xong; hết hạn thì
+ * `getUploadProgress` fallback đọc `status` trong Postgres (xem media.service).
+ */
+export const mediaProgressKey = (id: string) => `media:progress:${id}`;
+export const MEDIA_PROGRESS_TTL = 300;

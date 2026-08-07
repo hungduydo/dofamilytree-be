@@ -34,10 +34,24 @@ export function buildSwaggerConfig() {
         `| notification | New member/relationship/event | Log (Phase 1) |\n`,
     )
     .setVersion('2.0.0')
-    .addBearerAuth(
-      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', in: 'header' },
-      'JWT',
-    )
+    // KHÔNG đặt tên riêng cho scheme. Tên ở đây phải khớp CHÍNH XÁC với tên
+    // trong `@ApiBearerAuth(...)` trên controller, nếu không Swagger UI vẫn
+    // hiện ổ khoá và vẫn cho Authorize, nhưng không đính header vào request —
+    // hỏng âm thầm, không có cảnh báo nào.
+    //
+    // Toàn bộ 13 controller đang dùng `@ApiBearerAuth()` trần ⇒ tên mặc định
+    // `'bearer'`. Trước đây chỗ này đăng ký `'JWT'` nên không route nào map
+    // được. Bỏ tên đi để cả hai phía cùng dùng `'bearer'`.
+    .addBearerAuth({
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+      in: 'header',
+      // Hiện ngay trong modal Authorize: Swagger UI TỰ thêm tiền tố `Bearer `.
+      // Dán cả `Bearer <token>` vào đây sẽ tạo header `Bearer Bearer <token>`
+      // ⇒ 401 khó hiểu, vì token vẫn hợp lệ mà server vẫn từ chối.
+      description: 'Dán CHỈ token thô (lấy từ POST /v2/auth/login), KHÔNG kèm tiền tố "Bearer ".',
+    })
     .setContact('Family Tree Team', '', '')
     .build();
 }
