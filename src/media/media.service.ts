@@ -139,10 +139,13 @@ export class MediaService {
     const cached = await this.cache.get<MediaUploadProgress>(mediaProgressKey(id));
     if (cached) return cached;
 
-    const media = await this.prisma.media.findUnique({ where: { id }, select: { status: true } });
+    const media = await this.prisma.media.findUnique({
+      where: { id },
+      select: { status: true, file_path: true },
+    });
     if (!media) throw new NotFoundException(`Media ${id} not found`);
 
-    if (media.status === 'ready') return { status: 'ready', progress: 100 };
+    if (media.status === 'ready') return { status: 'ready', progress: 100, url: media.file_path };
     if (media.status === 'failed') return { status: 'failed', progress: 100 };
     return { status: 'pending', progress: 0 };
   }

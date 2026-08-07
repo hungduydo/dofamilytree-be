@@ -9,6 +9,7 @@ import { mediaProgressKey, MEDIA_PROGRESS_TTL } from '../media/media.cache-keys'
 export type MediaUploadProgress = {
   status: 'pending' | 'processing' | 'ready' | 'failed';
   progress: number;
+  url?: string;
   error?: string;
 };
 
@@ -184,7 +185,7 @@ export class TasksService {
         data: { file_path: blob.url, size_bytes: outBuffer.length, status: 'ready' },
       });
 
-      await this.setMediaProgress(mediaId, { status: 'ready', progress: 100 });
+      await this.setMediaProgress(mediaId, { status: 'ready', progress: 100, url: blob.url });
       this.logger.log(`Media ${mediaId} processed and uploaded: ${blob.url}`);
     } catch (error) {
       this.logger.error(`Failed to process media ${mediaId}`, error);

@@ -131,6 +131,9 @@ export class MediaProgressResponseDto {
   @ApiProperty({ example: 50, description: '0–100' })
   progress: number;
 
+  @ApiPropertyOptional({ format: 'uri', description: 'URL Blob, chỉ có khi status=ready' })
+  url?: string;
+
   @ApiPropertyOptional({ description: 'Chỉ có khi status=failed' })
   error?: string;
 }
