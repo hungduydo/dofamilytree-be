@@ -1,8 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import {
+  NotFoundException, BadRequestException,
+  PayloadTooLargeException, ServiceUnavailableException,
+} from '@nestjs/common';
 import { MediaService } from '../../src/media/media.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { TasksService } from '../../src/queue/tasks.service';
+import { StorageService } from '../../src/storage/storage.service';
 import { classifyMediaType } from '../../src/media/media.constants';
 
 const mockPrisma = {
@@ -23,6 +27,17 @@ const mockPrisma = {
 };
 
 const mockTasksService = { handleMediaProcess: jest.fn() };
+// Mặc định: provider KHÔNG hỗ trợ presign → các test cũ (multipart) không đổi
+// hành vi; test presign tự bật lại cờ này.
+const mockStorage = {
+  put: jest.fn(),
+  del: jest.fn(),
+  getUsage: jest.fn(),
+  supportsPresign: jest.fn().mockReturnValue(false),
+  presignPut: jest.fn(),
+  publicUrlFor: jest.fn(),
+  headSize: jest.fn(),
+};
 // SafeCache best-effort — trả null (miss) để mọi read rơi về DB.
 const mockRedis = { get: jest.fn().mockResolvedValue(null), set: jest.fn(), del: jest.fn() };
 
@@ -40,6 +55,7 @@ describe('MediaService', () => {
         MediaService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: TasksService, useValue: mockTasksService },
+        { provide: StorageService, useValue: mockStorage },
         { provide: 'REDIS_CLIENT', useValue: mockRedis },
       ],
     }).compile();
@@ -47,6 +63,7 @@ describe('MediaService', () => {
     service = module.get<MediaService>(MediaService);
     jest.clearAllMocks();
     mockRedis.get.mockResolvedValue(null);
+    mockStorage.supportsPresign.mockReturnValue(false);
   });
 
   describe('uploadMedia', () => {
@@ -134,7 +151,10 @@ describe('MediaService', () => {
   describe('getMediaStats', () => {
     it('aggregates counts by type + storage and adds the quota', async () => {
       mockPrisma.$queryRaw.mockResolvedValue([
-        { total: 3n, images: 2n, videos: 1n, audios: 0n, documents: 0n, storage_used: 5000n },
+        {
+          total: 3n, images: 2n, videos: 1n, audios: 0n, documents: 0n,
+          untyped: 0n, missing_size: 0n, storage_used: 5000n,
+        },
       ]);
 
       const stats = await service.getMediaStats();
@@ -144,10 +164,33 @@ describe('MediaService', () => {
           total: 3,
           images: 2,
           videos: 1,
+          untyped: 0,
+          mediaMissingSize: 0,
           storageUsedBytes: 5000,
           storageQuotaBytes: expect.any(Number),
         }),
       );
+    });
+
+    // Hồi quy: record `type IS NULL` từng bị gộp vào `documents`, khiến stats
+    // báo có tài liệu trong khi `GET /media?type=document` trả rỗng. Chúng phải
+    // nằm ở `untyped`, và 5 bucket cộng lại đúng bằng `total`.
+    it('reports untyped rows separately instead of counting them as documents', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([
+        {
+          total: 18n, images: 10n, videos: 0n, audios: 1n, documents: 0n,
+          untyped: 7n, missing_size: 7n, storage_used: 21556390n,
+        },
+      ]);
+
+      const stats = await service.getMediaStats();
+
+      expect(stats.documents).toBe(0);
+      expect(stats.untyped).toBe(7);
+      expect(stats.mediaMissingSize).toBe(7);
+      expect(
+        stats.images + stats.videos + stats.audios + stats.documents + stats.untyped,
+      ).toBe(stats.total);
     });
   });
 
@@ -167,14 +210,100 @@ describe('MediaService', () => {
     });
   });
 
+  describe('createUploadUrl', () => {
+    const dto = { filename: 'bai-hat.mp3', mime_type: 'audio/mpeg', size_bytes: 10 * 1024 * 1024 };
+
+    it('returns a presigned PUT url and creates a pending record', async () => {
+      mockStorage.supportsPresign.mockReturnValue(true);
+      mockStorage.presignPut.mockResolvedValue('https://r2.example/signed');
+      mockStorage.publicUrlFor.mockReturnValue('https://cdn.example/media/media-1/bai-hat.mp3');
+      mockPrisma.media.create.mockResolvedValue({ id: 'media-1', status: 'pending' });
+
+      const res = await service.createUploadUrl('user-1', dto);
+
+      expect(res.media_id).toBe('media-1');
+      expect(res.upload_url).toBe('https://r2.example/signed');
+      // Content-Type phải khớp cái đã ký, nếu không R2 trả 403.
+      expect(res.headers['Content-Type']).toBe('audio/mpeg');
+      expect(mockStorage.presignPut).toHaveBeenCalledWith(
+        'media/media-1/bai-hat.mp3', 'audio/mpeg', expect.any(Number),
+      );
+      expect(mockPrisma.media.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ type: 'audio', status: 'pending' }) }),
+      );
+    });
+
+    it('rejects a mime type outside the allowlist', async () => {
+      mockStorage.supportsPresign.mockReturnValue(true);
+      await expect(
+        service.createUploadUrl('user-1', { ...dto, mime_type: 'application/x-msdownload' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.media.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a file above the presigned ceiling before any work is done', async () => {
+      mockStorage.supportsPresign.mockReturnValue(true);
+      await expect(
+        service.createUploadUrl('user-1', { ...dto, size_bytes: 5 * 1024 ** 3 }),
+      ).rejects.toThrow(PayloadTooLargeException);
+      expect(mockPrisma.media.create).not.toHaveBeenCalled();
+    });
+
+    it('fails clearly when the active provider cannot presign', async () => {
+      mockStorage.supportsPresign.mockReturnValue(false);
+      await expect(service.createUploadUrl('user-1', dto)).rejects.toThrow(ServiceUnavailableException);
+    });
+  });
+
+  describe('completeUpload', () => {
+    it('verifies the object exists then flips the record to ready', async () => {
+      mockPrisma.media.findUnique.mockResolvedValue({
+        id: 'media-1', status: 'pending', file_path: '/pending/1700000000000_bai-hat.mp3',
+      });
+      mockStorage.headSize.mockResolvedValue(10 * 1024 * 1024);
+      mockStorage.publicUrlFor.mockReturnValue('https://cdn.example/media/media-1/bai-hat.mp3');
+      mockPrisma.media.update.mockResolvedValue({ id: 'media-1', status: 'ready' });
+
+      await service.completeUpload('media-1');
+
+      // Size lấy từ storage, KHÔNG lấy từ con số client khai lúc xin URL.
+      expect(mockPrisma.media.update).toHaveBeenCalledWith({
+        where: { id: 'media-1' },
+        data: {
+          file_path: 'https://cdn.example/media/media-1/bai-hat.mp3',
+          size_bytes: 10 * 1024 * 1024,
+          status: 'ready',
+        },
+      });
+    });
+
+    it('refuses to mark ready when the client never finished the PUT', async () => {
+      mockPrisma.media.findUnique.mockResolvedValue({
+        id: 'media-1', status: 'pending', file_path: '/pending/1700000000000_bai-hat.mp3',
+      });
+      mockStorage.headSize.mockResolvedValue(null);
+
+      await expect(service.completeUpload('media-1')).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.media.update).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent on an already-ready record', async () => {
+      mockPrisma.media.findUnique.mockResolvedValue({ id: 'media-1', status: 'ready' });
+      await service.completeUpload('media-1');
+      expect(mockStorage.headSize).not.toHaveBeenCalled();
+      expect(mockPrisma.media.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deleteMedia', () => {
-    it('deletes the record and the blob file', async () => {
+    // Xoá file đi qua StorageService (facade route theo `ownsUrl`), KHÔNG gọi
+    // thẳng @vercel/blob nữa — provider active có thể là R2.
+    it('deletes the record and the stored file', async () => {
       mockPrisma.media.findUnique.mockResolvedValue({ id: 'media-1', file_path: 'https://blob.vercel-storage.com/img.jpg' });
       mockPrisma.media.delete.mockResolvedValue({ id: 'media-1' });
 
       await service.deleteMedia('media-1');
-      const { del } = require('@vercel/blob');
-      expect(del).toHaveBeenCalledWith('https://blob.vercel-storage.com/img.jpg', expect.any(Object));
+      expect(mockStorage.del).toHaveBeenCalledWith('https://blob.vercel-storage.com/img.jpg');
       expect(mockPrisma.media.delete).toHaveBeenCalledWith({ where: { id: 'media-1' } });
     });
 

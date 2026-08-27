@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { EventsService } from '../../src/events/events.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { StorageService } from '../../src/storage/storage.service';
 import { QStashService } from '../../src/queue/qstash.service';
 import { QUEUE_NOTIFICATION } from '../../src/queue/queue.constants';
 
@@ -23,6 +24,7 @@ const mockPrisma = {
 };
 
 const mockQStashService = { publish: jest.fn() };
+const mockStorage = { put: jest.fn(), del: jest.fn(), getUsage: jest.fn(), supportsPresign: jest.fn().mockReturnValue(false) };
 
 describe('EventsService', () => {
   let service: EventsService;
@@ -33,6 +35,7 @@ describe('EventsService', () => {
         EventsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: QStashService, useValue: mockQStashService },
+        { provide: StorageService, useValue: mockStorage },
       ],
     }).compile();
 

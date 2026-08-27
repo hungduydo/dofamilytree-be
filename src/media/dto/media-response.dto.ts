@@ -110,11 +110,26 @@ export class MediaStatsResponseDto {
   @ApiProperty({ example: 24, description: 'Tài liệu (pdf/doc/…)' })
   documents: number;
 
+  @ApiProperty({
+    example: 0,
+    description:
+      'Record thiếu `type` (dữ liệu cũ chưa backfill). Không nằm trong 4 bucket trên, ' +
+      'nên images+videos+audios+documents+untyped = total. Khác 0 nghĩa là cần chạy ' +
+      'scripts/backfill-media-metadata.ts.',
+  })
+  untyped: number;
+
   @ApiProperty({ example: 26414656614, description: 'Tổng dung lượng đã dùng (bytes)' })
   storageUsedBytes: number;
 
   @ApiProperty({ example: 107374182400, description: 'Hạn mức lưu trữ (bytes)' })
   storageQuotaBytes: number;
+
+  @ApiProperty({
+    example: 0,
+    description: 'Số record thiếu `size_bytes` ⇒ storageUsedBytes đang thấp hơn thực tế.',
+  })
+  mediaMissingSize: number;
 }
 
 /** Kết quả `POST /v2/media/:id/view`. */

@@ -5,6 +5,7 @@ import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse, ApiCreatedResponse,
   ApiNoContentResponse, ApiProperty, ApiPropertyOptional,
 } from '@nestjs/swagger';
+import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { Public } from '../auth/public.decorator';
 import { TreeService } from './tree.service';
@@ -16,32 +17,49 @@ import {
 
 class CreateTreeDto {
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   title?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   description?: string;
 
   @ApiPropertyOptional({ format: 'uri' })
+  @IsOptional()
+  @IsString()
   image?: string;
 
   @ApiProperty({ format: 'uuid' })
+  @IsUUID()
   owner_id: string;
 
   @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
   show?: boolean;
 }
 
 class UpdateTreeDto {
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   title?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   description?: string;
 
   @ApiPropertyOptional({ format: 'uri' })
+  @IsOptional()
+  @IsString()
   image?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   show?: boolean;
 }
 

@@ -1,10 +1,11 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { put } from '@vercel/blob';
 import { Redis as UpstashRedis } from '@upstash/redis';
 import sharp from 'sharp';
 import { GenerationService } from '../generation/generation.service';
-import { mediaProgressKey, MEDIA_PROGRESS_TTL } from '../media/media.cache-keys';
+import { StorageService } from '../storage/storage.service';
+import { mediaProgressKey, MEDIA_PROGRESS_TTL, MEDIA_CACHE_KEYS } from '../media/media.cache-keys';
+import { storageKeyFor } from '../media/media.constants';
 
 export type MediaUploadProgress = {
   status: 'pending' | 'processing' | 'ready' | 'failed';
@@ -21,6 +22,7 @@ export class TasksService {
     private readonly prisma: PrismaService,
     @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
     private readonly generationService: GenerationService,
+    private readonly storage: StorageService,
   ) {}
 
   /**
@@ -44,18 +46,14 @@ export class TasksService {
       : Buffer.from(buffer.data);
 
     try {
-      const blob = await put(`avatars/${memberId}/${filename}`, bufferObj, {
-        access: 'public',
-        contentType: mimetype,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      });
+      const url = await this.storage.put(`avatars/${memberId}/${filename}`, bufferObj, mimetype);
 
       await this.prisma.member.update({
         where: { id: memberId },
-        data: { avatar_url: blob.url },
+        data: { avatar_url: url },
       });
 
-      this.logger.log(`Avatar uploaded successfully for member ${memberId}: ${blob.url}`);
+      this.logger.log(`Avatar uploaded successfully for member ${memberId}: ${url}`);
     } catch (error) {
       this.logger.error(`Failed to upload avatar for member ${memberId}`, error);
       throw error;
@@ -172,21 +170,23 @@ export class TasksService {
 
       await this.setMediaProgress(mediaId, { status: 'processing', progress: 50 });
 
-      const blob = await put(`media/${mediaId}/${filename}`, outBuffer, {
-        access: 'public',
-        contentType: mimetype,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      });
+      const url = await this.storage.put(storageKeyFor(mediaId, filename), outBuffer, mimetype);
 
       await this.setMediaProgress(mediaId, { status: 'processing', progress: 90 });
 
       await this.prisma.media.update({
         where: { id: mediaId },
-        data: { file_path: blob.url, size_bytes: outBuffer.length, status: 'ready' },
+        data: { file_path: url, size_bytes: outBuffer.length, status: 'ready' },
       });
 
-      await this.setMediaProgress(mediaId, { status: 'ready', progress: 100, url: blob.url });
-      this.logger.log(`Media ${mediaId} processed and uploaded: ${blob.url}`);
+      await this.setMediaProgress(mediaId, { status: 'ready', progress: 100, url });
+      // `/media/stats` chỉ đếm record `ready`, mà lần lật sang `ready` xảy ra Ở
+      // ĐÂY chứ không phải lúc tạo record — invalidate ở uploadMedia (lúc còn
+      // `pending`) không đụng gì tới con số stats. Không xoá ở đây thì stats
+      // giữ giá trị cũ tới hết TTL (5 phút): người dùng upload xong, số liệu
+      // đứng im.
+      await this.invalidateMediaStatsCache();
+      this.logger.log(`Media ${mediaId} processed and uploaded: ${url}`);
     } catch (error) {
       this.logger.error(`Failed to process media ${mediaId}`, error);
       // Đánh dấu failed để record không kẹt ở pending; nuốt lỗi update để không
@@ -200,6 +200,19 @@ export class TasksService {
         error: (error as Error).message,
       });
       throw error;
+    }
+  }
+
+  /**
+   * Best-effort: Redis chết không được làm hỏng một upload đã thành công — cùng
+   * triết lý với `setMediaProgress`. Số liệu sai tối đa 5 phút vẫn hơn là ném
+   * lỗi rồi đánh dấu media `failed` trong khi file đã nằm trên storage.
+   */
+  private async invalidateMediaStatsCache(): Promise<void> {
+    try {
+      await this.redis.del(...MEDIA_CACHE_KEYS);
+    } catch (error) {
+      this.logger.warn(`Không xoá được cache media stats: ${(error as Error).message}`);
     }
   }
 

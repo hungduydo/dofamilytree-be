@@ -15,11 +15,13 @@ import { ArticlesModule } from './articles/articles.module';
 import { QueueModule } from './queue/queue.module';
 import { GenerationModule } from './generation/generation.module';
 import { RedisModule } from './redis.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     RedisModule,
+    StorageModule,
     PrismaModule,
     AuthModule,
     QueueModule,

@@ -1,14 +1,16 @@
 import {
   Controller, Get, Post, Delete, Param, Query, Body, UseGuards,
   UseInterceptors, UploadedFile, Request, HttpCode, HttpStatus,
-  DefaultValuePipe, ParseIntPipe, BadRequestException,
+  DefaultValuePipe, ParseIntPipe, BadRequestException, UseFilters, ParseUUIDPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes, ApiQuery,
-  ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
+  ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse, ApiForbiddenResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { Public } from '../auth/public.decorator';
 import { ParseOptionalIntPipe } from '../utils/parse-optional-int.pipe';
 import { MediaService } from './media.service';
@@ -17,6 +19,9 @@ import {
   MAX_UPLOAD_BYTES, isAllowedMime,
 } from './media.constants';
 import { UploadMediaDto } from './dto/upload-media.dto';
+import { CreateUploadUrlDto } from './dto/create-upload-url.dto';
+import { UploadUrlResponseDto } from './dto/upload-url-response.dto';
+import { UploadPayloadTooLargeFilter } from './upload-exception.filter';
 import { CreateAlbumDto } from './dto/create-album.dto';
 import {
   MediaResponseDto,
@@ -35,8 +40,15 @@ export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
 
   @Post('upload')
-  @ApiOperation({ summary: 'Upload media (ảnh → nén lossless bằng sharp; video/audio/tài liệu → upload thẳng)' })
+  @ApiOperation({
+    summary: 'Upload media (ảnh → nén lossless bằng sharp; video/audio/tài liệu → upload thẳng)',
+    description:
+      'File đi QUA serverless function nên chịu trần request body của platform ' +
+      '(Vercel: 4.5MB nếu chưa bật Fluid Compute, 100MB nếu đã bật). ' +
+      'Với file lớn hơn, dùng POST /v2/media/upload-url.',
+  })
   @ApiConsumes('multipart/form-data')
+  @UseFilters(UploadPayloadTooLargeFilter)
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: MAX_UPLOAD_BYTES },
@@ -63,6 +75,34 @@ export class MediaController {
       duration_seconds: body.duration_seconds,
       tags: body.tags,
     });
+  }
+
+  @Post('upload-url')
+  @ApiOperation({
+    summary: 'Cấp presigned URL để client upload file THẲNG lên storage (không qua function)',
+    description:
+      'Dùng cho audio/video/file lớn vượt trần request body của platform. Luồng 3 bước: ' +
+      '(1) POST /v2/media/upload-url → nhận upload_url + media_id; ' +
+      '(2) PUT file lên upload_url với đúng header Content-Type đã trả về; ' +
+      '(3) POST /v2/media/:id/complete để backend xác minh và chuyển sang ready. ' +
+      'Lưu ý: đường này KHÔNG nén ảnh — ảnh nhỏ nên đi POST /v2/media/upload.',
+  })
+  @ApiCreatedResponse({ type: UploadUrlResponseDto })
+  createUploadUrl(@Body() body: CreateUploadUrlDto, @Request() req: any) {
+    return this.mediaService.createUploadUrl(req.user.id, body);
+  }
+
+  @Post(':id/complete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Xác nhận đã PUT xong file lên presigned URL — chuyển media sang ready',
+    description:
+      'Backend HEAD object trên storage để lấy size thật; nếu chưa thấy file sẽ trả 400. ' +
+      'Gọi lại trên media đã ready là no-op (idempotent).',
+  })
+  @ApiOkResponse({ type: MediaResponseDto })
+  completeUpload(@Param('id', ParseUUIDPipe) id: string) {
+    return this.mediaService.completeUpload(id);
   }
 
   @Get(':id/progress')
@@ -141,9 +181,12 @@ export class MediaController {
   }
 
   @Delete('albums/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Xoá album (gỡ liên kết media của album)' })
+  @ApiOperation({ summary: 'Xoá album (gỡ liên kết media của album) — chỉ admin' })
   @ApiNoContentResponse({ description: 'Deleted' })
+  @ApiForbiddenResponse({ description: 'Requires admin role' })
   deleteAlbum(@Param('id') id: string) {
     return this.mediaService.deleteAlbum(id);
   }
@@ -165,9 +208,12 @@ export class MediaController {
   }
 
   @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Xoá media record + file trên Vercel Blob' })
+  @ApiOperation({ summary: 'Xoá media record + file trên storage — chỉ admin' })
   @ApiNoContentResponse({ description: 'Deleted' })
+  @ApiForbiddenResponse({ description: 'Requires admin role' })
   deleteMedia(@Param('id') id: string) {
     return this.mediaService.deleteMedia(id);
   }

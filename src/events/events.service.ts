@@ -1,8 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { put } from '@vercel/blob';
 import { QStashService } from '../queue/qstash.service';
 import { runInBackground } from '../utils/run-in-background';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import {
   CreateAnniversaryDto, UpdateAnniversaryDto,
   CreateEventDto, UpdateEventDto,
@@ -16,20 +16,17 @@ export class EventsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly qstashService: QStashService,
+    private readonly storage: StorageService,
   ) {}
 
-  /** Upload event image files to Vercel Blob and return their public URLs. */
+  /** Upload event image files lên storage provider active và trả về URL public. */
   private async uploadImages(files?: Express.Multer.File[]): Promise<string[]> {
     const valid = (files ?? []).filter((f) => f.buffer && f.size > 0);
     const urls: string[] = [];
     for (const file of valid) {
       try {
-        const blob = await put(`events/${Date.now()}-${file.originalname}`, file.buffer, {
-          access: 'public',
-          contentType: file.mimetype,
-          token: process.env.BLOB_READ_WRITE_TOKEN,
-        });
-        urls.push(blob.url);
+        const url = await this.storage.put(`events/${Date.now()}-${file.originalname}`, file.buffer, file.mimetype);
+        urls.push(url);
       } catch (error) {
         // Don't fail event creation just because an image upload failed.
         this.logger.error(`Failed to upload event image ${file.originalname}`, error as Error);

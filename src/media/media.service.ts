@@ -1,9 +1,12 @@
-import { Injectable, NotFoundException, Inject, Logger } from '@nestjs/common';
+import {
+  Injectable, NotFoundException, Inject, Logger,
+  BadRequestException, PayloadTooLargeException, ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Redis as UpstashRedis } from '@upstash/redis';
-import { del, list } from '@vercel/blob';
 import { PrismaService } from '../prisma/prisma.service';
 import { TasksService, MediaUploadProgress } from '../queue/tasks.service';
+import { StorageService } from '../storage/storage.service';
 import { runInBackground } from '../utils/run-in-background';
 import { SafeCache } from '../utils/safe-cache';
 import { removeVietnameseTones } from '../utils/vietnamese-helper';
@@ -24,7 +27,14 @@ import {
   SortOrder,
   MediaType,
   classifyMediaType,
+  isAllowedMime,
+  formatBytes,
+  storageKeyFor,
+  MAX_UPLOAD_BYTES,
+  VERCEL_BODY_LIMIT_BYTES,
   STORAGE_QUOTA_BYTES,
+  MAX_PRESIGNED_BYTES,
+  PRESIGN_EXPIRES_SECONDS,
 } from './media.constants';
 
 export interface MediaStats {
@@ -33,8 +43,15 @@ export interface MediaStats {
   videos: number;
   audios: number;
   documents: number;
+  /**
+   * Record `ready` nhưng thiếu `type` — dữ liệu cũ chưa backfill. Không thuộc
+   * bucket nào ở trên, nên `images+videos+audios+documents+untyped === total`.
+   */
+  untyped: number;
   storageUsedBytes: number;
   storageQuotaBytes: number;
+  /** Số record `ready` thiếu `size_bytes` ⇒ `storageUsedBytes` đang thiếu hụt. */
+  mediaMissingSize: number;
 }
 
 export interface GetMediaQuery {
@@ -61,9 +78,32 @@ export class MediaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tasksService: TasksService,
+    private readonly storage: StorageService,
     @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
   ) {
     this.cache = new SafeCache(this.redis, this.logger, MEDIA_CACHE_TTL_ALBUMS);
+    this.warnIfUploadLimitUnreachable();
+  }
+
+  /**
+   * Cảnh báo khi `MAX_UPLOAD_BYTES` cao hơn trần request body của Vercel: lúc đó
+   * file trong khoảng giữa hai trần bị Vercel chặn TRƯỚC khi tới đây, nên client
+   * nhận 413 lạ của platform thay vì message tiếng Việt của ta — triệu chứng rất
+   * khó chẩn đoán nếu không được nói ra ở log.
+   */
+  private warnIfUploadLimitUnreachable(): void {
+    if (!process.env.VERCEL) return;
+    const platformLimit = process.env.MEDIA_FLUID_COMPUTE_ENABLED === 'true'
+      ? VERCEL_BODY_LIMIT_BYTES.withFluid
+      : VERCEL_BODY_LIMIT_BYTES.withoutFluid;
+    if (MAX_UPLOAD_BYTES > platformLimit) {
+      this.logger.warn(
+        `MAX_UPLOAD_BYTES (${formatBytes(MAX_UPLOAD_BYTES)}) > trần request body của Vercel ` +
+        `(${formatBytes(platformLimit)}). File ở giữa hai mức sẽ bị platform chặn với 413 ` +
+        `không đọc được. Bật Fluid Compute (và đặt MEDIA_FLUID_COMPUTE_ENABLED=true), ` +
+        `hoặc hướng client sang POST /v2/media/upload-url.`,
+      );
+    }
   }
 
   async uploadMedia(
@@ -127,6 +167,135 @@ export class MediaService {
     await this.invalidateMediaCaches();
 
     return media;
+  }
+
+  /**
+   * Cấp presigned PUT URL cho client upload THẲNG lên storage.
+   *
+   * Lý do tồn tại: multipart `POST /media/upload` đẩy toàn bộ file qua serverless
+   * function, nên bị chặn bởi trần request body của platform (4.5MB không Fluid,
+   * 100MB có Fluid) — trần đó nằm NGOÀI tầm kiểm soát của code. Đường này file
+   * không chạm function nên không dính trần nào.
+   *
+   * Đánh đổi: server không cầm buffer nên KHÔNG nén ảnh lossless như luồng
+   * multipart. Ảnh nhỏ vẫn nên đi `POST /media/upload` để được nén; đường này
+   * dành cho audio/video/file lớn vốn dĩ không nén ở server.
+   */
+  async createUploadUrl(
+    uploaderId: string,
+    dto: {
+      filename: string;
+      mime_type: string;
+      size_bytes: number;
+      title?: string;
+      type?: string;
+      member_id?: string;
+      album_id?: string;
+      event_id?: string;
+      uploader_name?: string;
+      duration_seconds?: number;
+      tags?: string[];
+    },
+  ) {
+    if (!this.storage.supportsPresign()) {
+      throw new ServiceUnavailableException(
+        'Storage provider hiện tại không hỗ trợ upload trực tiếp. Dùng POST /v2/media/upload.',
+      );
+    }
+    // Cùng allowlist với luồng multipart — presigned URL không được là cửa sau
+    // để đẩy mime tuỳ ý lên bucket.
+    if (!isAllowedMime(dto.mime_type)) {
+      throw new BadRequestException(`Unsupported file type: ${dto.mime_type}`);
+    }
+    if (dto.size_bytes > MAX_PRESIGNED_BYTES) {
+      throw new PayloadTooLargeException(
+        `File vượt quá giới hạn ${formatBytes(MAX_PRESIGNED_BYTES)}.`,
+      );
+    }
+
+    const title = dto.title ?? dto.filename;
+    const type: MediaType =
+      dto.type && (MEDIA_TYPES as readonly string[]).includes(dto.type)
+        ? (dto.type as MediaType)
+        : classifyMediaType(dto.mime_type);
+
+    const media = await this.prisma.media.create({
+      data: {
+        // Chưa biết URL cho tới khi client PUT xong — giữ marker `/pending/`
+        // giống luồng multipart để record dở dang luôn nhận diện được.
+        file_path: `/pending/${Date.now()}_${dto.filename}`,
+        uploader_id: uploaderId,
+        uploader_name: dto.uploader_name,
+        title,
+        normalized_title: removeVietnameseTones(title),
+        type,
+        mime_type: dto.mime_type,
+        member_id: dto.member_id,
+        album_id: dto.album_id,
+        event_id: dto.event_id,
+        duration_seconds: dto.duration_seconds,
+        tags: dto.tags ?? [],
+        size_bytes: dto.size_bytes,
+        status: 'pending',
+      },
+    });
+
+    const path = storageKeyFor(media.id, dto.filename);
+    const uploadUrl = await this.storage.presignPut(path, dto.mime_type, PRESIGN_EXPIRES_SECONDS);
+
+    await this.cache.set(
+      mediaProgressKey(media.id),
+      { status: 'pending', progress: 0 },
+      MEDIA_PROGRESS_TTL,
+    );
+
+    return {
+      media_id: media.id,
+      upload_url: uploadUrl,
+      method: 'PUT',
+      headers: { 'Content-Type': dto.mime_type },
+      expires_in: PRESIGN_EXPIRES_SECONDS,
+      public_url: this.storage.publicUrlFor(path),
+    };
+  }
+
+  /**
+   * Chốt một upload presigned: XÁC MINH object đã có thật trên storage rồi mới
+   * chuyển record sang `ready`.
+   *
+   * Cố ý không tin `size_bytes` client khai ở bước xin URL — client có thể bỏ
+   * ngang giữa chừng, hoặc PUT file khác size. `headSize` là nguồn sự thật.
+   */
+  async completeUpload(mediaId: string) {
+    const media = await this.prisma.media.findUnique({ where: { id: mediaId } });
+    if (!media) throw new NotFoundException(`Media ${mediaId} not found`);
+    if (media.status === 'ready') return media;
+
+    const filename = media.file_path.replace(/^\/pending\/\d+_/, '');
+    const path = storageKeyFor(media.id, filename);
+
+    const size = await this.storage.headSize(path);
+    if (size === null) {
+      throw new BadRequestException(
+        'Chưa thấy file trên storage — hãy PUT file lên upload_url trước khi gọi complete.',
+      );
+    }
+
+    const url = this.storage.publicUrlFor(path);
+    const updated = await this.prisma.media.update({
+      where: { id: mediaId },
+      data: { file_path: url, size_bytes: size, status: 'ready' },
+    });
+
+    await this.cache.set(
+      mediaProgressKey(mediaId),
+      { status: 'ready', progress: 100, url },
+      MEDIA_PROGRESS_TTL,
+    );
+    await this.invalidateMediaCaches();
+
+    this.logger.log(`Media ${mediaId} completed via presigned upload: ${url}`);
+    return updated;
   }
 
   /**
@@ -218,6 +387,13 @@ export class MediaService {
    * Thống kê thư viện: đếm theo loại + tổng dung lượng, trong MỘT lượt quét
    * (mẫu getMemberStats). Chỉ tính record `ready`. Ép bigint→Number vì COUNT/SUM
    * của Postgres là int8 → Prisma trả BigInt → JSON.stringify ném lỗi.
+   *
+   * Các bucket đếm PHẢI khớp đúng điều kiện lọc của `getMedia` (`where.type = ?`),
+   * nếu không UI sẽ hiện "7 tài liệu" rồi bấm vào tab Tài liệu lại ra rỗng. Vì
+   * vậy KHÔNG gộp `type IS NULL` vào documents nữa — record thiếu `type` là dữ
+   * liệu bẩn cần backfill (scripts/backfill-media-metadata.ts), không phải tài
+   * liệu. `untyped` được trả ra tường minh để chỗ bẩn nhìn thấy được thay vì bị
+   * giấu vào một bucket sai.
    */
   async getMediaStats(): Promise<MediaStats> {
     const cached = await this.cache.get<MediaStats>(CACHE_KEY_MEDIA_STATS);
@@ -230,6 +406,8 @@ export class MediaService {
         videos: bigint;
         audios: bigint;
         documents: bigint;
+        untyped: bigint;
+        missing_size: bigint;
         storage_used: bigint;
       }>
     >`
@@ -238,7 +416,9 @@ export class MediaService {
         COUNT(*) FILTER (WHERE type = 'image')                    AS images,
         COUNT(*) FILTER (WHERE type = 'video')                    AS videos,
         COUNT(*) FILTER (WHERE type = 'audio')                    AS audios,
-        COUNT(*) FILTER (WHERE type = 'document' OR type IS NULL) AS documents,
+        COUNT(*) FILTER (WHERE type = 'document')                 AS documents,
+        COUNT(*) FILTER (WHERE type IS NULL)                      AS untyped,
+        COUNT(*) FILTER (WHERE size_bytes IS NULL)                AS missing_size,
         COALESCE(SUM(size_bytes), 0)                              AS storage_used
       FROM media
       WHERE status = 'ready'
@@ -250,8 +430,12 @@ export class MediaService {
       videos: Number(row.videos),
       audios: Number(row.audios),
       documents: Number(row.documents),
+      untyped: Number(row.untyped),
       storageUsedBytes: Number(row.storage_used),
       storageQuotaBytes: STORAGE_QUOTA_BYTES,
+      // `storageUsedBytes` chỉ cộng được record có size_bytes. Đếm số record
+      // thiếu size để client biết con số đang thiếu hụt thay vì tưởng là đủ.
+      mediaMissingSize: Number(row.missing_size),
     };
 
     await this.cache.set(CACHE_KEY_MEDIA_STATS, result, MEDIA_CACHE_TTL_STATS);
@@ -273,24 +457,14 @@ export class MediaService {
   }
 
   /**
-   * Tổng dung lượng thực tế trên Vercel Blob, quét trực tiếp qua API `list`
-   * (khác `getMediaStats` — vốn SUM `size_bytes` trong DB, nhanh nhưng có thể
-   * lệch nếu có blob mồ côi hoặc record thiếu size_bytes). Không cache vì đây
-   * là thao tác đối chiếu/kiểm tra, không phải path hiển thị thường xuyên.
+   * Tổng dung lượng thực tế trên (các) storage provider ĐÃ CẤU HÌNH, quét trực
+   * tiếp qua API list (khác `getMediaStats` — vốn SUM `size_bytes` trong DB,
+   * nhanh nhưng có thể lệch nếu có file mồ côi hoặc record thiếu size_bytes).
+   * Không cache vì đây là thao tác đối chiếu/kiểm tra, không phải path hiển thị
+   * thường xuyên.
    */
   async getBlobStorageUsage(): Promise<{ totalBytes: number; totalFiles: number }> {
-    let cursor: string | undefined;
-    let totalBytes = 0;
-    let totalFiles = 0;
-
-    do {
-      const response = await list({ cursor, limit: 1000, token: process.env.BLOB_READ_WRITE_TOKEN });
-      for (const blob of response.blobs) totalBytes += blob.size;
-      totalFiles += response.blobs.length;
-      cursor = response.cursor;
-    } while (cursor);
-
-    return { totalBytes, totalFiles };
+    return this.storage.getUsage();
   }
 
   // ─── Albums ─────────────────────────────────────────────────────────────────
@@ -341,9 +515,9 @@ export class MediaService {
     const media = await this.prisma.media.findUnique({ where: { id } });
     if (!media) throw new NotFoundException(`Media ${id} not found`);
 
-    // Xoá file trên Vercel Blob nếu là URL blob.
+    // Xoá file trên storage provider tương ứng (route theo ownership của URL).
     if (media.file_path.startsWith('https://')) {
-      await del(media.file_path, { token: process.env.BLOB_READ_WRITE_TOKEN });
+      await this.storage.del(media.file_path);
     }
 
     const deleted = await this.prisma.media.delete({ where: { id } });
