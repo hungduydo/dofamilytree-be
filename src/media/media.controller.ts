@@ -34,12 +34,13 @@ import {
 
 @ApiTags('Media')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('media')
 export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
 
   @Post('upload')
+  @Roles('member')
   @ApiOperation({
     summary: 'Upload media (ảnh → nén lossless bằng sharp; video/audio/tài liệu → upload thẳng)',
     description:
@@ -72,12 +73,15 @@ export class MediaController {
       album_id: body.album_id,
       event_id: body.event_id,
       uploader_name: body.uploader_name,
+      profile_member_id: req.user.profileMemberId,
+      display_name: req.user.displayName,
       duration_seconds: body.duration_seconds,
       tags: body.tags,
     });
   }
 
   @Post('upload-url')
+  @Roles('member')
   @ApiOperation({
     summary: 'Cấp presigned URL để client upload file THẲNG lên storage (không qua function)',
     description:
@@ -89,10 +93,15 @@ export class MediaController {
   })
   @ApiCreatedResponse({ type: UploadUrlResponseDto })
   createUploadUrl(@Body() body: CreateUploadUrlDto, @Request() req: any) {
-    return this.mediaService.createUploadUrl(req.user.id, body);
+    return this.mediaService.createUploadUrl(req.user.id, {
+      ...body,
+      profile_member_id: req.user.profileMemberId,
+      display_name: req.user.displayName,
+    });
   }
 
   @Post(':id/complete')
+  @Roles('member')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Xác nhận đã PUT xong file lên presigned URL — chuyển media sang ready',
@@ -106,6 +115,7 @@ export class MediaController {
   }
 
   @Get(':id/progress')
+  @Roles('member')
   @ApiOperation({ summary: 'Theo dõi tiến độ upload media (đọc Redis, fallback DB nếu key hết hạn)' })
   @ApiOkResponse({ type: MediaProgressResponseDto })
   getUploadProgress(@Param('id') id: string) {
@@ -158,6 +168,7 @@ export class MediaController {
   }
 
   @Get('blob-storage-usage')
+  @Roles('admin')
   @ApiOperation({ summary: 'Dung lượng thực tế trên Vercel Blob (quét trực tiếp, để đối chiếu với /media/stats)' })
   getBlobStorageUsage() {
     return this.mediaService.getBlobStorageUsage();
@@ -174,6 +185,7 @@ export class MediaController {
   }
 
   @Post('albums')
+  @Roles('editor')
   @ApiOperation({ summary: 'Tạo album media' })
   @ApiCreatedResponse({ type: MediaAlbumResponseDto })
   createAlbum(@Body() body: CreateAlbumDto) {
@@ -181,7 +193,6 @@ export class MediaController {
   }
 
   @Delete('albums/:id')
-  @UseGuards(RolesGuard)
   @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Xoá album (gỡ liên kết media của album) — chỉ admin' })
@@ -208,7 +219,6 @@ export class MediaController {
   }
 
   @Delete(':id')
-  @UseGuards(RolesGuard)
   @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Xoá media record + file trên storage — chỉ admin' })

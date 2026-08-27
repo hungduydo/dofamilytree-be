@@ -1,4 +1,6 @@
-import { Controller, Post, Body, Param, Logger, UnauthorizedException, Req } from '@nestjs/common';
+import { Controller, Post, Body, Param, Logger, UseGuards } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
+import { QStashSignatureGuard } from './qstash-signature.guard';
 import { TasksService } from './tasks.service';
 import { QUEUE_AVATAR_UPLOAD, QUEUE_REPORT_GENERATE, QUEUE_NOTIFICATION, QUEUE_IMAGE_PROCESS, QUEUE_GENERATION_RECOMPUTE } from './queue.constants';
 
@@ -8,18 +10,13 @@ export class QueueController {
 
   constructor(private readonly tasksService: TasksService) {}
 
+  // KHÔNG dùng JWT: người gọi là QStash chứ không phải người dùng. Danh tính
+  // được chứng minh bằng chữ ký (QStashSignatureGuard), không phải bằng token.
+  @Public()
+  @UseGuards(QStashSignatureGuard)
   @Post('callback/:task')
-  async handleCallback(
-    @Param('task') task: string,
-    @Body() data: any,
-    @Req() req: any
-  ) {
+  async handleCallback(@Param('task') task: string, @Body() data: any) {
     this.logger.log(`Received QStash callback for task: ${task}`);
-
-    // Verification logic (optional but recommended)
-    // if (process.env.NODE_ENV === 'production') {
-    //   // Verify QStash signature here
-    // }
 
     switch (task) {
       case QUEUE_AVATAR_UPLOAD:

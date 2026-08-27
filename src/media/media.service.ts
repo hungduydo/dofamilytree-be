@@ -7,6 +7,7 @@ import { Redis as UpstashRedis } from '@upstash/redis';
 import { PrismaService } from '../prisma/prisma.service';
 import { TasksService, MediaUploadProgress } from '../queue/tasks.service';
 import { StorageService } from '../storage/storage.service';
+import { SupabaseUsersService } from '../supabase/supabase-users.service';
 import { runInBackground } from '../utils/run-in-background';
 import { SafeCache } from '../utils/safe-cache';
 import { removeVietnameseTones } from '../utils/vietnamese-helper';
@@ -79,6 +80,7 @@ export class MediaService {
     private readonly prisma: PrismaService,
     private readonly tasksService: TasksService,
     private readonly storage: StorageService,
+    private readonly supabaseUsers: SupabaseUsersService,
     @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
   ) {
     this.cache = new SafeCache(this.redis, this.logger, MEDIA_CACHE_TTL_ALBUMS);
@@ -116,10 +118,20 @@ export class MediaService {
       album_id?: string;
       event_id?: string;
       uploader_name?: string;
+      /** Từ JWT (`req.user.profileMemberId`) — tránh một query UserMetadata thừa. */
+      profile_member_id?: string | null;
+      /** Từ JWT (`req.user.displayName`) — tránh một round-trip Supabase thừa. */
+      display_name?: string | null;
       duration_seconds?: number;
       tags?: string[];
     } = {},
   ) {
+    const uploaderName = await this.resolveUploaderName(
+      uploaderId,
+      meta.uploader_name,
+      meta.profile_member_id,
+      meta.display_name,
+    );
     const title = meta.title ?? file.originalname;
     // `type` tường minh (nếu hợp lệ) thắng; ngược lại suy từ MIME.
     const type: MediaType =
@@ -132,7 +144,7 @@ export class MediaService {
       data: {
         file_path: `/pending/${Date.now()}_${file.originalname}`,
         uploader_id: uploaderId,
-        uploader_name: meta.uploader_name,
+        uploader_name: uploaderName,
         title,
         normalized_title: removeVietnameseTones(title),
         type,
@@ -193,6 +205,8 @@ export class MediaService {
       album_id?: string;
       event_id?: string;
       uploader_name?: string;
+      profile_member_id?: string | null;
+      display_name?: string | null;
       duration_seconds?: number;
       tags?: string[];
     },
@@ -213,6 +227,12 @@ export class MediaService {
       );
     }
 
+    const uploaderName = await this.resolveUploaderName(
+      uploaderId,
+      dto.uploader_name,
+      dto.profile_member_id,
+      dto.display_name,
+    );
     const title = dto.title ?? dto.filename;
     const type: MediaType =
       dto.type && (MEDIA_TYPES as readonly string[]).includes(dto.type)
@@ -225,7 +245,7 @@ export class MediaService {
         // giống luồng multipart để record dở dang luôn nhận diện được.
         file_path: `/pending/${Date.now()}_${dto.filename}`,
         uploader_id: uploaderId,
-        uploader_name: dto.uploader_name,
+        uploader_name: uploaderName,
         title,
         normalized_title: removeVietnameseTones(title),
         type,
@@ -523,6 +543,53 @@ export class MediaService {
     const deleted = await this.prisma.media.delete({ where: { id } });
     await this.invalidateMediaCaches();
     return deleted;
+  }
+
+  /**
+   * Tên hiển thị của người upload. Trước đây chỉ lấy từ body, nên FE không gửi
+   * `uploader_name` là media nằm trong thư viện không có tên người đăng.
+   *
+   * Thứ tự ưu tiên: body (FE cho phép đăng hộ, vd "Ban truyền thông dòng họ")
+   * → Display name của tài khoản trên Supabase (token trước, hỏi Supabase sau)
+   * → tên thành viên gia phả mà tài khoản này liên kết tới.
+   *
+   * CỐ Ý không fallback sang email: `GET /media` là endpoint public và trả
+   * `uploader_name` cho khách vãng lai — email ở đó là rò rỉ thông tin cá nhân.
+   * Tài khoản chưa liên kết `profile_member_id` thì để null, và đó là dấu hiệu
+   * cần liên kết tài khoản với thành viên chứ không phải chuyện vá ở đây.
+   */
+  private async resolveUploaderName(
+    uploaderId: string,
+    provided?: string,
+    profileMemberId?: string | null,
+    displayName?: string | null,
+  ): Promise<string | null> {
+    const trimmed = provided?.trim();
+    if (trimmed) return trimmed;
+
+    // Display name từ token (ký lúc login).
+    if (displayName?.trim()) return displayName.trim();
+
+    // Token cũ chưa có displayName, hoặc user đổi Display name sau khi đăng nhập
+    // — hỏi thẳng Supabase. Best-effort: hỏng thì rơi xuống tên thành viên.
+    const fromSupabase = await this.supabaseUsers.getDisplayName(uploaderId);
+    if (fromSupabase) return fromSupabase;
+
+    // JWT đã mang sẵn profileMemberId ⇒ chỉ cần đọc members, khỏi qua user_metadata.
+    if (profileMemberId) {
+      const member = await this.prisma.member.findUnique({
+        where: { id: profileMemberId },
+        select: { name: true },
+      });
+      if (member?.name) return member.name;
+    }
+
+    // Token cũ (ký trước khi strategy trả profileMemberId) — tra lại từ DB.
+    const metadata = await this.prisma.userMetadata.findUnique({
+      where: { user_id: uploaderId },
+      select: { profile_member: { select: { name: true } } },
+    });
+    return metadata?.profile_member?.name ?? null;
   }
 
   /**

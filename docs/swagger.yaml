@@ -111,10 +111,56 @@ paths:
       security:
         - 
           bearer: []
+  /v2/auth/users:
+    get:
+      operationId: AuthController_listUsers
+      summary: Danh sách tài khoản để duyệt (admin). status=pending là hàng đợi guest chờ gắn member.
+      parameters:
+        - 
+          name: status
+          required: false
+          in: query
+          schema:
+            enum:
+              - pending
+              - linked
+              - all
+            type: string
+        - 
+          name: role
+          required: false
+          in: query
+          schema:
+            enum:
+              - guest
+              - member
+              - editor
+              - admin
+            type: string
+        - 
+          name: page
+          required: false
+          in: query
+          schema:
+            type: number
+        - 
+          name: pageSize
+          required: false
+          in: query
+          schema:
+            type: number
+      responses:
+        200:
+          description: ""
+      tags:
+        - Auth
+      security:
+        - 
+          bearer: []
   /v2/auth/users/{userId}/roles:
     put:
       operationId: AuthController_assignRoles
-      summary: Assign roles to a user (admin only)
+      summary: Đổi role của một tài khoản (admin). Không tự đổi role của chính mình.
       parameters:
         - 
           name: userId
@@ -128,6 +174,49 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/AssignRolesDto"
+      responses:
+        200:
+          description: ""
+      tags:
+        - Auth
+      security:
+        - 
+          bearer: []
+  /v2/auth/users/{userId}/link-member:
+    post:
+      operationId: AuthController_linkMember
+      summary: Gắn tài khoản vào một member CÓ SẴN (admin). Guest được nâng lên member.
+      parameters:
+        - 
+          name: userId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinkMemberDto"
+      responses:
+        200:
+          description: ""
+      tags:
+        - Auth
+      security:
+        - 
+          bearer: []
+    delete:
+      operationId: AuthController_unlinkMember
+      summary: Gỡ liên kết tài khoản ↔ member (admin). Member bị hạ về guest.
+      parameters:
+        - 
+          name: userId
+          required: true
+          in: path
+          schema:
+            type: string
       responses:
         200:
           description: ""
@@ -298,7 +387,7 @@ paths:
           bearer: []
     post:
       operationId: MembersController_createMember
-      summary: Create new member + profile
+      summary: Create new member + profile (editor trở lên)
       parameters: []
       requestBody:
         required: true
@@ -426,7 +515,7 @@ paths:
           bearer: []
     put:
       operationId: MembersController_updateMemberProfile
-      summary: Update member profile (supports avatar upload)
+      summary: "Update member profile (member: chỉ hồ sơ của chính mình + field cho phép; editor trở lên: mọi người, mọi field)"
       parameters:
         - 
           name: id
@@ -1281,6 +1370,7 @@ paths:
     post:
       operationId: MediaController_uploadMedia
       summary: Upload media (ảnh → nén lossless bằng sharp; video/audio/tài liệu → upload thẳng)
+      description: "File đi QUA serverless function nên chịu trần request body của platform (Vercel: 4.5MB nếu chưa bật Fluid Compute, 100MB nếu đã bật). Với file lớn hơn, dùng POST /v2/media/upload-url."
       parameters: []
       requestBody:
         required: true
@@ -1290,6 +1380,54 @@ paths:
               $ref: "#/components/schemas/UploadMediaDto"
       responses:
         201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaResponseDto"
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/media/upload-url:
+    post:
+      operationId: MediaController_createUploadUrl
+      summary: Cấp presigned URL để client upload file THẲNG lên storage (không qua function)
+      description: "Dùng cho audio/video/file lớn vượt trần request body của platform. Luồng 3 bước: (1) POST /v2/media/upload-url → nhận upload_url + media_id; (2) PUT file lên upload_url với đúng header Content-Type đã trả về; (3) POST /v2/media/:id/complete để backend xác minh và chuyển sang ready. Lưu ý: đường này KHÔNG nén ảnh — ảnh nhỏ nên đi POST /v2/media/upload."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUploadUrlDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponseDto"
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/media/{id}/complete:
+    post:
+      operationId: MediaController_completeUpload
+      summary: Xác nhận đã PUT xong file lên presigned URL — chuyển media sang ready
+      description: Backend HEAD object trên storage để lấy size thật; nếu chưa thấy file sẽ trả 400. Gọi lại trên media đã ready là no-op (idempotent).
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
           description: ""
           content:
             application/json:
@@ -1519,7 +1657,7 @@ paths:
   /v2/media/albums/{id}:
     delete:
       operationId: MediaController_deleteAlbum
-      summary: Xoá album (gỡ liên kết media của album)
+      summary: Xoá album (gỡ liên kết media của album) — chỉ admin
       parameters:
         - 
           name: id
@@ -1530,6 +1668,8 @@ paths:
       responses:
         204:
           description: Deleted
+        403:
+          description: Requires admin role
       tags:
         - Media
       security:
@@ -1586,7 +1726,7 @@ paths:
   /v2/media/{id}:
     delete:
       operationId: MediaController_deleteMedia
-      summary: Xoá media record + file trên Vercel Blob
+      summary: Xoá media record + file trên storage — chỉ admin
       parameters:
         - 
           name: id
@@ -1597,6 +1737,8 @@ paths:
       responses:
         204:
           description: Deleted
+        403:
+          description: Requires admin role
       tags:
         - Media
       security:
@@ -2132,14 +2274,26 @@ components:
       type: object
       properties:
         roles:
-          example:
-            - member
-            - editor
           type: array
+          example:
+            - editor
           items:
             type: string
+            enum:
+              - guest
+              - member
+              - editor
+              - admin
       required:
         - roles
+    LinkMemberDto:
+      type: object
+      properties:
+        memberId:
+          type: string
+          example: 3f2504e0-4f89-11d3-9a0c-0305e82c3301
+      required:
+        - memberId
     MemberLiteDto:
       type: object
       properties:
@@ -3420,6 +3574,87 @@ components:
         - status
         - uploader_id
         - created_at
+    CreateUploadUrlDto:
+      type: object
+      properties:
+        filename:
+          type: string
+          example: le-gio-to-2024.mp3
+          description: Tên file gốc — dùng làm key trên storage
+        mime_type:
+          type: string
+          example: audio/mpeg
+          description: MIME của file. Được KÝ vào presigned URL nên client phải PUT với đúng header Content-Type này.
+        size_bytes:
+          type: number
+          example: 10485760
+          description: Size dự kiến (byte) — backend từ chối sớm nếu vượt trần, trước khi client tốn băng thông.
+        title:
+          type: string
+          example: Lễ giỗ Tổ 2024
+        type:
+          type: string
+          enum:
+            - image
+            - video
+            - audio
+            - document
+          description: Bỏ trống → suy từ mime_type.
+        member_id:
+          type: string
+          format: uuid
+        album_id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        uploader_name:
+          type: string
+          example: Nguyễn Văn An
+        duration_seconds:
+          type: number
+          example: 324
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+        - filename
+        - mime_type
+        - size_bytes
+    UploadUrlResponseDto:
+      type: object
+      properties:
+        media_id:
+          type: string
+          format: uuid
+          description: ID record media vừa tạo (status = pending)
+        upload_url:
+          type: string
+          description: URL để PUT file lên. Hết hạn sau `expires_in` giây.
+        method:
+          type: string
+          example: PUT
+        headers:
+          type: object
+          example:
+            Content-Type: audio/mpeg
+          description: Header BẮT BUỘC khi PUT — đã nằm trong chữ ký, sai là storage trả 403.
+        expires_in:
+          type: number
+          example: 900
+          description: Thời hạn của upload_url (giây)
+        public_url:
+          type: string
+          description: URL public cuối cùng của file sau khi upload xong
+      required:
+        - media_id
+        - upload_url
+        - method
+        - headers
+        - expires_in
+        - public_url
     MediaProgressResponseDto:
       type: object
       properties:
@@ -3435,6 +3670,10 @@ components:
           type: number
           example: 50
           description: 0–100
+        url:
+          type: string
+          format: uri
+          description: URL Blob, chỉ có khi status=ready
         error:
           type: string
           description: Chỉ có khi status=failed
@@ -3482,6 +3721,10 @@ components:
           type: number
           example: 24
           description: Tài liệu (pdf/doc/…)
+        untyped:
+          type: number
+          example: 0
+          description: Record thiếu `type` (dữ liệu cũ chưa backfill). Không nằm trong 4 bucket trên, nên images+videos+audios+documents+untyped = total. Khác 0 nghĩa là cần chạy scripts/backfill-media-metadata.ts.
         storageUsedBytes:
           type: number
           example: 26414656614
@@ -3490,14 +3733,20 @@ components:
           type: number
           example: 107374182400
           description: Hạn mức lưu trữ (bytes)
+        mediaMissingSize:
+          type: number
+          example: 0
+          description: Số record thiếu `size_bytes` ⇒ storageUsedBytes đang thấp hơn thực tế.
       required:
         - total
         - images
         - videos
         - audios
         - documents
+        - untyped
         - storageUsedBytes
         - storageQuotaBytes
+        - mediaMissingSize
     MediaAlbumResponseDto:
       type: object
       properties:

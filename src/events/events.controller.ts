@@ -8,6 +8,8 @@ import {
   ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { Public } from '../auth/public.decorator';
 import { EventsService } from './events.service';
 import { CreateEventDto, UpdateEventDto, AddAttendeeDto } from './dto/create-event.dto';
@@ -15,7 +17,7 @@ import { EventResponseDto } from './dto/event-response.dto';
 
 @ApiTags('Events (Sự kiện dòng họ)')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('events')
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
@@ -59,6 +61,7 @@ export class EventsController {
   }
 
   @Post()
+  @Roles('editor')
   @ApiOperation({ summary: 'Create event + emit notification queue' })
   @ApiConsumes('multipart/form-data', 'application/json')
   @ApiCreatedResponse({ type: EventResponseDto })
@@ -71,6 +74,7 @@ export class EventsController {
   }
 
   @Put(':id')
+  @Roles('editor')
   @ApiOperation({ summary: 'Update event' })
   @ApiConsumes('multipart/form-data', 'application/json')
   @ApiOkResponse({ type: EventResponseDto })
@@ -84,6 +88,7 @@ export class EventsController {
   }
 
   @Delete(':id')
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete event' })
   @ApiNoContentResponse({ description: 'Deleted' })
@@ -100,12 +105,14 @@ export class EventsController {
   }
 
   @Post(':id/attendees')
+  @Roles('editor')
   @ApiOperation({ summary: 'Add/update an attendee (RSVP) for an event' })
   addAttendee(@Param('id') id: string, @Body() dto: AddAttendeeDto) {
     return this.eventsService.addAttendee(id, dto.member_id, dto.rsvp_status);
   }
 
   @Delete(':id/attendees/:memberId')
+  @Roles('editor')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove an attendee from an event' })
   @ApiNoContentResponse({ description: 'Removed' })

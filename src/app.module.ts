@@ -16,12 +16,14 @@ import { QueueModule } from './queue/queue.module';
 import { GenerationModule } from './generation/generation.module';
 import { RedisModule } from './redis.module';
 import { StorageModule } from './storage/storage.module';
+import { SupabaseModule } from './supabase/supabase.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     RedisModule,
     StorageModule,
+    SupabaseModule,
     PrismaModule,
     AuthModule,
     QueueModule,

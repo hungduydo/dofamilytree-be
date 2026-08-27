@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { RolesGuard } from '../../src/auth/roles.guard';
 import { TreeController } from '../../src/tree/tree.controller';
 import { TreeService } from '../../src/tree/tree.service';
 
@@ -22,7 +23,12 @@ describe('TreeController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TreeController],
       providers: [{ provide: TreeService, useValue: mockTreeService }],
-    }).compile();
+    })
+      // RolesGuard cần PrismaService; spec này chỉ kiểm tra controller uỷ quyền
+      // đúng cho service. Phân quyền route được khoá ở test/auth/route-roles.spec.ts.
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<TreeController>(TreeController);
     jest.clearAllMocks();

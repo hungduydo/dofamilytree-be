@@ -5,13 +5,15 @@ import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { Public } from '../auth/public.decorator';
 import { LifeEventsService } from './life-events.service';
 import { CreateLifeEventDto, LifeEventResponseDto } from './dto/life-event.dto';
 
 @ApiTags('Life Events (Quá trình sinh sống)')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('members/:memberId/life-events')
 export class LifeEventsController {
   constructor(private readonly lifeEventsService: LifeEventsService) {}
@@ -25,6 +27,7 @@ export class LifeEventsController {
   }
 
   @Post()
+  @Roles('editor')
   @ApiOperation({ summary: 'Add a life event to a member' })
   @ApiCreatedResponse({ type: LifeEventResponseDto })
   create(@Param('memberId') memberId: string, @Body() dto: CreateLifeEventDto) {
@@ -32,6 +35,7 @@ export class LifeEventsController {
   }
 
   @Delete(':id')
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a life event' })
   @ApiNoContentResponse({ description: 'Deleted' })

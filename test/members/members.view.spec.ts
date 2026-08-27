@@ -7,6 +7,9 @@ import { GenerationService } from '../../src/generation/generation.service';
 import {
   MEMBER_LITE_SELECT,
   MEMBER_TABLE_SELECT,
+  MEMBER_TABLE_PUBLIC_SELECT,
+  PROFILE_FULL_SELECT,
+  PROFILE_PUBLIC_SELECT,
   TREE_BRIEF_SELECT,
 } from '../../src/members/members.select';
 
@@ -50,8 +53,8 @@ describe('MembersService — view/select shape', () => {
       expect(listArg()).not.toHaveProperty('include');
     });
 
-    it("view='table' → select MEMBER_TABLE_SELECT, bỏ biography/notes", async () => {
-      await service.getAllMembers(1, 10, undefined, undefined, 'created_at', 'desc', 'table');
+    it("view='table' + được xem PII → select MEMBER_TABLE_SELECT, bỏ biography/notes", async () => {
+      await service.getAllMembers(1, 10, undefined, undefined, 'created_at', 'desc', 'table', undefined, undefined, true);
       expect(listArg().select).toEqual(MEMBER_TABLE_SELECT);
       expect(listArg()).not.toHaveProperty('include');
       // Hợp đồng giảm payload: bảng KHÔNG kéo hai cột free-text nặng nhất.
@@ -60,12 +63,24 @@ describe('MembersService — view/select shape', () => {
     });
 
     it("view='full' → include profile + tree brief, KHÔNG có select", async () => {
-      await service.getAllMembers(1, 10, undefined, undefined, 'created_at', 'desc', 'full');
+      await service.getAllMembers(1, 10, undefined, undefined, 'created_at', 'desc', 'full', undefined, undefined, true);
       expect(listArg()).not.toHaveProperty('select');
       expect(listArg().include).toEqual({
-        profile: true,
+        profile: { select: PROFILE_FULL_SELECT },
         tree: { select: TREE_BRIEF_SELECT },
       });
+    });
+
+    // Mặc định (không truyền canSeePii) phải là bản ĐÃ LỌC — thiếu luồng role
+    // dẫn tới ít dữ liệu hơn, không phải nhiều hơn.
+    it("view='full' mặc định → profile đã bỏ 4 cột liên lạc", async () => {
+      await service.getAllMembers(1, 10, undefined, undefined, 'created_at', 'desc', 'full');
+      expect(listArg().include.profile).toEqual({ select: PROFILE_PUBLIC_SELECT });
+    });
+
+    it("view='table' mặc định → bỏ address + phone", async () => {
+      await service.getAllMembers(1, 10, undefined, undefined, 'created_at', 'desc', 'table');
+      expect(listArg().select).toEqual(MEMBER_TABLE_PUBLIC_SELECT);
     });
 
     it('filter tree_id + gender lọt vào where; gender rác thì không', async () => {
@@ -82,10 +97,10 @@ describe('MembersService — view/select shape', () => {
 
   describe('getMemberById / getMemberProfile — tree luôn thu hẹp', () => {
     it('getMemberById include tree brief', async () => {
-      await service.getMemberById('m1');
+      await service.getMemberById('m1', true);
       const arg = mockPrisma.member.findUnique.mock.calls[0][0];
       expect(arg.include.tree).toEqual({ select: TREE_BRIEF_SELECT });
-      expect(arg.include.profile).toBe(true);
+      expect(arg.include.profile).toEqual({ select: PROFILE_FULL_SELECT });
     });
 
     it('getMemberProfile: người thân dùng MEMBER_LITE_SELECT, không profile lồng', async () => {

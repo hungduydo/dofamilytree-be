@@ -136,7 +136,10 @@ describe('MembersService — caching', () => {
       mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
       mockPrisma.member.update.mockResolvedValue({ id: 'm1' });
       mockPrisma.profile.update.mockResolvedValue({ id: 'p1' });
-      await service.updateMemberProfile('m1', { occupation: 'Kỹ sư' } as any);
+      await service.updateMemberProfile('m1', { occupation: 'Kỹ sư' } as any, undefined, {
+        roles: ['editor'],
+        profileMemberId: null,
+      });
       expectAllKeysDeleted();
     });
   });

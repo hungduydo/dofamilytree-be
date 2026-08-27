@@ -16,6 +16,8 @@
     "prisma:generate": "prisma generate",
     "migrate:relationships": "ts-node scripts/migrate-relationships.ts",
     "backfill:generations": "ts-node scripts/backfill-generations.ts",
+    "bootstrap:admin": "ts-node scripts/bootstrap-admin.ts",
+    "audit:roles": "ts-node scripts/audit-user-roles.ts",
     "backfill:media": "ts-node scripts/backfill-media-metadata.ts",
     "swagger:export": "ts-node scripts/export-swagger.ts",
     "postinstall": "prisma generate",

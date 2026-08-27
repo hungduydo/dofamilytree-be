@@ -63,6 +63,62 @@ describe('RolesGuard', () => {
     );
   });
 
+  describe('phân cấp guest < member < editor < admin', () => {
+    const require = (roles: string[]) =>
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(roles);
+
+    it("admin qua được @Roles('member') — không phải liệt kê admin ở mọi route", async () => {
+      require(['member']);
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['admin'] });
+      await expect(guard.canActivate(ctxFor({ id: 'u1' }))).resolves.toBe(true);
+    });
+
+    it("editor qua được @Roles('member') nhưng TRƯỢT @Roles('admin')", async () => {
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['editor'] });
+
+      require(['member']);
+      await expect(guard.canActivate(ctxFor({ id: 'u1' }))).resolves.toBe(true);
+
+      require(['admin']);
+      await expect(guard.canActivate(ctxFor({ id: 'u1' }))).rejects.toThrow(ForbiddenException);
+    });
+
+    it("guest trượt @Roles('member')", async () => {
+      require(['member']);
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['guest'] });
+      await expect(guard.canActivate(ctxFor({ id: 'u1' }))).rejects.toThrow(ForbiddenException);
+    });
+
+    it('nhiều role yêu cầu → lấy mức THẤP nhất (giữ ngữ nghĩa OR)', async () => {
+      require(['admin', 'member']);
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['member'] });
+      await expect(guard.canActivate(ctxFor({ id: 'u1' }))).resolves.toBe(true);
+    });
+
+    it('@Roles gõ sai tên role → chặn, KHÔNG mở toang route', async () => {
+      require(['administrator']);
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['admin'] });
+      await expect(guard.canActivate(ctxFor({ id: 'u1' }))).rejects.toThrow(ForbiddenException);
+    });
+
+    it('memo hoá: hai guard trên cùng request chỉ đọc DB một lần', async () => {
+      require(['member']);
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['admin'] });
+
+      // CÙNG một request object, khác với ctxFor() vốn tạo request mới mỗi lần.
+      const req: any = { user: { id: 'u1' } };
+      const ctx = {
+        switchToHttp: () => ({ getRequest: () => req }),
+        getHandler: () => function handler() {},
+        getClass: () => class Ctrl {},
+      } as unknown as ExecutionContext;
+
+      await guard.canActivate(ctx);
+      await guard.canActivate(ctx);
+      expect(mockPrisma.userMetadata.findUnique).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('chặn khi request chưa có user', async () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['admin']);
     await expect(guard.canActivate(ctxFor(undefined))).rejects.toThrow(ForbiddenException);

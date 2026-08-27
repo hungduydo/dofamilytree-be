@@ -7,6 +7,7 @@ import { MediaService } from '../../src/media/media.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { TasksService } from '../../src/queue/tasks.service';
 import { StorageService } from '../../src/storage/storage.service';
+import { SupabaseUsersService } from '../../src/supabase/supabase-users.service';
 import { classifyMediaType } from '../../src/media/media.constants';
 
 const mockPrisma = {
@@ -17,6 +18,12 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
+  },
+  userMetadata: {
+    findUnique: jest.fn(),
+  },
+  member: {
+    findUnique: jest.fn(),
   },
   mediaAlbum: {
     findMany: jest.fn(),
@@ -29,6 +36,8 @@ const mockPrisma = {
 const mockTasksService = { handleMediaProcess: jest.fn() };
 // Mặc định: provider KHÔNG hỗ trợ presign → các test cũ (multipart) không đổi
 // hành vi; test presign tự bật lại cờ này.
+// Mặc định Supabase không có display name → các test cũ giữ nguyên hành vi.
+const mockSupabaseUsers = { getDisplayName: jest.fn().mockResolvedValue(null) };
 const mockStorage = {
   put: jest.fn(),
   del: jest.fn(),
@@ -56,6 +65,7 @@ describe('MediaService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: TasksService, useValue: mockTasksService },
         { provide: StorageService, useValue: mockStorage },
+        { provide: SupabaseUsersService, useValue: mockSupabaseUsers },
         { provide: 'REDIS_CLIENT', useValue: mockRedis },
       ],
     }).compile();
@@ -64,6 +74,7 @@ describe('MediaService', () => {
     jest.clearAllMocks();
     mockRedis.get.mockResolvedValue(null);
     mockStorage.supportsPresign.mockReturnValue(false);
+    mockSupabaseUsers.getDisplayName.mockResolvedValue(null);
   });
 
   describe('uploadMedia', () => {
@@ -210,6 +221,82 @@ describe('MediaService', () => {
     });
   });
 
+  describe('uploader_name resolution', () => {
+    beforeEach(() => {
+      mockPrisma.media.create.mockResolvedValue({ id: 'media-1', status: 'pending' });
+    });
+
+    const file = {
+      buffer: Buffer.from('x'), originalname: 'a.jpg', mimetype: 'image/jpeg', size: 10,
+    } as Express.Multer.File;
+
+    const createdWith = () => mockPrisma.media.create.mock.calls[0][0].data;
+
+    it('keeps the name the client sent (đăng hộ)', async () => {
+      await service.uploadMedia(file, 'user-1', { uploader_name: 'Ban truyền thông dòng họ' });
+      expect(createdWith().uploader_name).toBe('Ban truyền thông dòng họ');
+      // Đã có tên thì không đụng tới DB để tra cứu.
+      expect(mockPrisma.member.findUnique).not.toHaveBeenCalled();
+      expect(mockPrisma.userMetadata.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('uses the Supabase display name carried in the token', async () => {
+      await service.uploadMedia(file, 'user-1', { display_name: 'Đỗ Duy Hưng' });
+      expect(createdWith().uploader_name).toBe('Đỗ Duy Hưng');
+      // Token đã có tên ⇒ không gọi Supabase.
+      expect(mockSupabaseUsers.getDisplayName).not.toHaveBeenCalled();
+    });
+
+    it('asks Supabase when the token predates displayName', async () => {
+      mockSupabaseUsers.getDisplayName.mockResolvedValue('Đỗ Duy Hưng');
+      await service.uploadMedia(file, 'user-1', {});
+      expect(createdWith().uploader_name).toBe('Đỗ Duy Hưng');
+      expect(mockSupabaseUsers.getDisplayName).toHaveBeenCalledWith('user-1');
+    });
+
+    it('prefers the client-sent name over the display name (đăng hộ)', async () => {
+      await service.uploadMedia(file, 'user-1', {
+        uploader_name: 'Ban truyền thông dòng họ',
+        display_name: 'Đỗ Duy Hưng',
+      });
+      expect(createdWith().uploader_name).toBe('Ban truyền thông dòng họ');
+    });
+
+    it('falls back to the linked member name when the client sends nothing', async () => {
+      mockPrisma.member.findUnique.mockResolvedValue({ name: 'Đỗ Xuân Khôi' });
+      await service.uploadMedia(file, 'user-1', { profile_member_id: 'member-9' });
+      expect(createdWith().uploader_name).toBe('Đỗ Xuân Khôi');
+    });
+
+    it('looks up user_metadata when the token carries no profileMemberId', async () => {
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({
+        profile_member: { name: 'Đỗ Xuân Khôi' },
+      });
+      await service.uploadMedia(file, 'user-1', {});
+      expect(createdWith().uploader_name).toBe('Đỗ Xuân Khôi');
+    });
+
+    it('stays null for an account with no linked member — never leaks the email', async () => {
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ profile_member: null });
+      await service.uploadMedia(file, 'user-1', {});
+      expect(createdWith().uploader_name).toBeNull();
+    });
+
+    it('applies the same resolution on the presigned path', async () => {
+      mockStorage.supportsPresign.mockReturnValue(true);
+      mockStorage.presignPut.mockResolvedValue('https://r2.example/signed');
+      mockStorage.publicUrlFor.mockReturnValue('https://cdn.example/x.mp3');
+      mockPrisma.member.findUnique.mockResolvedValue({ name: 'Đỗ Xuân Khôi' });
+
+      await service.createUploadUrl('user-1', {
+        filename: 'a.mp3', mime_type: 'audio/mpeg', size_bytes: 100,
+        profile_member_id: 'member-9',
+      });
+
+      expect(createdWith().uploader_name).toBe('Đỗ Xuân Khôi');
+    });
+  });
+
   describe('createUploadUrl', () => {
     const dto = { filename: 'bai-hat.mp3', mime_type: 'audio/mpeg', size_bytes: 10 * 1024 * 1024 };
 
@@ -251,6 +338,7 @@ describe('MediaService', () => {
 
     it('fails clearly when the active provider cannot presign', async () => {
       mockStorage.supportsPresign.mockReturnValue(false);
+    mockSupabaseUsers.getDisplayName.mockResolvedValue(null);
       await expect(service.createUploadUrl('user-1', dto)).rejects.toThrow(ServiceUnavailableException);
     });
   });

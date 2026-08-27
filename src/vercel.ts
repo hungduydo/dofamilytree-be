@@ -14,6 +14,8 @@ async function bootstrap(): Promise<Express> {
   const server = express();
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
     logger: ['error', 'warn'],
+    // Xem ghi chú ở main.ts — QStashSignatureGuard cần req.rawBody.
+    rawBody: true,
   });
 
   app.setGlobalPrefix('v2', { exclude: ['docs', 'docs-json', 'docs-yaml'] });

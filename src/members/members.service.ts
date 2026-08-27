@@ -23,11 +23,16 @@ import {
   QUEUE_NOTIFICATION,
 } from '../queue/queue.constants';
 import { MemberView } from './members.view';
+import { CallerMeta, ANONYMOUS_META } from '../auth/user-meta';
+import { hasAtLeast } from '../auth/roles.constants';
 import {
   MEMBER_LITE_SELECT,
   MEMBER_TABLE_SELECT,
   TREE_BRIEF_SELECT,
   RELATIONSHIP_EDGE_SELECT,
+  profileSelectFor,
+  memberTableSelect,
+  MEMBER_SELF_EDITABLE_FIELDS,
 } from './members.select';
 
 /**
@@ -173,6 +178,7 @@ export class MembersService {
     view: MemberView = 'full',
     treeId?: string,
     gender?: string,
+    canSeePii = false,
   ) {
     // `take` phải tính TRƯỚC rồi mới suy ra `skip`. Trước đây `skip` dùng
     // `pageSize` chưa cap trong khi `take` cap ở 100, nên ?pageSize=1000&page=2
@@ -205,8 +211,8 @@ export class MembersService {
       view === 'lite'
         ? { select: MEMBER_LITE_SELECT }
         : view === 'table'
-          ? { select: MEMBER_TABLE_SELECT }
-          : { include: { profile: true, tree: { select: TREE_BRIEF_SELECT } } };
+          ? { select: memberTableSelect(canSeePii) }
+          : { include: { profile: profileSelectFor(canSeePii), tree: { select: TREE_BRIEF_SELECT } } };
 
     const [data, total] = await Promise.all([
       this.prisma.member.findMany({
@@ -250,22 +256,24 @@ export class MembersService {
     });
   }
 
-  async getMemberById(id: string) {
+  async getMemberById(id: string, canSeePii = false) {
     const member = await this.prisma.member.findUnique({
       where: { id },
       // Thu hẹp `tree` xuống {id,title} cho khớp MemberTreeBriefDto (đóng drift +
-      // chặn leak owner_id). Profile giữ nguyên full.
-      include: { profile: true, tree: { select: TREE_BRIEF_SELECT } },
+      // chặn leak owner_id). Profile bỏ 4 cột liên lạc nếu người gọi không được xem.
+      include: { profile: profileSelectFor(canSeePii), tree: { select: TREE_BRIEF_SELECT } },
     });
     if (!member) throw new NotFoundException(`Member ${id} not found`);
     return member;
   }
 
-  async getMemberProfile(id: string) {
+  async getMemberProfile(id: string, canSeePii = false) {
     const member = await this.prisma.member.findUnique({
       where: { id },
       include: {
-        profile: true, // chính chủ — GIỮ NGUYÊN, đây là mục đích của endpoint
+        // Endpoint DUY NHẤT trả thông tin liên lạc — và chỉ khi người gọi là
+        // member/admin. Mọi chỗ nhúng profile khác đều dùng bản đã lọc.
+        profile: profileSelectFor(canSeePii),
         tree: { select: TREE_BRIEF_SELECT },
         // Người thân chỉ cần đủ render một chip/link — bỏ hẳn profile lồng.
         // Trước đây mỗi người kèm full Member + full Profile (cả biography):
@@ -354,10 +362,49 @@ export class MembersService {
     return this.cache.del(...MEMBERS_CACHE_KEYS);
   }
 
-  async updateMemberProfile(id: string, dto: UpdateMemberDto, avatarFile?: Express.Multer.File) {
+  /**
+   * Ai được sửa hồ sơ nào.
+   *
+   * RolesGuard chỉ gác được THEO ROUTE, còn "member nhưng chỉ dòng của chính
+   * nó" là ràng buộc THEO BẢN GHI — nên nó nằm ở đây, chỗ đã có sẵn `id`.
+   *
+   * `caller.profileMemberId` đến từ DB (CallerMetaGuard) chứ không từ JWT: token
+   * cũ vẫn mang profileMemberId sau khi admin gỡ link, và sẽ cho sửa hồ sơ của
+   * người khác suốt TTL 1 ngày còn lại.
+   */
+  private assertCanEditMember(id: string, dto: UpdateMemberDto, caller: CallerMeta) {
+    if (hasAtLeast(caller.roles, 'editor')) return;
+
+    if (caller.profileMemberId !== id) {
+      throw new ForbiddenException('Chỉ sửa được hồ sơ của chính bạn');
+    }
+
+    const allowed = new Set<string>(MEMBER_SELF_EDITABLE_FIELDS);
+    const forbidden = Object.keys(dto).filter(
+      (key) => !allowed.has(key) && dto[key as keyof UpdateMemberDto] !== undefined,
+    );
+    if (forbidden.length) {
+      // Trả 400 chứ KHÔNG âm thầm bỏ qua: FE phải biết form đang gửi thừa field,
+      // không thì người dùng tưởng đã lưu được đời/ban trị sự của mình.
+      throw new BadRequestException(
+        `Các trường sau chỉ editor/admin được sửa: ${forbidden.join(', ')}`,
+      );
+    }
+  }
+
+  async updateMemberProfile(
+    id: string,
+    dto: UpdateMemberDto,
+    avatarFile?: Express.Multer.File,
+    caller: CallerMeta = ANONYMOUS_META,
+  ) {
+    this.assertCanEditMember(id, dto, caller);
+
     const existing = await this.prisma.member.findUnique({
       where: { id },
-      include: { profile: true },
+      // Chỉ để biết profile có tồn tại không (quyết định update hay bỏ qua) —
+      // giá trị KHÔNG đi ra response, nên không cần lọc cột liên lạc.
+      include: { profile: true }, // đọc nội bộ
     });
     if (!existing) throw new NotFoundException(`Member ${id} not found`);
 
@@ -464,13 +511,9 @@ export class MembersService {
    * lần ghi — endpoint này dành cho sửa dữ liệu ngoài luồng hoặc khi cần kết quả
    * ngay thay vì chờ cửa sổ debounce.
    */
-  async recomputeGenerations(requesterId: string) {
-    const requesterMeta = await this.prisma.userMetadata.findUnique({
-      where: { user_id: requesterId },
-    });
-    if (!requesterMeta?.roles.includes('admin')) {
-      throw new ForbiddenException('Admin role required to recompute generations');
-    }
+  async recomputeGenerations() {
+    // Kiểm tra admin đã chuyển lên @Roles('admin') ở controller — RolesGuard đọc
+    // role từ DB y như đoạn code cũ ở đây, nên không mất lớp bảo vệ nào.
     return this.generationService.recomputeAll();
   }
 

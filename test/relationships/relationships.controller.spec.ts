@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { RolesGuard } from '../../src/auth/roles.guard';
 import { RelationshipsController } from '../../src/relationships/relationships.controller';
 import { RelationshipsService } from '../../src/relationships/relationships.service';
 
@@ -21,7 +22,12 @@ describe('RelationshipsController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [RelationshipsController],
       providers: [{ provide: RelationshipsService, useValue: mockRelationshipsService }],
-    }).compile();
+    })
+      // RolesGuard cần PrismaService; spec này chỉ kiểm tra controller uỷ quyền
+      // đúng cho service. Phân quyền route được khoá ở test/auth/route-roles.spec.ts.
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<RelationshipsController>(RelationshipsController);
     jest.clearAllMocks();

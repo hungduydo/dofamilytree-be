@@ -5,6 +5,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateRelationshipDto, SearchRelationshipDto } from './dto/create-relationship.dto';
 import { GenerationService } from '../generation/generation.service';
 import { QUEUE_NOTIFICATION } from '../queue/queue.constants';
+import { profileSelectFor } from '../members/members.select';
+
+// Các endpoint dưới đây nhúng profile của member. Chúng KHÔNG bao giờ trả 4 cột
+// liên lạc (phone/contactEmail/address/notes) — kể cả cho admin — vì nhiều route
+// trong file này là @Public(). Ai cần số điện thoại thì gọi
+// GET /v2/members/:id/profile, nơi có kiểm tra role thật sự.
+const EMBEDDED_PROFILE = profileSelectFor(false);
 
 @Injectable()
 export class RelationshipsService {
@@ -63,8 +70,8 @@ export class RelationshipsService {
         note: dto.note,
       },
       include: {
-        parent: { include: { profile: true } },
-        child: { include: { profile: true } },
+        parent: { include: { profile: EMBEDDED_PROFILE } },
+        child: { include: { profile: EMBEDDED_PROFILE } },
       },
     });
 
@@ -88,8 +95,8 @@ export class RelationshipsService {
         OR: [{ parent_id: memberId }, { child_id: memberId }],
       },
       include: {
-        parent: { include: { profile: true } },
-        child: { include: { profile: true } },
+        parent: { include: { profile: EMBEDDED_PROFILE } },
+        child: { include: { profile: EMBEDDED_PROFILE } },
       },
     });
   }
@@ -97,7 +104,7 @@ export class RelationshipsService {
   async getParents(memberId: string) {
     return this.prisma.memberRelationship.findMany({
       where: { child_id: memberId },
-      include: { parent: { include: { profile: true } } },
+      include: { parent: { include: { profile: EMBEDDED_PROFILE } } },
     });
   }
 
@@ -107,7 +114,7 @@ export class RelationshipsService {
         parent_id: memberId,
         type: { in: ['BIOLOGICAL', 'ADOPTED'] },
       },
-      include: { child: { include: { profile: true } } },
+      include: { child: { include: { profile: EMBEDDED_PROFILE } } },
     });
   }
 
@@ -118,8 +125,8 @@ export class RelationshipsService {
         type: 'SPOUSE',
       },
       include: {
-        parent: { include: { profile: true } },
-        child: { include: { profile: true } },
+        parent: { include: { profile: EMBEDDED_PROFILE } },
+        child: { include: { profile: EMBEDDED_PROFILE } },
       },
     });
   }
@@ -193,8 +200,8 @@ export class RelationshipsService {
     return this.prisma.memberRelationship.findMany({
       where,
       include: {
-        parent: { include: { profile: true } },
-        child: { include: { profile: true } },
+        parent: { include: { profile: EMBEDDED_PROFILE } },
+        child: { include: { profile: EMBEDDED_PROFILE } },
       },
     });
   }

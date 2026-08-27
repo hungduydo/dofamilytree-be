@@ -1,6 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGraveDto, UpdateGraveDto } from './dto/create-grave.dto';
+import { profileSelectFor } from '../members/members.select';
+
+// Các endpoint dưới đây nhúng profile của member. Chúng KHÔNG bao giờ trả 4 cột
+// liên lạc (phone/contactEmail/address/notes) — kể cả cho admin — vì nhiều route
+// trong file này là @Public(). Ai cần số điện thoại thì gọi
+// GET /v2/members/:id/profile, nơi có kiểm tra role thật sự.
+const EMBEDDED_PROFILE = profileSelectFor(false);
 
 /** Haversine formula — distance between two lat/lng points in km */
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -20,7 +27,7 @@ export class GravesService {
   async getAllGraves(filter: { name?: string }) {
     return this.prisma.cemetery.findMany({
       where: filter.name ? { name: { contains: filter.name, mode: 'insensitive' } } : {},
-      include: { member: { include: { profile: true } } },
+      include: { member: { include: { profile: EMBEDDED_PROFILE } } },
       orderBy: { created_at: 'desc' },
     });
   }
@@ -28,7 +35,7 @@ export class GravesService {
   async getGraveById(id: string) {
     const grave = await this.prisma.cemetery.findUnique({
       where: { id },
-      include: { member: { include: { profile: true } } },
+      include: { member: { include: { profile: EMBEDDED_PROFILE } } },
     });
     if (!grave) throw new NotFoundException(`Grave ${id} not found`);
     return grave;
@@ -42,7 +49,7 @@ export class GravesService {
     // For production: use PostGIS or bounding box pre-filter.
     const all = await this.prisma.cemetery.findMany({
       where: { latitude: { not: null }, longitude: { not: null } },
-      include: { member: { include: { profile: true } } },
+      include: { member: { include: { profile: EMBEDDED_PROFILE } } },
     });
     return all.filter(
       (g) => haversineDistance(params.lat, params.lng, g.latitude as number, g.longitude as number) <= radius,

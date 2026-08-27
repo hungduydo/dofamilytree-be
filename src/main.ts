@@ -6,7 +6,9 @@ import { AppModule } from './app.module';
 import { buildSwaggerConfig } from './swagger.config';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: QStashSignatureGuard cần body THÔ để kiểm chữ ký. Thiếu cờ này
+  // thì req.rawBody là undefined và MỌI job nền sẽ 401.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // Exclude Swagger path from global prefix so /docs resolves correctly
   app.setGlobalPrefix('v2', { exclude: ['docs', 'docs-json', 'docs-yaml'] });

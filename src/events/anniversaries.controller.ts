@@ -6,13 +6,15 @@ import {
   ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { EventsService } from './events.service';
 import { CreateAnniversaryDto, UpdateAnniversaryDto } from './dto/create-event.dto';
 import { AnniversaryResponseDto } from './dto/event-response.dto';
 
 @ApiTags('Anniversaries (Ngày giỗ)')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('anniversaries')
 export class AnniversariesController {
   constructor(private readonly eventsService: EventsService) {}
@@ -44,6 +46,7 @@ export class AnniversariesController {
   }
 
   @Post()
+  @Roles('editor')
   @ApiOperation({ summary: 'Create anniversary (optional member link)' })
   @ApiCreatedResponse({ type: AnniversaryResponseDto })
   create(@Body() dto: CreateAnniversaryDto) {
@@ -51,6 +54,7 @@ export class AnniversariesController {
   }
 
   @Put(':id')
+  @Roles('editor')
   @ApiOperation({ summary: 'Update anniversary' })
   @ApiOkResponse({ type: AnniversaryResponseDto })
   update(@Param('id') id: string, @Body() dto: UpdateAnniversaryDto) {
@@ -58,6 +62,7 @@ export class AnniversariesController {
   }
 
   @Delete(':id')
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete anniversary' })
   @ApiNoContentResponse({ description: 'Deleted' })

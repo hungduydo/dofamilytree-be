@@ -6,6 +6,8 @@ import {
   ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { RelationshipsService } from './relationships.service';
 import { CreateRelationshipDto, SearchRelationshipDto } from './dto/create-relationship.dto';
 import {
@@ -15,7 +17,7 @@ import {
 
 @ApiTags('Relationships')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller()
 export class RelationshipsController {
   constructor(private readonly relationshipsService: RelationshipsService) {}
@@ -70,6 +72,7 @@ export class RelationshipsController {
   }
 
   @Post('members/:memberId/relationships')
+  @Roles('editor')
   @ApiOperation({ summary: 'Add relationship between two members' })
   @ApiCreatedResponse({ type: MemberRelationshipResponseDto })
   addRelationship(@Body() dto: CreateRelationshipDto) {
@@ -77,6 +80,7 @@ export class RelationshipsController {
   }
 
   @Delete('relationships/:id')
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a relationship' })
   @ApiNoContentResponse({ description: 'Deleted' })

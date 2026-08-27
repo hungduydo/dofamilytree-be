@@ -38,6 +38,10 @@ const mockTasksService = { handleAvatarUpload: jest.fn().mockResolvedValue(undef
 const mockGenerationService = { enqueueRecompute: jest.fn(), recomputeAll: jest.fn() };
 const mockRedis = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
 
+/** Người gọi mặc định cho các test updateMemberProfile: editor ⇒ sửa được mọi
+ *  hồ sơ, mọi field. Ràng buộc "chính chủ" có spec riêng (members.self-edit). */
+const EDITOR_CALLER = { roles: ['editor'], profileMemberId: null };
+
 describe('MembersService', () => {
   let service: MembersService;
 
@@ -227,13 +231,13 @@ describe('MembersService', () => {
       mockPrisma.member.update.mockResolvedValue({ id: 'uuid-1', name: 'Updated' });
       mockPrisma.profile.update.mockResolvedValue({ id: 'p-1', fullName: 'Updated' });
 
-      const result = await service.updateMemberProfile('uuid-1', { fullName: 'Updated', gender: 'M' });
+      const result = await service.updateMemberProfile('uuid-1', { fullName: 'Updated', gender: 'M' }, undefined, EDITOR_CALLER);
       expect(result).toHaveProperty('id', 'uuid-1');
     });
 
     it('should throw NotFoundException when member not found', async () => {
       mockPrisma.member.findUnique.mockResolvedValue(null);
-      await expect(service.updateMemberProfile('bad-id', { fullName: 'X', gender: 'M' })).rejects.toThrow(NotFoundException);
+      await expect(service.updateMemberProfile('bad-id', { fullName: 'X', gender: 'M' }, undefined, EDITOR_CALLER)).rejects.toThrow(NotFoundException);
     });
 
     it('should upload the avatar directly when a file is provided', async () => {
@@ -243,7 +247,7 @@ describe('MembersService', () => {
       mockPrisma.profile.update.mockResolvedValue({ id: 'p-1' });
 
       const mockFile = { buffer: Buffer.from('img'), originalname: 'avatar.jpg', mimetype: 'image/jpeg' } as Express.Multer.File;
-      await service.updateMemberProfile('uuid-1', { fullName: 'X', gender: 'M' }, mockFile);
+      await service.updateMemberProfile('uuid-1', { fullName: 'X', gender: 'M' }, mockFile, EDITOR_CALLER);
       // Called directly (not via QStash) — the callback webhook needs a publicly
       // reachable APP_URL, which local dev doesn't have.
       expect(mockTasksService.handleAvatarUpload).toHaveBeenCalledWith(
@@ -257,7 +261,7 @@ describe('MembersService', () => {
       mockPrisma.member.update.mockResolvedValue({ id: 'uuid-1' });
       mockPrisma.profile.update.mockResolvedValue({ id: 'p-1' });
 
-      await service.updateMemberProfile('uuid-1', { generation: 4 } as any);
+      await service.updateMemberProfile('uuid-1', { generation: 4 } as any, undefined, EDITOR_CALLER);
       expect(mockPrisma.member.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ generation: 4 }) }),
       );
@@ -271,7 +275,7 @@ describe('MembersService', () => {
       mockPrisma.member.update.mockResolvedValue({ id: 'uuid-1' });
       mockPrisma.profile.update.mockResolvedValue({ id: 'p-1' });
 
-      await service.updateMemberProfile('uuid-1', { occupation: 'Kỹ sư' } as any);
+      await service.updateMemberProfile('uuid-1', { occupation: 'Kỹ sư' } as any, undefined, EDITOR_CALLER);
       expect(mockGenerationService.enqueueRecompute).not.toHaveBeenCalled();
     });
   });
@@ -319,24 +323,14 @@ describe('MembersService', () => {
   });
 
   describe('recomputeGenerations', () => {
-    it('chạy lại khi requester là admin', async () => {
-      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['admin'] });
+    // Kiểm tra admin đã chuyển lên @Roles('admin') ở controller — RolesGuard đọc
+    // role từ DB y hệt đoạn code cũ trong service. Việc route này CÒN yêu cầu
+    // admin được khoá bởi test/auth/route-roles.spec.ts.
+    it('uỷ quyền thẳng cho GenerationService', async () => {
       mockGenerationService.recomputeAll.mockResolvedValue({ members: 3, updated: 3 });
 
-      const result = await service.recomputeGenerations('user-1');
+      const result = await service.recomputeGenerations();
       expect(result).toMatchObject({ members: 3, updated: 3 });
-    });
-
-    it('từ chối requester không phải admin', async () => {
-      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['member'] });
-
-      await expect(service.recomputeGenerations('user-1')).rejects.toThrow(ForbiddenException);
-      expect(mockGenerationService.recomputeAll).not.toHaveBeenCalled();
-    });
-
-    it('từ chối khi requester không có metadata', async () => {
-      mockPrisma.userMetadata.findUnique.mockResolvedValue(null);
-      await expect(service.recomputeGenerations('ghost')).rejects.toThrow(ForbiddenException);
     });
   });
 });

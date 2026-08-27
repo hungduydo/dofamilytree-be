@@ -8,6 +8,13 @@ import {
   CreateEventDto, UpdateEventDto,
 } from './dto/create-event.dto';
 import { QUEUE_NOTIFICATION } from '../queue/queue.constants';
+import { profileSelectFor } from '../members/members.select';
+
+// Các endpoint dưới đây nhúng profile của member. Chúng KHÔNG bao giờ trả 4 cột
+// liên lạc (phone/contactEmail/address/notes) — kể cả cho admin — vì nhiều route
+// trong file này là @Public(). Ai cần số điện thoại thì gọi
+// GET /v2/members/:id/profile, nơi có kiểm tra role thật sự.
+const EMBEDDED_PROFILE = profileSelectFor(false);
 
 @Injectable()
 export class EventsService {
@@ -50,7 +57,7 @@ export class EventsService {
 
     return this.prisma.anniversary.findMany({
       where,
-      include: { member: { include: { profile: true } }, cemetery: true },
+      include: { member: { include: { profile: EMBEDDED_PROFILE } }, cemetery: true },
       orderBy: { date: 'asc' },
     });
   }
@@ -62,7 +69,7 @@ export class EventsService {
 
     return this.prisma.anniversary.findMany({
       where: { date: { gte: now, lte: future } },
-      include: { member: { include: { profile: true } }, cemetery: true },
+      include: { member: { include: { profile: EMBEDDED_PROFILE } }, cemetery: true },
       orderBy: { date: 'asc' },
     });
   }
@@ -70,7 +77,7 @@ export class EventsService {
   async getAnniversaryById(id: string) {
     const ann = await this.prisma.anniversary.findUnique({
       where: { id },
-      include: { member: { include: { profile: true } }, cemetery: true },
+      include: { member: { include: { profile: EMBEDDED_PROFILE } }, cemetery: true },
     });
     if (!ann) throw new NotFoundException(`Anniversary ${id} not found`);
     return ann;
@@ -86,7 +93,7 @@ export class EventsService {
         cemetery_id: dto.cemetery_id,
         isLunar: dto.isLunar ?? false,
       },
-      include: { member: { include: { profile: true } }, cemetery: true },
+      include: { member: { include: { profile: EMBEDDED_PROFILE } }, cemetery: true },
     });
   }
 
@@ -95,7 +102,7 @@ export class EventsService {
     return this.prisma.anniversary.update({
       where: { id },
       data: dto,
-      include: { member: { include: { profile: true } }, cemetery: true },
+      include: { member: { include: { profile: EMBEDDED_PROFILE } }, cemetery: true },
     });
   }
 
@@ -204,7 +211,7 @@ export class EventsService {
     await this.getEventById(eventId);
     return this.prisma.eventAttendee.findMany({
       where: { event_id: eventId },
-      include: { member: { include: { profile: true } } },
+      include: { member: { include: { profile: EMBEDDED_PROFILE } } },
       orderBy: { created_at: 'asc' },
     });
   }
@@ -215,7 +222,7 @@ export class EventsService {
       where: { event_id_member_id: { event_id: eventId, member_id: memberId } },
       create: { event_id: eventId, member_id: memberId, rsvp_status: rsvpStatus },
       update: { rsvp_status: rsvpStatus },
-      include: { member: { include: { profile: true } } },
+      include: { member: { include: { profile: EMBEDDED_PROFILE } } },
     });
   }
 

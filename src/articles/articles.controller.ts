@@ -6,13 +6,15 @@ import {
   ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { Public } from '../auth/public.decorator';
 import { ArticlesService } from './articles.service';
 import { CreateArticleDto, UpdateArticleDto, ArticleResponseDto } from './dto/article.dto';
 
 @ApiTags('Articles (Tin tức dòng họ)')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('articles')
 export class ArticlesController {
   constructor(private readonly articlesService: ArticlesService) {}
@@ -54,6 +56,7 @@ export class ArticlesController {
   }
 
   @Post()
+  @Roles('editor')
   @ApiOperation({ summary: 'Create article' })
   @ApiCreatedResponse({ type: ArticleResponseDto })
   create(@Body() dto: CreateArticleDto) {
@@ -61,6 +64,7 @@ export class ArticlesController {
   }
 
   @Put(':id')
+  @Roles('editor')
   @ApiOperation({ summary: 'Update article' })
   @ApiOkResponse({ type: ArticleResponseDto })
   update(@Param('id') id: string, @Body() dto: UpdateArticleDto) {
@@ -68,6 +72,7 @@ export class ArticlesController {
   }
 
   @Delete(':id')
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete article' })
   @ApiNoContentResponse({ description: 'Deleted' })

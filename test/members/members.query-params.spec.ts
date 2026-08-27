@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { RolesGuard } from '../../src/auth/roles.guard';
+import { CallerMetaGuard } from '../../src/auth/caller-meta.guard';
 import { MembersController } from '../../src/members/members.controller';
 import { MembersService } from '../../src/members/members.service';
 import { JwtAuthGuard } from '../../src/auth/jwt.guard';
@@ -33,6 +35,13 @@ describe('GET /members query params (HTTP thật)', () => {
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
+      // RolesGuard/CallerMetaGuard cần PrismaService; testing module này cố ý
+      // KHÔNG dựng cả module thật, nên phải override cả hai. Phân quyền của
+      // route được khoá riêng ở test/auth/route-roles.spec.ts.
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(CallerMetaGuard)
+      .useValue({ canActivate: () => true })
       .compile();
 
     app = module.createNestApplication();
@@ -65,7 +74,7 @@ describe('GET /members query params (HTTP thật)', () => {
   it('có generation', async () => {
     const res = await get('?page=1&pageSize=10&generation=3');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, 3, undefined, undefined, 'full', undefined, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, 3, undefined, undefined, 'full', undefined, undefined, false);
   });
 
   it('generation rỗng (FE gửi generation=) là KHÔNG lọc, không phải lọc thế hệ 0', async () => {
@@ -73,19 +82,19 @@ describe('GET /members query params (HTTP thật)', () => {
     expect(res.status).toBe(200);
     // Regression: ValidationPipe({transform:true}) từng ép '' thành 0, mà 0 là
     // một thế hệ có thật trong dữ liệu → lọc nhầm thay vì bỏ lọc.
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined, false);
   });
 
   it('generation=0 vẫn lọc được (0 là thế hệ có thật)', async () => {
     const res = await get('?generation=0');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, 0, undefined, undefined, 'full', undefined, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, 0, undefined, undefined, 'full', undefined, undefined, false);
   });
 
   it('có sortBy + sortOrder', async () => {
     const res = await get('?sortBy=generation&sortOrder=asc');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, 'generation', 'asc', 'full', undefined, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, 'generation', 'asc', 'full', undefined, undefined, false);
   });
 
   it('generation không phải số → 400', async () => {
@@ -96,30 +105,30 @@ describe('GET /members query params (HTTP thật)', () => {
   it('name filter vẫn hoạt động khi không có generation', async () => {
     const res = await get('?name=nguyen');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, 'nguyen', undefined, undefined, undefined, 'full', undefined, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, 'nguyen', undefined, undefined, undefined, 'full', undefined, undefined, false);
   });
 
   it('view=lite được truyền thẳng', async () => {
     const res = await get('?view=lite');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'lite', undefined, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'lite', undefined, undefined, false);
   });
 
   it('view rỗng → full (không 400)', async () => {
     const res = await get('?view=');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined, false);
   });
 
   it('view lạ → full', async () => {
     const res = await get('?view=bogus');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined, false);
   });
 
   it('tree_id + gender được truyền thẳng', async () => {
     const res = await get('?tree_id=abc&gender=M');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', 'abc', 'M');
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', 'abc', 'M', false);
   });
 });

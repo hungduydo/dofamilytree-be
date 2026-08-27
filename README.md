@@ -108,9 +108,22 @@ backend-v2/
 
 ---
 
+## Phân quyền
+
+Bốn role: `guest < member < editor < admin`. Người tự đăng ký là **guest**; admin
+nâng lên **member** bằng cách gắn tài khoản vào một Member có sẵn, hoặc thành
+**editor** (nhân sự thuê ngoài: sửa được dữ liệu, không xem thông tin liên lạc,
+không xoá).
+
+📖 **[docs/USERS_AND_ROLES.md](docs/USERS_AND_ROLES.md)** — bảng phân quyền đầy đủ
+theo route, luồng duyệt tài khoản, breaking change cho FE, và quy tắc cho người
+sửa BE. Đọc file đó trước khi thêm route mới hoặc đụng tới `profile`.
+
 ## API Endpoints
 
-Tất cả endpoints đều yêu cầu `Authorization: Bearer <JWT>`.
+Hầu hết endpoints yêu cầu `Authorization: Bearer <JWT>`; một số route đọc là công
+khai và một số route ghi yêu cầu role tối thiểu — xem bảng trong
+[docs/USERS_AND_ROLES.md](docs/USERS_AND_ROLES.md#5-bảng-phân-quyền-theo-route).
 
 ### Members `/v2/members`
 

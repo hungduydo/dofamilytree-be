@@ -5,13 +5,15 @@ import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { Public } from '../auth/public.decorator';
 import { MemoriesService } from './memories.service';
 import { CreateMemoryDto, MemoryResponseDto } from './dto/memory.dto';
 
 @ApiTags('Memories (Kỷ niệm)')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('members/:memberId/memories')
 export class MemoriesController {
   constructor(private readonly memoriesService: MemoriesService) {}
@@ -25,6 +27,7 @@ export class MemoriesController {
   }
 
   @Post()
+  @Roles('member')
   @ApiOperation({ summary: 'Add a memory to a member (author = current user)' })
   @ApiCreatedResponse({ type: MemoryResponseDto })
   create(
@@ -36,6 +39,7 @@ export class MemoriesController {
   }
 
   @Delete(':id')
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a memory' })
   @ApiNoContentResponse({ description: 'Deleted' })

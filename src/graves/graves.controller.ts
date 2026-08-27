@@ -6,6 +6,8 @@ import {
   ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { Public } from '../auth/public.decorator';
 import { GravesService } from './graves.service';
 import { CreateGraveDto, UpdateGraveDto } from './dto/create-grave.dto';
@@ -13,7 +15,7 @@ import { GraveResponseDto } from './dto/grave-response.dto';
 
 @ApiTags('Graves (Mộ phần)')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('graves')
 export class GravesController {
   constructor(private readonly gravesService: GravesService) {}
@@ -55,6 +57,7 @@ export class GravesController {
   }
 
   @Post()
+  @Roles('editor')
   @ApiOperation({ summary: 'Create new grave with GPS coordinates' })
   @ApiCreatedResponse({ type: GraveResponseDto })
   createGrave(@Body() dto: CreateGraveDto) {
@@ -62,6 +65,7 @@ export class GravesController {
   }
 
   @Put(':id')
+  @Roles('editor')
   @ApiOperation({ summary: 'Update grave info + coordinates' })
   @ApiOkResponse({ type: GraveResponseDto })
   updateGrave(@Param('id') id: string, @Body() dto: UpdateGraveDto) {
@@ -69,6 +73,7 @@ export class GravesController {
   }
 
   @Delete(':id')
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete grave' })
   @ApiNoContentResponse({ description: 'Deleted' })

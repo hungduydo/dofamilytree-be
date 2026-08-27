@@ -225,12 +225,22 @@ model Article {
 }
 
 model UserMetadata {
-  id                String   @id @default(uuid()) @db.Uuid
-  user_id           String   @unique @db.Uuid
-  profile_member_id String?  @unique @db.Uuid
+  id                String    @id @default(uuid()) @db.Uuid
+  user_id           String    @unique @db.Uuid
+  profile_member_id String?   @unique @db.Uuid
   roles             String[]
-  profile_member    Member?  @relation(fields: [profile_member_id], references: [id])
+  /// Thông tin người dùng TỰ KHAI lúc đăng ký (fullName/gender/birthDate/
+  /// deathDate/generation/occupation/address/biography/avatarUrl). CHƯA được
+  /// xác minh — admin đọc để quyết định link tài khoản vào Member NÀO.
+  /// KHÔNG phải nguồn sự thật; members/profiles mới là.
+  claim_request     Json?
+  created_at        DateTime  @default(now())
+  /// Thời điểm admin gắn tài khoản này vào một Member. null = còn là guest.
+  linked_at         DateTime?
+  profile_member    Member?   @relation(fields: [profile_member_id], references: [id])
 
+  // Danh sách "guest chờ duyệt" của admin sắp theo thời điểm đăng ký.
+  @@index([created_at(sort: Desc), id])
   @@map("user_metadata")
 }
 

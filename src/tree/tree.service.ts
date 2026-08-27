@@ -4,6 +4,14 @@ import { Redis as UpstashRedis } from '@upstash/redis';
 import { SafeCache } from '../utils/safe-cache';
 
 import { CACHE_KEY_FULL, CACHE_KEY_STATS, CACHE_TTL } from './tree.cache-keys';
+import { Prisma } from '@prisma/client';
+
+// memberToNode chỉ đọc profile.fullName và profile.generation — kéo cả row
+// Profile về là thừa băng thông và lôi theo phone/address vào cache cây, thứ
+// GET /v2/tree/chart phục vụ công khai.
+const TREE_NODE_PROFILE = {
+  select: { fullName: true, generation: true },
+} satisfies { select: Prisma.ProfileSelect };
 
 const MAX_SUBTREE_GENERATIONS = 4;
 
@@ -73,7 +81,7 @@ export class TreeService {
   private async buildAndCache() {
     const members = await this.prisma.member.findMany({
       include: {
-        profile: true,
+        profile: TREE_NODE_PROFILE,
         parent_relationships: true,
         child_relationships: { include: { parent: true } },
       },
@@ -153,7 +161,7 @@ export class TreeService {
     const subtreeMembers = await this.prisma.member.findMany({
       where: { id: { in: allMemberIds } },
       include: {
-        profile: true,
+        profile: TREE_NODE_PROFILE,
         parent_relationships: true,
         child_relationships: { include: { parent: true } },
       },

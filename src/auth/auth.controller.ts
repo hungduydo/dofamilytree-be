@@ -1,17 +1,22 @@
 import {
-  Controller, Post, Get, Put, Body, Param,
+  Controller, Post, Get, Put, Delete, Body, Param, Query,
   UseGuards, HttpCode, HttpStatus,
   UseInterceptors, UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes, ApiQuery } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { AssignRolesDto } from './dto/assign-roles.dto';
+import { LinkMemberDto } from './dto/link-member.dto';
 import { JwtAuthGuard } from './jwt.guard';
+import { RolesGuard } from './roles.guard';
+import { Roles } from './roles.decorator';
 import { CurrentUser } from './current-user.decorator';
+import { ROLE_ORDER } from './roles.constants';
+import { ParseOptionalIntPipe } from '../utils/parse-optional-int.pipe';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -73,15 +78,62 @@ export class AuthController {
     return this.authService.getRoles();
   }
 
+  @Get('users')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiOperation({
+    summary: 'Danh sách tài khoản để duyệt (admin). status=pending là hàng đợi guest chờ gắn member.',
+  })
+  @ApiQuery({ name: 'status', required: false, enum: ['pending', 'linked', 'all'] })
+  @ApiQuery({ name: 'role', required: false, enum: ROLE_ORDER })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'pageSize', required: false, type: Number })
+  listUsers(
+    @Query('status') status?: 'pending' | 'linked' | 'all',
+    @Query('role') role?: string,
+    @Query('page', new ParseOptionalIntPipe()) page?: number,
+    @Query('pageSize', new ParseOptionalIntPipe()) pageSize?: number,
+  ) {
+    return this.authService.listUsers({ status, role, page, pageSize });
+  }
+
   @Put('users/:userId/roles')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Assign roles to a user (admin only)' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: 'Đổi role của một tài khoản (admin). Không tự đổi role của chính mình.' })
   assignRoles(
     @CurrentUser() user: { id: string },
     @Param('userId') userId: string,
     @Body() dto: AssignRolesDto,
   ) {
     return this.authService.assignRoles(user.id, userId, dto);
+  }
+
+  @Post('users/:userId/link-member')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiOperation({
+    summary: 'Gắn tài khoản vào một member CÓ SẴN (admin). Guest được nâng lên member.',
+  })
+  linkMember(
+    @CurrentUser() user: { id: string },
+    @Param('userId') userId: string,
+    @Body() dto: LinkMemberDto,
+  ) {
+    return this.authService.linkMember(user.id, userId, dto);
+  }
+
+  @Delete('users/:userId/link-member')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: 'Gỡ liên kết tài khoản ↔ member (admin). Member bị hạ về guest.' })
+  unlinkMember(@CurrentUser() user: { id: string }, @Param('userId') userId: string) {
+    return this.authService.unlinkMember(user.id, userId);
   }
 }

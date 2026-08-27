@@ -16,6 +16,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!payload?.sub && !payload?.id) {
       throw new UnauthorizedException();
     }
-    return { id: payload.sub || payload.id, email: payload.email, roles: payload.roles };
+    // `profileMemberId` được auth.service ký vào token (xem login) — phải trả ra
+    // đây, nếu không mọi chỗ dùng `req.user` đều mất liên kết user → thành viên
+    // và phải tự query lại UserMetadata.
+    return {
+      id: payload.sub || payload.id,
+      email: payload.email,
+      roles: payload.roles,
+      profileMemberId: payload.profileMemberId ?? null,
+      displayName: payload.displayName ?? null,
+    };
   }
 }

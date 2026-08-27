@@ -10,7 +10,11 @@ import {
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { Public } from '../auth/public.decorator';
 import { ParseOptionalIntPipe } from '../utils/parse-optional-int.pipe';
-import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+import { CallerMetaGuard } from '../auth/caller-meta.guard';
+import { CanSeePii, CurrentMeta } from '../auth/caller-meta.decorator';
+import { CallerMeta } from '../auth/user-meta';
 import { MembersService, MEMBER_SORT_FIELDS, MEMBER_GENDERS, MemberSortField, SortOrder } from './members.service';
 import { MEMBER_VIEWS, resolveView } from './members.view';
 import { CreateMemberDto } from './dto/create-member.dto';
@@ -41,7 +45,7 @@ import {
   PaginatedMembersTableResponseDto,
   PaginatedMembersLiteResponseDto,
 )
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, CallerMetaGuard)
 @Controller('members')
 export class MembersController {
   constructor(private readonly membersService: MembersService) {}
@@ -106,20 +110,22 @@ export class MembersController {
     @Query('view') view?: string,
     @Query('tree_id') treeId?: string,
     @Query('gender') gender?: string,
+    @CanSeePii() canSeePii?: boolean,
   ) {
     return this.membersService.getAllMembers(
       page, pageSize, name, generation, sortBy, sortOrder,
-      resolveView(view), treeId, gender,
+      resolveView(view), treeId, gender, canSeePii,
     );
   }
 
   @Post('generations/recompute')
+  @Roles('admin')
   @ApiOperation({
     summary: 'Tính lại thế hệ cho toàn bộ thành viên (admin). Job nền vốn đã tự chạy sau mỗi lần ghi.',
   })
   @ApiOkResponse({ type: RecomputeGenerationsResponseDto })
-  recomputeGenerations(@CurrentUser() user: { id: string }) {
-    return this.membersService.recomputeGenerations(user.id);
+  recomputeGenerations() {
+    return this.membersService.recomputeGenerations();
   }
 
   @Get('search')
@@ -133,12 +139,13 @@ export class MembersController {
   @Get(':id')
   @ApiOperation({ summary: 'Get member basic info' })
   @ApiOkResponse({ type: MemberResponseDto })
-  getMemberById(@Param('id') id: string) {
-    return this.membersService.getMemberById(id);
+  getMemberById(@Param('id') id: string, @CanSeePii() canSeePii: boolean) {
+    return this.membersService.getMemberById(id, canSeePii);
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create new member + profile' })
+  @Roles('editor')
+  @ApiOperation({ summary: 'Create new member + profile (editor trở lên)' })
   @ApiCreatedResponse({ type: MemberResponseDto })
   createMember(@Body() dto: CreateMemberDto) {
     return this.membersService.createMember(dto);
@@ -147,24 +154,33 @@ export class MembersController {
   @Get(':id/profile')
   @ApiOperation({ summary: 'Get member with full profile + relationships' })
   @ApiOkResponse({ type: MemberProfileResponseDto })
-  getMemberProfile(@Param('id') id: string) {
-    return this.membersService.getMemberProfile(id);
+  getMemberProfile(@Param('id') id: string, @CanSeePii() canSeePii: boolean) {
+    return this.membersService.getMemberProfile(id, canSeePii);
   }
 
   @Put(':id/profile')
-  @ApiOperation({ summary: 'Update member profile (supports avatar upload)' })
+  // `member` chỉ sửa được hồ sơ CỦA CHÍNH MÌNH và chỉ những cột trong
+  // MEMBER_SELF_EDITABLE_FIELDS — guard không diễn đạt được ràng buộc theo BẢN
+  // GHI, nên phần đó nằm trong service (xem assertCanEditMember).
+  @Roles('member')
+  @ApiOperation({
+    summary:
+      'Update member profile (member: chỉ hồ sơ của chính mình + field cho phép; editor trở lên: mọi người, mọi field)',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiOkResponse({ type: MemberResponseDto })
   @UseInterceptors(FileInterceptor('avatar'))
   updateMemberProfile(
     @Param('id') id: string,
     @Body() dto: UpdateMemberDto,
+    @CurrentMeta() caller: CallerMeta,
     @UploadedFile() avatarFile?: Express.Multer.File,
   ) {
-    return this.membersService.updateMemberProfile(id, dto, avatarFile);
+    return this.membersService.updateMemberProfile(id, dto, avatarFile, caller);
   }
 
   @Delete(':id')
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete member (cascade: profile, userMetadata)' })
   @ApiNoContentResponse({ description: 'Deleted' })

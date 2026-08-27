@@ -7,6 +7,8 @@ import {
 } from '@nestjs/swagger';
 import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { Public } from '../auth/public.decorator';
 import { TreeService } from './tree.service';
 import {
@@ -65,7 +67,7 @@ class UpdateTreeDto {
 
 @ApiTags('Tree')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('tree')
 export class TreeController {
   constructor(private readonly treeService: TreeService) {}
@@ -87,6 +89,7 @@ export class TreeController {
   }
 
   @Post('regenerate')
+  @Roles('editor')
   @ApiOperation({ summary: 'Force regenerate tree chart + invalidate Redis cache' })
   @ApiOkResponse({ type: FamilyTreeChartResponseDto })
   regenerate() {
@@ -123,6 +126,7 @@ export class TreeController {
   }
 
   @Post()
+  @Roles('editor')
   @ApiOperation({ summary: 'Create new tree record (branch)' })
   @ApiCreatedResponse({ type: TreeRecordDto })
   createTree(@Body() dto: CreateTreeDto) {
@@ -130,6 +134,7 @@ export class TreeController {
   }
 
   @Put(':id')
+  @Roles('editor')
   @ApiOperation({ summary: 'Update tree record' })
   @ApiOkResponse({ type: TreeRecordDto })
   updateTree(@Param('id') id: string, @Body() dto: UpdateTreeDto) {
@@ -137,6 +142,7 @@ export class TreeController {
   }
 
   @Delete(':id')
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete tree record' })
   @ApiNoContentResponse({ description: 'Deleted' })
