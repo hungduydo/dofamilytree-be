@@ -212,6 +212,34 @@ export class AuthService {
     return { message: 'Password updated successfully' };
   }
 
+  /**
+   * Quên mật khẩu: nhờ Supabase Auth gửi email chứa link đặt lại mật khẩu.
+   *
+   * Luôn trả về CÙNG một thông điệp dù email có tồn tại hay không — tránh lộ
+   * việc email nào đã đăng ký (email enumeration). Supabase cũng không báo lỗi
+   * khi email không tồn tại nên chỉ log lại lỗi hệ thống thật sự.
+   *
+   * `redirectTo` là trang FE nơi người dùng nhập mật khẩu mới; đặt qua env
+   * PASSWORD_RESET_REDIRECT_URL, mặc định lấy theo APP_URL.
+   */
+  async forgotPassword(email: string) {
+    const redirectTo =
+      process.env.PASSWORD_RESET_REDIRECT_URL ||
+      `${(process.env.APP_URL || 'http://localhost:3001').replace(/\/$/, '')}/reset-password`;
+
+    const { error } = await this.supabase.auth.resetPasswordForEmail(email, {
+      redirectTo,
+    });
+
+    if (error) {
+      this.logger.warn(`Không gửi được email đặt lại mật khẩu cho ${email}: ${error.message}`);
+    }
+
+    return {
+      message: 'Nếu email tồn tại, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu.',
+    };
+  }
+
   async getMe(userId: string) {
     const userMetadata = await this.prisma.userMetadata.findUnique({
       where: { user_id: userId },

@@ -9,6 +9,7 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { AssignRolesDto } from './dto/assign-roles.dto';
 import { LinkMemberDto } from './dto/link-member.dto';
 import { JwtAuthGuard } from './jwt.guard';
@@ -48,6 +49,15 @@ export class AuthController {
   @ApiOperation({ summary: 'Logout (client should discard JWT)' })
   logout() {
     return this.authService.logout();
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Gửi email đặt lại mật khẩu (không cần đăng nhập). Luôn trả về thông điệp trung lập.',
+  })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
   }
 
   @Post('change-password')
