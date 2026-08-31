@@ -240,6 +240,32 @@ export class AuthService {
     };
   }
 
+  /**
+   * Đặt lại mật khẩu bằng access token recovery mà FE lấy được sau khi người
+   * dùng bấm link trong email đặt lại mật khẩu.
+   *
+   * Không tin token do client gửi: dùng chính token đó gọi Supabase để LẤY
+   * user (getUser validate chữ ký + hạn ở phía Supabase). Token giả/hết hạn sẽ
+   * không qua được. Có user hợp lệ rồi mới đổi mật khẩu qua admin API.
+   */
+  async resetPassword(accessToken: string, password: string) {
+    const { data, error } = await this.supabase.auth.getUser(accessToken);
+
+    if (error || !data.user) {
+      throw new UnauthorizedException('Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn');
+    }
+
+    const { error: updateError } = await this.supabase.auth.admin.updateUserById(data.user.id, {
+      password,
+    });
+
+    if (updateError) {
+      throw new BadRequestException(updateError.message);
+    }
+
+    return { message: 'Đặt lại mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới.' };
+  }
+
   async getMe(userId: string) {
     const userMetadata = await this.prisma.userMetadata.findUnique({
       where: { user_id: userId },

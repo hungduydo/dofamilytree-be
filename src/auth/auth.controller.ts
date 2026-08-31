@@ -10,6 +10,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AssignRolesDto } from './dto/assign-roles.dto';
 import { LinkMemberDto } from './dto/link-member.dto';
 import { JwtAuthGuard } from './jwt.guard';
@@ -58,6 +59,15 @@ export class AuthController {
   })
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto.email);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Đặt lại mật khẩu bằng access token recovery từ email (không cần đăng nhập).',
+  })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto.accessToken, dto.password);
   }
 
   @Post('change-password')
