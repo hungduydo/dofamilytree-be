@@ -63,6 +63,9 @@ describe('ContactService.getInfo', () => {
       board: [],
       boardTerm: null,
       responseDays: null,
+      // Nền móng cho hàng rào tương tranh của PUT (api-contact.md §6.1) — null
+      // khi chưa có dòng nào để mà sửa.
+      updatedAt: null,
     });
   });
 

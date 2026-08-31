@@ -106,7 +106,8 @@ const TABLE: Array<[string, any, Record<string, Expectation>]> = [
   // limit đếm trên Redis), không phải role — gỡ nó ra là mở toang.
   ['ContactController', ContactController, {
     getInfo: 'public', createMessage: 'public',
-    updateInfo: 'admin', getMessages: 'admin', updateMessageStatus: 'admin',
+    updateInfo: 'admin', getMessages: 'admin', getMessageStats: 'admin',
+    getMessageById: 'admin', updateMessageStatus: 'admin', deleteMessage: 'admin',
   }],
   ['QueueController', QueueController, { handleCallback: 'public' }],
 ];

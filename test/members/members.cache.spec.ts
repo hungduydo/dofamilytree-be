@@ -11,6 +11,7 @@ import {
   MEMBERS_CACHE_TTL_LIST,
   MEMBERS_CACHE_TTL_STATS,
 } from '../../src/members/members.cache-keys';
+import { CONTACT_INFO_CACHE_KEYS } from '../../src/contact/contact.cache-keys';
 
 /**
  * Cache ba endpoint public: hit (bỏ qua DB) / miss (ghi cache) / Redis chết
@@ -107,13 +108,17 @@ describe('MembersService — caching', () => {
   });
 
   describe('invalidation', () => {
+    // Khoá contact đi kèm: `GET /contact/info` trả `board[]`, mà board CHIẾU TỪ
+    // members. Không xoá chúng ở đây thì admin bật clanRole cho một người rồi mở
+    // trang liên hệ sẽ không thấy gì đổi suốt một tiếng (TTL của contact).
     const expectAllKeysDeleted = () => {
       expect(mockRedis.del).toHaveBeenCalledWith(
         CACHE_KEY_MEMBERS_COMMITTEE, CACHE_KEY_MEMBERS_NOTABLE, CACHE_KEY_MEMBERS_STATS,
+        ...CONTACT_INFO_CACHE_KEYS,
       );
     };
 
-    it('createMember xoá cả ba khoá', async () => {
+    it('createMember xoá cả khoá members lẫn khoá contact', async () => {
       mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
       mockPrisma.member.create.mockResolvedValue({ id: 'm1', name: 'A' });
       mockPrisma.profile.create.mockResolvedValue({ id: 'p1' });
@@ -121,7 +126,7 @@ describe('MembersService — caching', () => {
       expectAllKeysDeleted();
     });
 
-    it('deleteMember xoá cả ba khoá', async () => {
+    it('deleteMember xoá cả khoá members lẫn khoá contact', async () => {
       mockPrisma.member.findUnique.mockResolvedValue({ id: 'm1' });
       mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
       mockPrisma.profile.delete.mockResolvedValue({});
@@ -131,7 +136,7 @@ describe('MembersService — caching', () => {
       expectAllKeysDeleted();
     });
 
-    it('updateMemberProfile xoá cả ba khoá', async () => {
+    it('updateMemberProfile xoá cả khoá members lẫn khoá contact', async () => {
       mockPrisma.member.findUnique.mockResolvedValue({ id: 'm1', profile: { id: 'p1' } });
       mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
       mockPrisma.member.update.mockResolvedValue({ id: 'm1' });

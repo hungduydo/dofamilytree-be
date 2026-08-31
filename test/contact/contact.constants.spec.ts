@@ -1,4 +1,5 @@
 import {
+  CONTACT_ACTIVE_STATUSES,
   CONTACT_ATTACHMENTS_MAX,
   CONTACT_ATTACHMENT_MAX_BYTES,
   CONTACT_CONTENT_MAX_LENGTH,
@@ -24,7 +25,14 @@ describe('Contact — hằng số và helper', () => {
     });
 
     it('CONTACT_STATUSES phủ trọn vòng đời một lá thư', () => {
-      expect(CONTACT_STATUSES).toEqual(['NEW', 'IN_PROGRESS', 'ANSWERED', 'SPAM']);
+      expect(CONTACT_STATUSES).toEqual(['NEW', 'IN_PROGRESS', 'ANSWERED', 'SPAM', 'DELETED']);
+    });
+
+    it('CONTACT_ACTIVE_STATUSES = mọi thứ TRỪ DELETED', () => {
+      // Hộp thư mặc định dựng từ danh sách này; thiếu bước loại DELETED thì
+      // thư đã xoá mềm vẫn hiện ra như chưa xoá.
+      expect(CONTACT_ACTIVE_STATUSES).toEqual(['NEW', 'IN_PROGRESS', 'ANSWERED', 'SPAM']);
+      expect(CONTACT_ACTIVE_STATUSES).not.toContain('DELETED');
     });
   });
 

@@ -20,9 +20,32 @@ import { createHash, randomBytes } from 'crypto';
 export const CONTACT_TOPICS = ['GENEALOGY', 'GRAVE', 'EVENT', 'SCHOLARSHIP', 'OTHER'] as const;
 export type ContactTopic = (typeof CONTACT_TOPICS)[number];
 
-/** Vòng đời một lá thư trong hộp thư ban liên lạc. */
-export const CONTACT_STATUSES = ['NEW', 'IN_PROGRESS', 'ANSWERED', 'SPAM'] as const;
+/**
+ * Vòng đời một lá thư trong hộp thư ban liên lạc.
+ *
+ * `DELETED` là XOÁ MỀM: dòng và tệp đính kèm vẫn còn, lá thư chỉ biến mất khỏi
+ * hộp thư mặc định. Cố ý KHÔNG xoá cứng — thư của người trong họ gửi tới không
+ * nên biến mất vĩnh viễn vì một cú bấm nhầm, và trạng thái này khôi phục được
+ * bằng chính PATCH.
+ *
+ * ĐÁNH ĐỔI PHẢI BIẾT: bucket R2 đang để public-read, nên tệp đính kèm của một
+ * lá thư `DELETED` VẪN đọc được bởi bất kỳ ai còn giữ URL. Xoá mềm giấu thư
+ * khỏi BO chứ KHÔNG thu hồi quyền đọc tệp. Muốn thu hồi thật thì phải xoá object
+ * trên storage — xem api-contact.md §6.1.
+ */
+export const CONTACT_STATUSES = ['NEW', 'IN_PROGRESS', 'ANSWERED', 'SPAM', 'DELETED'] as const;
 export type ContactStatus = (typeof CONTACT_STATUSES)[number];
+
+/**
+ * Trạng thái hiện trong hộp thư MẶC ĐỊNH — tức mọi thứ trừ `DELETED`.
+ *
+ * Dùng khi người gọi KHÔNG truyền `?status=`. Truyền `?status=DELETED` tường
+ * minh thì vẫn xem được thùng rác, nếu không thư đã xoá sẽ không có đường nào
+ * khôi phục.
+ */
+export const CONTACT_ACTIVE_STATUSES = CONTACT_STATUSES.filter(
+  (s) => s !== 'DELETED',
+) as readonly ContactStatus[];
 
 // ─── Biên độ nội dung ────────────────────────────────────────────────────────
 

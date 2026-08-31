@@ -3,7 +3,10 @@ import {
   Body,
   Controller,
   DefaultValuePipe,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
@@ -21,6 +24,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiNoContentResponse,
   ApiBody,
   ApiConsumes,
   ApiCreatedResponse,
@@ -51,9 +55,11 @@ import {
 } from './contact.constants';
 import { ContactService } from './contact.service';
 import { ContactThrottleGuard, clientIpOf } from './contact.throttle.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import {
   ContactInfoDto,
   ContactMessageDto,
+  ContactMessageStatsDto,
   ContactMessageReceiptDto,
   CreateContactMessageDto,
   PaginatedContactMessagesDto,
@@ -195,12 +201,20 @@ export class ContactController {
   @ApiQuery({ name: 'pageSize', required: false, type: Number, description: 'Mặc định 20, tối đa 100' })
   @ApiQuery({ name: 'status', required: false, enum: CONTACT_STATUSES })
   @ApiQuery({ name: 'topic', required: false, enum: CONTACT_TOPICS })
+  @ApiQuery({
+    name: 'q',
+    required: false,
+    description:
+      'Tìm trong mã tham chiếu, họ tên và số điện thoại. Đây là đường người trực điện thoại ' +
+      'dùng khi người nhà đọc "LH-2608-0431" qua máy.',
+  })
   @ApiOkResponse({ type: PaginatedContactMessagesDto })
   getMessages(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize: number,
     @Query('status') status?: string,
     @Query('topic') topic?: string,
+    @Query('q') q?: string,
   ) {
     // Allowlist TẠI ĐÂY chứ không tin query string: giá trị này đi thẳng vào
     // `where` của Prisma. Cùng quy ước members.service.ts. Ném 400 thay vì âm
@@ -218,7 +232,40 @@ export class ContactController {
       pageSize,
       status as ContactStatus | undefined,
       topic as ContactTopic | undefined,
+      q,
     );
+  }
+
+  /**
+   * PHẢI khai báo TRƯỚC `messages/:id`. Nest so khớp route theo thứ tự đăng ký,
+   * và `:id` có ParseUUIDPipe — để sau thì "stats" bị nuốt vào `:id` và trả 400
+   * "không phải UUID" thay vì chạy handler này.
+   */
+  @Get('messages/stats')
+  @Roles('admin')
+  @ApiOperation({
+    summary: 'Đếm thư theo từng trạng thái, cho badge trên thanh điều hướng BO (admin)',
+    description:
+      'Endpoint riêng thay vì nhét vào response danh sách: badge được đọc ở MỌI trang của /bo, ' +
+      'còn danh sách thì không — gộp lại buộc mọi trang tải cả một trang tin nhắn chỉ để lấy số.',
+  })
+  @ApiOkResponse({ type: ContactMessageStatsDto })
+  getMessageStats() {
+    return this.contactService.getMessageStats();
+  }
+
+  @Get('messages/:id')
+  @Roles('admin')
+  @ApiOperation({
+    summary: 'Một tin nhắn (admin)',
+    description:
+      'Để `/bo/contact/messages/:id` deep-link và refresh được, kể cả khi tin nhắn đã trôi ' +
+      'qua trang 1 của hộp thư.',
+  })
+  @ApiOkResponse({ type: ContactMessageDto })
+  @ApiNotFoundResponse({ description: 'Không tìm thấy tin nhắn này' })
+  getMessageById(@Param('id', ParseUUIDPipe) id: string) {
+    return this.contactService.getMessageById(id);
   }
 
   @Patch('messages/:id')
@@ -229,7 +276,27 @@ export class ContactController {
   updateMessageStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateContactMessageStatusDto,
+    @CurrentUser() user: { id: string },
   ) {
-    return this.contactService.updateMessageStatus(id, dto.status);
+    // `handledBy` lấy từ token, KHÔNG từ body: để client tự khai ai đã xử lý
+    // thì trường kiểm toán này chẳng chứng minh được gì.
+    return this.contactService.updateMessageStatus(id, dto.status, user?.id ?? null, dto.note);
+  }
+
+  @Delete('messages/:id')
+  @Roles('admin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Xoá mềm một tin nhắn (admin)',
+    description:
+      'Chuyển sang trạng thái DELETED — dòng và tệp đính kèm VẪN CÒN, thư chỉ biến mất khỏi hộp ' +
+      'thư mặc định. Khôi phục bằng PATCH với status khác; xem thùng rác bằng ?status=DELETED. ' +
+      'LƯU Ý: bucket đang để public-read, nên tệp đính kèm của thư đã xoá vẫn đọc được bởi ai ' +
+      'còn giữ URL — route này giấu thư, KHÔNG thu hồi quyền đọc tệp.',
+  })
+  @ApiNoContentResponse({ description: 'Đã chuyển sang DELETED' })
+  @ApiNotFoundResponse({ description: 'Không tìm thấy tin nhắn này' })
+  deleteMessage(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: { id: string }) {
+    return this.contactService.softDeleteMessage(id, user?.id ?? null);
   }
 }

@@ -439,21 +439,21 @@ model ContactHours {
 
 /// Hộp thư đến của ban liên lạc.
 model ContactMessage {
-  id             String   @id @default(uuid()) @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
   /// Mã ngắn người nhà đọc qua điện thoại: "LH-2608-0431". KHÔNG phải bộ đếm
   /// tăng dần — số thứ tự làm lộ ban liên lạc nhận bao nhiêu thư mỗi tháng.
-  reference_code String   @unique
+  reference_code String    @unique
   /// GENEALOGY | GRAVE | EVENT | SCHOLARSHIP | OTHER (CONTACT_TOPICS).
   topic          String
   full_name      String
   phone          String
   email          String?
   branch         String?
-  content        String   @db.VarChar(2000)
+  content        String    @db.VarChar(2000)
   /// [{ url, name, mimeType, size }] — xem ContactAttachment.
-  attachments    Json     @default("[]")
+  attachments    Json      @default("[]")
   /// NEW | IN_PROGRESS | ANSWERED | SPAM (CONTACT_STATUSES).
-  status         String   @default("NEW")
+  status         String    @default("NEW")
   /// Có giá trị khi người gửi TÌNH CỜ đang đăng nhập. Phần lớn là khách vãng
   /// lai nên null là trường hợp THƯỜNG, không phải ngoại lệ.
   ///
@@ -461,14 +461,31 @@ model ContactMessage {
   /// memorial_tribute.user_id. Bảng public."User" TRỐNG (danh tính thật nằm ở
   /// auth.users của Supabase); đặt FK vào đây là làm MỌI thư của người đã đăng
   /// nhập vi phạm ràng buộc, tức là hỏng đúng nhóm người dùng tử tế nhất.
-  user_id        String?  @db.Uuid
+  user_id        String?   @db.Uuid
   /// sha256(ip + secret). Chỉ để gom cụm hành vi spam khi rà soát, KHÔNG để
   /// truy ra một con người — vì thế lưu hash chứ không lưu địa chỉ.
   sender_ip_hash String?
-  created_at     DateTime @default(now())
+  /// AI đổi trạng thái gần nhất (user id của admin). KHÔNG có @relation sang
+  /// `User` — cùng lý do như user_id ở trên: bảng public."User" trống.
+  handled_by     String?   @db.Uuid
+  handled_at     DateTime?
+  /// Ghi chú NỘI BỘ của ban liên lạc. KHÔNG BAO GIỜ trả về route public —
+  /// contact chỉ có một route đọc public (GET /contact/info) và nó không chạm
+  /// bảng này, nhưng ghi ra đây để người sau đừng vô tình phơi nó.
+  handled_note   String?   @db.VarChar(2000)
+  created_at     DateTime  @default(now())
+  /// Đổi mỗi lần PATCH. Cho hộp thư sắp theo "vừa xử lý gần nhất" — created_at
+  /// không làm được việc đó.
+  updated_at     DateTime  @updatedAt
 
   @@index([status, created_at(sort: Desc)])
   @@index([created_at(sort: Desc)])
+  /// Ô tìm kiếm của hộp thư (`?q=`) chạy ILIKE '%...%' trên ba cột này. Khai
+  /// báo ở đây chứ không chỉ trong 007_contact_backoffice.sql để `migrate diff`
+  /// không báo drift — Prisma diễn đạt được GIN/trgm (xem members_name_trgm_idx).
+  @@index([reference_code(ops: raw("gin_trgm_ops"))], map: "contact_message_reference_code_trgm_idx", type: Gin)
+  @@index([full_name(ops: raw("gin_trgm_ops"))], map: "contact_message_full_name_trgm_idx", type: Gin)
+  @@index([phone(ops: raw("gin_trgm_ops"))], map: "contact_message_phone_trgm_idx", type: Gin)
   @@map("contact_message")
 }
 

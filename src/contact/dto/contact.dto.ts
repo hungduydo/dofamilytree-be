@@ -121,12 +121,34 @@ export class CreateContactMessageDto {
   content: string;
 }
 
+export const CONTACT_HANDLED_NOTE_MAX_LENGTH = 2000;
+
 export class UpdateContactMessageStatusDto {
   @ApiProperty({ enum: CONTACT_STATUSES })
   @IsIn(CONTACT_STATUSES as readonly string[], {
     message: `status phải là một trong: ${CONTACT_STATUSES.join(', ')}`,
   })
   status: ContactStatus;
+
+  /**
+   * Ghi chú NỘI BỘ của ban liên lạc ("đã gọi lại, hẹn tuần sau").
+   *
+   * Chỉ admin đọc được — bảng này không có route public nào chạm tới. Bỏ trống
+   * thì ghi chú CŨ được giữ nguyên; gửi chuỗi rỗng để xoá nó.
+   */
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    maxLength: CONTACT_HANDLED_NOTE_MAX_LENGTH,
+    example: 'Đã gọi lại cho bác An, hẹn bổ sung giấy tờ tuần sau.',
+  })
+  @IsOptional()
+  @trim()
+  @IsString()
+  @Length(0, CONTACT_HANDLED_NOTE_MAX_LENGTH, {
+    message: `Ghi chú tối đa ${CONTACT_HANDLED_NOTE_MAX_LENGTH} ký tự.`,
+  })
+  note?: string | null;
 }
 
 // ─── Đọc ─────────────────────────────────────────────────────────────────────
@@ -235,6 +257,19 @@ export class ContactInfoDto {
 
   @ApiProperty({ nullable: true, type: Number, example: 3 })
   responseDays: number | null;
+
+  /**
+   * Lần sửa gần nhất của KHỐI thông tin liên hệ (không tính `board`, vốn chiếu
+   * từ `members`).
+   *
+   * api-contact.md §6.1: PUT thay thế trọn khối mà không có hàng rào tương
+   * tranh — hai admin cùng mở trang thì bản lưu sau âm thầm đè bản trước. Trả
+   * trường này ra để sau này dựng được If-Unmodified-Since / ETag mà không phải
+   * đổi shape. HIỆN TẠI CHƯA CÓ GÌ ÉP nó — thêm trường là điều kiện cần, không
+   * phải là đã giải quyết xong.
+   */
+  @ApiProperty({ format: 'date-time', nullable: true, type: String })
+  updatedAt: Date | null;
 }
 
 export class ContactMessageReceiptDto {
@@ -297,7 +332,11 @@ export class UpsertContactChannelDto {
    * kênh phone/email, nên chỉ cần điền khi muốn trỏ đi chỗ khác (bản đồ, link
    * nhóm Zalo).
    */
-  @ApiPropertyOptional({ nullable: true, example: 'https://maps.google.com/?q=...' })
+  // `type: String` là BẮT BUỘC ở đây, không phải trang trí. @ApiPropertyOptional
+  // với `nullable: true` mà không có `type` khiến Swagger sinh ra
+  // `"type": "object"`, và client sinh tự động sẽ coi một chuỗi là object —
+  // api-contact.md §6.1 liệt kê đúng bốn chỗ mắc lỗi này.
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'https://maps.google.com/?q=...' })
   @IsOptional()
   @trim()
   @IsString()
@@ -332,7 +371,11 @@ export class UpsertContactVenueDto {
   @Length(1, 500)
   address: string;
 
-  @ApiPropertyOptional({ nullable: true, description: 'URL ảnh đã upload qua /v2/media.' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'URL ảnh đã upload qua /v2/media.',
+  })
   @IsOptional()
   @trim()
   @IsString()
@@ -379,7 +422,7 @@ export class UpdateContactInfoDto {
   @Type(() => UpsertContactHoursDto)
   hours: UpsertContactHoursDto[];
 
-  @ApiPropertyOptional({ nullable: true, example: 'Nhiệm kỳ 2023 – 2028' })
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'Nhiệm kỳ 2023 – 2028' })
   @IsOptional()
   @trim()
   @IsString()
@@ -387,6 +430,9 @@ export class UpdateContactInfoDto {
   boardTerm?: string | null;
 
   @ApiPropertyOptional({
+    // Không có `type: Number` thì `minimum`/`maximum` dưới đây gắn lên một
+    // `"type": "object"` và không ràng buộc gì cả.
+    type: Number,
     nullable: true,
     minimum: CONTACT_RESPONSE_DAYS_MIN,
     maximum: CONTACT_RESPONSE_DAYS_MAX,
@@ -461,6 +507,52 @@ export class ContactMessageDto {
 
   @ApiProperty({ format: 'date-time' })
   createdAt: Date;
+
+  @ApiProperty({
+    format: 'date-time',
+    description: 'Đổi mỗi lần PATCH — cho hộp thư sắp theo "vừa xử lý gần nhất".',
+  })
+  updatedAt: Date;
+
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    type: String,
+    description: 'Admin đổi trạng thái gần nhất. null = chưa ai đụng tới.',
+  })
+  handledBy: string | null;
+
+  @ApiProperty({ format: 'date-time', nullable: true, type: String })
+  handledAt: Date | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Ghi chú NỘI BỘ. Chỉ admin đọc được — không route public nào trả trường này.',
+  })
+  handledNote: string | null;
+}
+
+/**
+ * Số thư theo từng trạng thái, cho badge "12 thư mới" trên thanh điều hướng BO.
+ *
+ * Endpoint riêng thay vì nhét vào response danh sách: badge được đọc ở MỌI
+ * trang của /bo (kể cả khi không mở hộp thư), còn danh sách thì không. Gộp vào
+ * nhau buộc mọi trang phải tải cả một trang tin nhắn chỉ để lấy mấy con số.
+ */
+export class ContactMessageStatsDto {
+  @ApiProperty({
+    example: { NEW: 12, IN_PROGRESS: 3, ANSWERED: 41, SPAM: 2, DELETED: 0 },
+    description: 'Mọi trạng thái trong CONTACT_STATUSES đều có mặt, kể cả khi bằng 0.',
+    additionalProperties: { type: 'number' },
+  })
+  counts: Record<string, number>;
+
+  @ApiProperty({
+    example: 58,
+    description: 'Tổng KHÔNG tính thư đã xoá mềm — khớp với hộp thư mặc định.',
+  })
+  total: number;
 }
 
 export class PaginatedContactMessagesDto {

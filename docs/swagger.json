@@ -3781,7 +3781,8 @@
                 "NEW",
                 "IN_PROGRESS",
                 "ANSWERED",
-                "SPAM"
+                "SPAM",
+                "DELETED"
               ],
               "type": "string"
             }
@@ -3798,6 +3799,15 @@
                 "SCHOLARSHIP",
                 "OTHER"
               ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Tìm trong mã tham chiếu, họ tên và số điện thoại. Đây là đường người trực điện thoại dùng khi người nhà đọc \"LH-2608-0431\" qua máy.",
+            "schema": {
               "type": "string"
             }
           }
@@ -3824,7 +3834,73 @@
         ]
       }
     },
+    "/v2/contact/messages/stats": {
+      "get": {
+        "operationId": "ContactController_getMessageStats",
+        "summary": "Đếm thư theo từng trạng thái, cho badge trên thanh điều hướng BO (admin)",
+        "description": "Endpoint riêng thay vì nhét vào response danh sách: badge được đọc ở MỌI trang của /bo, còn danh sách thì không — gộp lại buộc mọi trang tải cả một trang tin nhắn chỉ để lấy số.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactMessageStatsDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Contact (Liên hệ Ban liên lạc)"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v2/contact/messages/{id}": {
+      "get": {
+        "operationId": "ContactController_getMessageById",
+        "summary": "Một tin nhắn (admin)",
+        "description": "Để `/bo/contact/messages/:id` deep-link và refresh được, kể cả khi tin nhắn đã trôi qua trang 1 của hộp thư.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactMessageDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Không tìm thấy tin nhắn này"
+          }
+        },
+        "tags": [
+          "Contact (Liên hệ Ban liên lạc)"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
       "patch": {
         "operationId": "ContactController_updateMessageStatus",
         "summary": "Đánh dấu một tin nhắn đã xử lý tới đâu (admin)",
@@ -3858,6 +3934,37 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Không tìm thấy tin nhắn này"
+          }
+        },
+        "tags": [
+          "Contact (Liên hệ Ban liên lạc)"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "ContactController_deleteMessage",
+        "summary": "Xoá mềm một tin nhắn (admin)",
+        "description": "Chuyển sang trạng thái DELETED — dòng và tệp đính kèm VẪN CÒN, thư chỉ biến mất khỏi hộp thư mặc định. Khôi phục bằng PATCH với status khác; xem thùng rác bằng ?status=DELETED. LƯU Ý: bucket đang để public-read, nên tệp đính kèm của thư đã xoá vẫn đọc được bởi ai còn giữ URL — route này giấu thư, KHÔNG thu hồi quyền đọc tệp.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Đã chuyển sang DELETED"
           },
           "404": {
             "description": "Không tìm thấy tin nhắn này"
@@ -6847,6 +6954,11 @@
             "type": "number",
             "nullable": true,
             "example": 3
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         },
         "required": [
@@ -6855,7 +6967,8 @@
           "hours",
           "board",
           "boardTerm",
-          "responseDays"
+          "responseDays",
+          "updatedAt"
         ]
       },
       "ContactMessageReceiptDto": {
@@ -6893,7 +7006,7 @@
             "example": "Đông Ngạc, Từ Liêm, Hà Nội"
           },
           "imageUrl": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
             "description": "URL ảnh đã upload qua /v2/media."
           }
@@ -6924,7 +7037,7 @@
             "example": "Thôn Nguyễn Xá, xã Đông Ngạc, huyện Từ Liêm, Hà Nội"
           },
           "href": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
             "example": "https://maps.google.com/?q=..."
           }
@@ -6979,12 +7092,12 @@
             }
           },
           "boardTerm": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
             "example": "Nhiệm kỳ 2023 – 2028"
           },
           "responseDays": {
-            "type": "object",
+            "type": "number",
             "nullable": true,
             "minimum": 1,
             "maximum": 365,
@@ -7062,7 +7175,8 @@
               "NEW",
               "IN_PROGRESS",
               "ANSWERED",
-              "SPAM"
+              "SPAM",
+              "DELETED"
             ]
           },
           "userId": {
@@ -7074,6 +7188,27 @@
           "createdAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Đổi mỗi lần PATCH — cho hộp thư sắp theo \"vừa xử lý gần nhất\"."
+          },
+          "handledBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Admin đổi trạng thái gần nhất. null = chưa ai đụng tới."
+          },
+          "handledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "handledNote": {
+            "type": "string",
+            "nullable": true,
+            "description": "Ghi chú NỘI BỘ. Chỉ admin đọc được — không route public nào trả trường này."
           }
         },
         "required": [
@@ -7088,7 +7223,11 @@
           "attachments",
           "status",
           "userId",
-          "createdAt"
+          "createdAt",
+          "updatedAt",
+          "handledBy",
+          "handledAt",
+          "handledNote"
         ]
       },
       "PaginatedContactMessagesDto": {
@@ -7120,6 +7259,34 @@
           "pageSize"
         ]
       },
+      "ContactMessageStatsDto": {
+        "type": "object",
+        "properties": {
+          "counts": {
+            "type": "object",
+            "example": {
+              "NEW": 12,
+              "IN_PROGRESS": 3,
+              "ANSWERED": 41,
+              "SPAM": 2,
+              "DELETED": 0
+            },
+            "description": "Mọi trạng thái trong CONTACT_STATUSES đều có mặt, kể cả khi bằng 0.",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 58,
+            "description": "Tổng KHÔNG tính thư đã xoá mềm — khớp với hộp thư mặc định."
+          }
+        },
+        "required": [
+          "counts",
+          "total"
+        ]
+      },
       "UpdateContactMessageStatusDto": {
         "type": "object",
         "properties": {
@@ -7129,8 +7296,15 @@
               "NEW",
               "IN_PROGRESS",
               "ANSWERED",
-              "SPAM"
+              "SPAM",
+              "DELETED"
             ]
+          },
+          "note": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000,
+            "example": "Đã gọi lại cho bác An, hẹn bổ sung giấy tờ tuần sau."
           }
         },
         "required": [

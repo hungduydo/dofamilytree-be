@@ -24,6 +24,8 @@ import {
 } from '../queue/queue.constants';
 import { MemberView } from './members.view';
 import { CallerMeta, ANONYMOUS_META } from '../auth/user-meta';
+import { CONTACT_INFO_CACHE_KEYS } from '../contact/contact.cache-keys';
+import { committeeRoleLabel } from './committee-role';
 import { hasAtLeast } from '../auth/roles.constants';
 import {
   MEMBER_LITE_SELECT,
@@ -95,26 +97,38 @@ export class MembersService {
   }
 
   /**
-   * Committee members — members whose profile notes contain "committee" or "ban quản lý"
-   * Returns shape: { id, name, role, avatar }
+   * Ban liên lạc / hội đồng gia tộc — NGUỒN SỰ THẬT là `profile.isCommittee`.
+   *
+   * TRƯỚC ĐÂY hàm này dò chuỗi con trong `profile.notes` ('committee' /
+   * 'ban quản lý' / 'hội đồng') và lấy vai trò từ `profile.occupation`, trong
+   * khi `GET /contact/info` → `board[]` đọc `isCommittee` / `committeeRole`.
+   * Hai định nghĩa khác nhau cho cùng một khái niệm nghĩa là trang chủ
+   * (CommitteeSection.tsx) và trang liên hệ có thể nêu tên HAI NHÓM NGƯỜI KHÁC
+   * NHAU, và một lần sửa `clanRole` từ BO chỉ cập nhật được một nửa sản phẩm.
+   *
+   * Dò `notes` vốn cũng không đáng tin: `notes` là ô ghi chú tự do, nên một câu
+   * kiểu "không thuộc ban quản lý" cũng khớp và đưa người đó vào ban liên lạc.
+   *
+   * Đã kiểm chứng lúc đổi: CẢ HAI truy vấn đều trả 0 dòng trên DB thật (0/479
+   * profile có isCommittee, 0 khớp chuỗi con), nên thay đổi này KHÔNG làm đổi
+   * kết quả hiện tại — đó chính là lý do đây là thời điểm rẻ nhất để sửa.
+   *
+   * Shape trả về giữ nguyên { id, name, role, avatar } để FE không phải đổi.
    */
   async getCommitteeMembers() {
     const cached = await this.cache.get<CommitteeMember[]>(CACHE_KEY_MEMBERS_COMMITTEE);
     if (cached) return cached;
 
     const members = await this.prisma.member.findMany({
-      where: {
-        profile: {
-          notes: { not: null },
-          OR: [
-            { notes: { contains: 'committee', mode: 'insensitive' } },
-            { notes: { contains: 'ban quản lý', mode: 'insensitive' } },
-            { notes: { contains: 'hội đồng', mode: 'insensitive' } },
-          ],
-        },
+      where: { profile: { isCommittee: true } },
+      select: {
+        id: true,
+        name: true,
+        avatar_url: true,
+        // `occupation` vẫn được đọc làm phương án dự phòng: dữ liệu cũ có thể
+        // đã ghi chức danh ở đó trước khi committeeRole tồn tại.
+        profile: { select: { committeeRole: true, occupation: true } },
       },
-      // include:{profile:true} kéo cả biography/notes chỉ để đọc occupation.
-      select: { id: true, name: true, avatar_url: true, profile: { select: { occupation: true } } },
       orderBy: { created_at: 'asc' },
       // Trước đây KHÔNG có take — một lần sửa dữ liệu sai là endpoint public này
       // trả về cả bảng. 50 rộng hơn số hiện tại rất nhiều nên không đổi kết quả.
@@ -124,7 +138,9 @@ export class MembersService {
     const result: CommitteeMember[] = members.map((m) => ({
       id: m.id,
       name: m.name,
-      role: m.profile?.occupation ?? '',
+      // Cùng bảng dịch mã enum mà ContactService dùng cho board[].role — nếu
+      // không, trang chủ hiện "TRUONG_TOC" còn trang liên hệ hiện "Trưởng tộc".
+      role: committeeRoleLabel(m.profile?.committeeRole) || m.profile?.occupation || '',
       avatar: m.avatar_url ?? '',
     }));
 
@@ -359,7 +375,16 @@ export class MembersService {
    * thể fail hay làm chậm đáng kể write.
    */
   private invalidateMemberCaches(): Promise<void> {
-    return this.cache.del(...MEMBERS_CACHE_KEYS);
+    // CONTACT_INFO_CACHE_KEYS đi kèm, KHÔNG phải thừa: `GET /contact/info` trả
+    // `board[]`, mà board CHIẾU TỪ members (profile.isCommittee / committeeRole
+    // / phone / contactEmail). Cache của nó sống 1 giờ, nên không xoá ở đây thì
+    // admin bật `clanRole` cho một người rồi mở trang liên hệ sẽ KHÔNG THẤY GÌ
+    // THAY ĐỔI suốt một tiếng — và sẽ bấm lưu lại vài lần vì tưởng hỏng.
+    //
+    // (Đã bị đúng lỗi này trong lúc kiểm thử /bo/contact, chứ không phải lo xa.)
+    //
+    // Xoá CẢ HAI biến thể pii/public — xem contact.cache-keys.ts.
+    return this.cache.del(...MEMBERS_CACHE_KEYS, ...CONTACT_INFO_CACHE_KEYS);
   }
 
   /**

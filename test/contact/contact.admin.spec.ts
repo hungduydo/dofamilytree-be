@@ -18,8 +18,11 @@ function build() {
     member: { findMany: jest.fn().mockResolvedValue([]) },
     contactMessage: {
       findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
       count: jest.fn().mockResolvedValue(0),
+      groupBy: jest.fn().mockResolvedValue([]),
       update: jest.fn(),
+      delete: jest.fn(),
       create: jest.fn(),
     },
   } as any;
@@ -38,6 +41,27 @@ function build() {
 
   return { service: new ContactService(prisma, storage, rateLimiter, redis), prisma, tx, redis };
 }
+
+const messageRow = (over: Partial<any> = {}): any => ({
+  id: 'm1',
+  reference_code: 'LH-2608-0431',
+  topic: 'GENEALOGY',
+  full_name: 'Nguyễn Văn An',
+  phone: '0988123456',
+  email: null,
+  branch: null,
+  content: 'noi dung',
+  attachments: [],
+  status: 'NEW',
+  user_id: null,
+  sender_ip_hash: null,
+  handled_by: null,
+  handled_at: null,
+  handled_note: null,
+  created_at: new Date('2026-08-31T02:10:00.000Z'),
+  updated_at: new Date('2026-08-31T02:10:00.000Z'),
+  ...over,
+});
 
 const body = (over: Partial<any> = {}): any => ({
   venue: { name: 'Nhà thờ họ Nguyễn', address: 'Đông Ngạc, Từ Liêm, Hà Nội', imageUrl: null },
@@ -161,10 +185,19 @@ describe('ContactService.getMessages — hộp thư admin', () => {
     ]);
   });
 
-  it('không lọc ⇒ where rỗng', async () => {
+  it('không lọc ⇒ LOẠI thư đã xoá mềm ra khỏi hộp thư mặc định', async () => {
     const { service, prisma } = build();
     await service.getMessages(1, 20);
-    expect(prisma.contactMessage.findMany.mock.calls[0][0].where).toEqual({});
+    expect(prisma.contactMessage.findMany.mock.calls[0][0].where).toEqual({
+      status: { in: ['NEW', 'IN_PROGRESS', 'ANSWERED', 'SPAM'] },
+    });
+  });
+
+  it('?status=DELETED ⇒ vẫn xem được thùng rác', async () => {
+    const { service, prisma } = build();
+    await service.getMessages(1, 20, 'DELETED' as any);
+    // Không có đường này thì thư xoá mềm không bao giờ khôi phục được.
+    expect(prisma.contactMessage.findMany.mock.calls[0][0].where).toEqual({ status: 'DELETED' });
   });
 
   it('lọc theo status và topic', async () => {
@@ -252,6 +285,138 @@ describe('ContactService.getMessages — hộp thư admin', () => {
   });
 });
 
+describe('Tìm kiếm `q` — đường người trực điện thoại dùng', () => {
+  /**
+   * api-contact.md §6.1 gọi thiếu sót này là PHÁ VỠ QUY TRÌNH: mã tham chiếu
+   * tồn tại để người nhà đọc qua điện thoại, mà người trực lại không có cách
+   * nào tìm ra ngoài lật từng trang hộp thư — tức mã chỉ để trang trí.
+   */
+  const orOf = (prisma: any) => prisma.contactMessage.findMany.mock.calls[0][0].where.OR;
+
+  it('tìm trong CẢ BA cột: mã tham chiếu, họ tên, số điện thoại', async () => {
+    const { service, prisma } = build();
+    await service.getMessages(1, 20, undefined, undefined, 'LH-2608-0431');
+
+    expect(orOf(prisma)).toEqual([
+      { reference_code: { contains: 'LH-2608-0431', mode: 'insensitive' } },
+      { full_name: { contains: 'LH-2608-0431', mode: 'insensitive' } },
+      { phone: { contains: 'LH-2608-0431' } },
+    ]);
+  });
+
+  it('không phân biệt hoa thường cho mã — người trực hay gõ chữ thường', async () => {
+    const { service, prisma } = build();
+    await service.getMessages(1, 20, undefined, undefined, 'lh-2608');
+    expect(orOf(prisma)[0].reference_code.mode).toBe('insensitive');
+  });
+
+  it('trim khoảng trắng thừa', async () => {
+    const { service, prisma } = build();
+    await service.getMessages(1, 20, undefined, undefined, '  An  ');
+    expect(orOf(prisma)[1].full_name.contains).toBe('An');
+  });
+
+  it('q rỗng / toàn khoảng trắng ⇒ KHÔNG thêm điều kiện OR', async () => {
+    const { service, prisma } = build();
+    await service.getMessages(1, 20, undefined, undefined, '   ');
+    // Một OR rỗng sẽ khớp KHÔNG dòng nào và làm hộp thư trống trơn.
+    expect(prisma.contactMessage.findMany.mock.calls[0][0].where.OR).toBeUndefined();
+  });
+
+  it('tìm kiếm vẫn LOẠI thư đã xoá mềm', async () => {
+    const { service, prisma } = build();
+    await service.getMessages(1, 20, undefined, undefined, 'An');
+    expect(prisma.contactMessage.findMany.mock.calls[0][0].where.status).toEqual({
+      in: ['NEW', 'IN_PROGRESS', 'ANSWERED', 'SPAM'],
+    });
+  });
+
+  it('kết hợp được với bộ lọc status/topic', async () => {
+    const { service, prisma } = build();
+    await service.getMessages(1, 20, 'NEW' as any, 'GRAVE' as any, 'An');
+    const where = prisma.contactMessage.findMany.mock.calls[0][0].where;
+    expect(where.status).toBe('NEW');
+    expect(where.topic).toBe('GRAVE');
+    expect(where.OR).toHaveLength(3);
+  });
+});
+
+describe('ContactService.getMessageStats — badge trên nav BO', () => {
+  it('MỘT round-trip (groupBy), không phải một count mỗi trạng thái', async () => {
+    const { service, prisma } = build();
+    await service.getMessageStats();
+    expect(prisma.contactMessage.groupBy).toHaveBeenCalledTimes(1);
+    expect(prisma.contactMessage.count).not.toHaveBeenCalled();
+  });
+
+  it('trạng thái KHÔNG có dòng nào vẫn trả 0, không phải undefined', async () => {
+    const { service, prisma } = build();
+    prisma.contactMessage.groupBy.mockResolvedValue([{ status: 'NEW', _count: { _all: 12 } }]);
+
+    // Thiếu bước khởi tạo, badge của trạng thái rỗng là undefined và FE phải đoán.
+    expect((await service.getMessageStats()).counts).toEqual({
+      NEW: 12, IN_PROGRESS: 0, ANSWERED: 0, SPAM: 0, DELETED: 0,
+    });
+  });
+
+  it('total KHÔNG tính thư đã xoá mềm — phải khớp hộp thư mặc định', async () => {
+    const { service, prisma } = build();
+    prisma.contactMessage.groupBy.mockResolvedValue([
+      { status: 'NEW', _count: { _all: 12 } },
+      { status: 'ANSWERED', _count: { _all: 41 } },
+      { status: 'DELETED', _count: { _all: 7 } },
+    ]);
+
+    const stats = await service.getMessageStats();
+    // Badge "60 thư" đứng cạnh danh sách 53 dòng là lỗi người dùng thấy ngay.
+    expect(stats.total).toBe(53);
+    expect(stats.counts.DELETED).toBe(7);
+  });
+});
+
+describe('ContactService.getMessageById', () => {
+  it('trả về tin nhắn', async () => {
+    const { service, prisma } = build();
+    prisma.contactMessage.findUnique.mockResolvedValue(messageRow());
+    expect((await service.getMessageById('m1')).referenceCode).toBe('LH-2608-0431');
+  });
+
+  it('không tồn tại ⇒ 404', async () => {
+    const { service, prisma } = build();
+    prisma.contactMessage.findUnique.mockResolvedValue(null);
+    await expect(service.getMessageById('m1')).rejects.toThrow(NotFoundException);
+  });
+
+  it('KHÔNG rò sender_ip_hash qua đường chi tiết', async () => {
+    const { service, prisma } = build();
+    prisma.contactMessage.findUnique.mockResolvedValue(
+      messageRow({ sender_ip_hash: 'abc123deadbeef' }),
+    );
+    expect(JSON.stringify(await service.getMessageById('m1'))).not.toContain('abc123deadbeef');
+  });
+});
+
+describe('ContactService.softDeleteMessage — xoá MỀM', () => {
+  it('chuyển sang DELETED, KHÔNG xoá dòng', async () => {
+    const { service, prisma } = build();
+    prisma.contactMessage.update.mockResolvedValue(messageRow({ status: 'DELETED' }));
+
+    await service.softDeleteMessage('m1', 'admin-1');
+    expect(prisma.contactMessage.delete).not.toHaveBeenCalled();
+    expect(prisma.contactMessage.update.mock.calls[0][0].data).toMatchObject({
+      status: 'DELETED',
+      handled_by: 'admin-1',
+    });
+  });
+
+  it('ghi lại AI đã xoá', async () => {
+    const { service, prisma } = build();
+    prisma.contactMessage.update.mockResolvedValue(messageRow({ status: 'DELETED' }));
+    await service.softDeleteMessage('m1', 'admin-1');
+    expect(prisma.contactMessage.update.mock.calls[0][0].data.handled_at).toBeInstanceOf(Date);
+  });
+});
+
 describe('ContactService.updateMessageStatus', () => {
   const row = {
     id: 'm1',
@@ -292,6 +457,60 @@ describe('ContactService.updateMessageStatus', () => {
     await expect(service.updateMessageStatus('m1', 'ANSWERED' as any)).rejects.toThrow(
       NotFoundException,
     );
+  });
+
+  describe('Dấu vết kiểm toán', () => {
+    it('ghi handledBy TỪ DANH TÍNH NGƯỜI GỌI và handledAt', async () => {
+      const { service, prisma } = build();
+      prisma.contactMessage.update.mockResolvedValue(messageRow());
+
+      await service.updateMessageStatus('m1', 'ANSWERED' as any, 'admin-1');
+      const data = prisma.contactMessage.update.mock.calls[0][0].data;
+      // Để client tự khai ai đã xử lý thì trường kiểm toán này vô giá trị —
+      // controller lấy id từ token, không từ body.
+      expect(data.handled_by).toBe('admin-1');
+      expect(data.handled_at).toBeInstanceOf(Date);
+    });
+
+    it('note bỏ trống ⇒ GIỮ NGUYÊN ghi chú cũ (PATCH là vá từng phần)', async () => {
+      const { service, prisma } = build();
+      prisma.contactMessage.update.mockResolvedValue(messageRow());
+
+      await service.updateMessageStatus('m1', 'ANSWERED' as any, 'admin-1');
+      expect(prisma.contactMessage.update.mock.calls[0][0].data).not.toHaveProperty('handled_note');
+    });
+
+    it('note có giá trị ⇒ ghi đè', async () => {
+      const { service, prisma } = build();
+      prisma.contactMessage.update.mockResolvedValue(messageRow());
+
+      await service.updateMessageStatus('m1', 'ANSWERED' as any, 'admin-1', 'Đã gọi lại');
+      expect(prisma.contactMessage.update.mock.calls[0][0].data.handled_note).toBe('Đã gọi lại');
+    });
+
+    it('note = chuỗi rỗng ⇒ XOÁ ghi chú', async () => {
+      const { service, prisma } = build();
+      prisma.contactMessage.update.mockResolvedValue(messageRow());
+
+      await service.updateMessageStatus('m1', 'ANSWERED' as any, 'admin-1', '');
+      expect(prisma.contactMessage.update.mock.calls[0][0].data.handled_note).toBeNull();
+    });
+
+    it('trả ra handledBy/handledAt/handledNote/updatedAt cho BO hiển thị', async () => {
+      const { service, prisma } = build();
+      const handledAt = new Date('2026-09-01T00:00:00.000Z');
+      prisma.contactMessage.update.mockResolvedValue(
+        messageRow({ handled_by: 'admin-1', handled_at: handledAt, handled_note: 'xong' }),
+      );
+
+      const result = await service.updateMessageStatus('m1', 'ANSWERED' as any, 'admin-1');
+      expect(result).toMatchObject({
+        handledBy: 'admin-1',
+        handledAt,
+        handledNote: 'xong',
+        updatedAt: expect.any(Date),
+      });
+    });
   });
 
   it('lỗi DB khác ⇒ ném nguyên, không nuốt thành 404', async () => {

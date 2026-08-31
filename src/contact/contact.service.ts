@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import type { Redis as UpstashRedis } from '@upstash/redis';
 import { randomUUID } from 'crypto';
 import sharp from 'sharp';
+import { committeeRoleLabel, committeeRoleRank } from '../members/committee-role';
 import { PrismaService } from '../prisma/prisma.service';
 import { ContactRateLimiter } from './contact.rate-limiter';
 import { StorageService } from '../storage/storage.service';
@@ -30,11 +31,13 @@ import type {
   ContactInfoDto,
   ContactMessageDto,
   ContactMessageReceiptDto,
+  ContactMessageStatsDto,
   CreateContactMessageDto,
   PaginatedContactMessagesDto,
   UpdateContactInfoDto,
 } from './dto/contact.dto';
-import { ContactStatus, ContactTopic } from './contact.constants';
+import { CONTACT_STATUSES } from './contact.constants';
+import { CONTACT_ACTIVE_STATUSES, ContactStatus, ContactTopic } from './contact.constants';
 
 /** Dòng singleton của contact_info — xem ContactInfo trong schema.prisma. */
 const CONTACT_INFO_ID = 'default';
@@ -52,34 +55,11 @@ const MAX_PAGE_SIZE = 100;
 const MAX_BOARD_SIZE = 50;
 
 /**
- * Thứ tự hiển thị ban liên lạc: trưởng tộc trước, phó trưởng tộc sau, còn lại
- * xếp cuối rồi mới sắp theo tên.
- *
- * `committeeRole` lưu MÃ enum (CLAN_ROLES trong create-member.dto.ts), không
- * phải câu chữ tiếng Việt, nên không thể sắp theo alphabet mà ra đúng thứ bậc.
+ * Thứ tự và câu chữ của chức danh ban liên lạc DÙNG CHUNG với
+ * `GET /members/committee` — xem members/committee-role.ts. Giữ hai bảng riêng
+ * là mở đường cho trang chủ và trang liên hệ hiện hai chức danh cho cùng một
+ * người.
  */
-const COMMITTEE_ROLE_RANK: Record<string, number> = {
-  TRUONG_TOC: 0,
-  PHO_TRUONG_TOC: 1,
-};
-const COMMITTEE_ROLE_RANK_DEFAULT = 90;
-
-/**
- * Mã enum → câu chữ hiển thị.
- *
- * api-contact.md §2 viết `role → member.committeeRole`, nhưng ví dụ response ở
- * §3.1 lại là "Trưởng tộc" — và FE render `person.role` NGUYÊN VĂN
- * (ContactBoardCard.tsx), không qua bảng dịch nào. Trả mã thô là trang liên hệ
- * hiện chữ "TRUONG_TOC" cho cả dòng họ đọc. Bảng này khớp RoleBadge.tsx bên FE.
- *
- * Giá trị lạ đi thẳng qua (fallback): `committeeRole` là cột text tự do, admin
- * hoàn toàn có thể gõ "Thủ quỹ" — chữ đó phải hiện đúng như đã gõ.
- */
-const COMMITTEE_ROLE_LABELS: Record<string, string> = {
-  TRUONG_TOC: 'Trưởng tộc',
-  PHO_TRUONG_TOC: 'Phó trưởng tộc',
-  THANH_VIEN: 'Thành viên',
-};
 
 /** Một tệp đính kèm sau khi đã lên storage — hình dạng lưu trong cột `attachments`. */
 export interface ContactAttachment {
@@ -156,6 +136,7 @@ export class ContactService {
       board,
       boardTerm: info?.board_term ?? null,
       responseDays: info?.response_days ?? null,
+      updatedAt: info?.updated_at ?? null,
     };
 
     await this.cache.set(key, result, CONTACT_CACHE_TTL);
@@ -191,14 +172,14 @@ export class ContactService {
           // người ngoài cây nắm giữ mà không phải đổi shape (§2).
           memberId: m.id,
           name: m.name,
-          role: COMMITTEE_ROLE_LABELS[rawRole] ?? rawRole,
+          role: committeeRoleLabel(rawRole),
           // PII: null hoá TỪNG TRƯỜNG, không bỏ key và không 403 cả route —
           // thẻ vẫn dựng được tên + vai trò và tự hiện một dòng giải thích
           // (ContactPage.boardPiiHidden). Xem api-contact.md §3.1.
           phone: canSeePii ? (m.profile?.phone ?? null) : null,
           email: canSeePii ? (m.profile?.contactEmail ?? null) : null,
           avatarUrl: m.avatar_url,
-          _rank: COMMITTEE_ROLE_RANK[rawRole] ?? COMMITTEE_ROLE_RANK_DEFAULT,
+          _rank: committeeRoleRank(rawRole),
         };
       })
       // Sắp trong JS chứ không phải trong SQL: thứ tự là theo THỨ BẬC của
@@ -519,17 +500,11 @@ export class ContactService {
     pageSize: number,
     status?: ContactStatus,
     topic?: ContactTopic,
+    q?: string,
   ): Promise<PaginatedContactMessagesDto> {
     const take = Math.min(Math.max(pageSize, 1), MAX_PAGE_SIZE);
     const currentPage = Math.max(page, 1);
-
-    // `status`/`topic` đã qua allowlist ở tầng DTO/controller nên vào thẳng
-    // `where` được — cùng quy ước members.service.ts: giá trị từ query string
-    // CHỈ đi tiếp nếu nằm trong danh sách.
-    const where: Prisma.ContactMessageWhereInput = {
-      ...(status ? { status } : {}),
-      ...(topic ? { topic } : {}),
-    };
+    const where = this.messageWhere(status, topic, q);
 
     const [rows, total] = await Promise.all([
       this.prisma.contactMessage.findMany({
@@ -544,52 +519,40 @@ export class ContactService {
     ]);
 
     return {
-      data: rows.map((r) => ({
-        id: r.id,
-        referenceCode: r.reference_code,
-        topic: r.topic,
-        fullName: r.full_name,
-        phone: r.phone,
-        email: r.email,
-        branch: r.branch,
-        content: r.content,
-        attachments: (r.attachments as unknown as unknown[]) ?? [],
-        status: r.status,
-        userId: r.user_id,
-        createdAt: r.created_at,
-        // `sender_ip_hash` KHÔNG được trả ra. Nó tồn tại để gom cụm hành vi
-        // spam khi rà soát trực tiếp trên DB, không phải để hiện lên BO —
-        // đưa nó vào response là biến một biện pháp ẩn danh hoá thành một
-        // định danh mà admin bắt đầu dùng để nhận diện người gửi.
-      })),
+      data: rows.map(toContactMessageDto),
       total,
       page: currentPage,
       pageSize: take,
     };
   }
 
-  /** Đánh dấu một lá thư đã xử lý tới đâu. */
-  async updateMessageStatus(id: string, status: ContactStatus): Promise<ContactMessageDto> {
+  /**
+   * Đánh dấu một lá thư đã xử lý tới đâu, kèm dấu vết AI làm việc đó.
+   *
+   * `handledBy`/`handledAt` ghi từ danh tính người gọi chứ KHÔNG nhận từ body:
+   * để client tự khai ai đã xử lý thì trường kiểm toán này vô giá trị.
+   *
+   * `note` bỏ trống ⇒ GIỮ NGUYÊN ghi chú cũ (PATCH là vá từng phần, không phải
+   * thay thế); gửi chuỗi rỗng ⇒ xoá.
+   */
+  async updateMessageStatus(
+    id: string,
+    status: ContactStatus,
+    handledBy?: string | null,
+    note?: string | null,
+  ): Promise<ContactMessageDto> {
     try {
       const updated = await this.prisma.contactMessage.update({
         where: { id },
-        data: { status },
+        data: {
+          status,
+          handled_by: handledBy ?? null,
+          handled_at: new Date(),
+          ...(note === undefined ? {} : { handled_note: note || null }),
+        },
       });
 
-      return {
-        id: updated.id,
-        referenceCode: updated.reference_code,
-        topic: updated.topic,
-        fullName: updated.full_name,
-        phone: updated.phone,
-        email: updated.email,
-        branch: updated.branch,
-        content: updated.content,
-        attachments: (updated.attachments as unknown as unknown[]) ?? [],
-        status: updated.status,
-        userId: updated.user_id,
-        createdAt: updated.created_at,
-      };
+      return toContactMessageDto(updated);
     } catch (err) {
       // P2025 = "record to update not found". Đổi thành 404 để BO phân biệt
       // "thư đã bị xoá" với "server hỏng".
@@ -599,6 +562,95 @@ export class ContactService {
       throw err;
     }
   }
+
+  /** Một lá thư, cho trang chi tiết deep-link được (`/bo/contact/messages/:id`). */
+  async getMessageById(id: string): Promise<ContactMessageDto> {
+    const row = await this.prisma.contactMessage.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('Không tìm thấy tin nhắn này.');
+    return toContactMessageDto(row);
+  }
+
+  /**
+   * XOÁ MỀM: chuyển sang `DELETED`, giữ nguyên dòng và tệp đính kèm.
+   *
+   * Thư người trong họ gửi tới không nên biến mất vĩnh viễn vì một cú bấm nhầm,
+   * và trạng thái này khôi phục được bằng PATCH.
+   *
+   * ĐIỀU PHẢI NÓI RÕ: bucket R2 để public-read, nên tệp đính kèm của lá thư đã
+   * "xoá" VẪN đọc được bởi bất kỳ ai còn giữ URL. Hàm này giấu thư khỏi hộp thư,
+   * KHÔNG thu hồi quyền đọc tệp — muốn vậy phải xoá object trên storage.
+   */
+  async softDeleteMessage(id: string, handledBy?: string | null): Promise<void> {
+    await this.updateMessageStatus(id, 'DELETED', handledBy);
+  }
+
+  /**
+   * Số thư theo từng trạng thái, cho badge trên thanh điều hướng BO.
+   *
+   * MỘT round-trip cho tất cả (groupBy) thay vì một count() mỗi trạng thái —
+   * cùng thủ pháp MemorialService.getStats dùng.
+   */
+  async getMessageStats(): Promise<ContactMessageStatsDto> {
+    const grouped = await this.prisma.contactMessage.groupBy({
+      by: ['status'],
+      _count: { _all: true },
+    });
+
+    // Khởi tạo MỌI trạng thái về 0 trước: groupBy chỉ trả về trạng thái CÓ dòng,
+    // nên thiếu bước này thì badge của một trạng thái rỗng là `undefined` chứ
+    // không phải 0, và FE phải tự đoán.
+    const counts = Object.fromEntries(CONTACT_STATUSES.map((s) => [s, 0])) as Record<string, number>;
+    for (const row of grouped) {
+      if (row.status in counts) counts[row.status] = row._count._all;
+      // Trạng thái lạ dưới DB (dữ liệu cũ, sửa tay) KHÔNG được âm thầm bỏ qua:
+      // nếu không, `total` cộng ra khác con số hộp thư thật sự hiển thị.
+      else counts[row.status] = row._count._all;
+    }
+
+    return {
+      counts,
+      // Tổng KHỚP với hộp thư mặc định (đã trừ thư xoá mềm), nếu không badge
+      // "58 thư" lại đứng cạnh một danh sách 57 dòng.
+      total: CONTACT_ACTIVE_STATUSES.reduce((sum, s) => sum + (counts[s] ?? 0), 0),
+    };
+  }
+
+  /**
+   * Bộ lọc dùng chung cho danh sách.
+   *
+   * KHÔNG truyền `status` ⇒ loại `DELETED` ra. Truyền `?status=DELETED` tường
+   * minh thì vẫn xem được thùng rác — nếu không, thư đã xoá không có đường nào
+   * khôi phục.
+   */
+  private messageWhere(
+    status?: ContactStatus,
+    topic?: ContactTopic,
+    q?: string,
+  ): Prisma.ContactMessageWhereInput {
+    const term = q?.trim();
+
+    return {
+      // `status`/`topic` đã qua allowlist ở tầng controller nên vào thẳng
+      // `where` được — cùng quy ước members.service.ts: giá trị từ query string
+      // CHỈ đi tiếp nếu nằm trong danh sách.
+      ...(status ? { status } : { status: { in: [...CONTACT_ACTIVE_STATUSES] } }),
+      ...(topic ? { topic } : {}),
+      // Ô tìm kiếm của người trực điện thoại: người nhà đọc "LH-2608-0431" hoặc
+      // xưng tên/số điện thoại. Ba cột này đều có GIN trgm index (007).
+      //
+      // `mode: 'insensitive'` cho tên; mã tham chiếu vốn viết hoa nhưng người
+      // trực hay gõ thường, nên cũng không phân biệt hoa thường.
+      ...(term
+        ? {
+            OR: [
+              { reference_code: { contains: term, mode: 'insensitive' as const } },
+              { full_name: { contains: term, mode: 'insensitive' as const } },
+              { phone: { contains: term } },
+            ],
+          }
+        : {}),
+    };
+  }
 }
 
 /** "4,5 MB" cho message hiển thị thẳng cho người gửi. */
@@ -606,4 +658,54 @@ function formatMb(bytes: number): string {
   return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(
     bytes / (1024 * 1024),
   )} MB`;
+}
+
+/**
+ * Một dòng contact_message → shape FE/BO nhận.
+ *
+ * MỘT chỗ duy nhất, dùng bởi cả list, detail lẫn patch. Trước đây map lặp lại ở
+ * từng method và mỗi lần thêm cột là một cơ hội để một đường quên trường mới —
+ * hoặc tệ hơn, để một đường lỡ tay trả ra `sender_ip_hash`.
+ *
+ * `sender_ip_hash` CỐ Ý không có ở đây. Nó tồn tại để gom cụm hành vi spam khi
+ * rà soát trực tiếp trên DB, không phải để hiện lên BO — đưa nó vào response là
+ * biến một biện pháp ẩn danh hoá thành một định danh mà admin bắt đầu dùng để
+ * nhận diện người gửi.
+ */
+function toContactMessageDto(row: {
+  id: string;
+  reference_code: string;
+  topic: string;
+  full_name: string;
+  phone: string;
+  email: string | null;
+  branch: string | null;
+  content: string;
+  attachments: unknown;
+  status: string;
+  user_id: string | null;
+  handled_by: string | null;
+  handled_at: Date | null;
+  handled_note: string | null;
+  created_at: Date;
+  updated_at: Date;
+}): ContactMessageDto {
+  return {
+    id: row.id,
+    referenceCode: row.reference_code,
+    topic: row.topic,
+    fullName: row.full_name,
+    phone: row.phone,
+    email: row.email,
+    branch: row.branch,
+    content: row.content,
+    attachments: (row.attachments as unknown[]) ?? [],
+    status: row.status,
+    userId: row.user_id,
+    handledBy: row.handled_by,
+    handledAt: row.handled_at,
+    handledNote: row.handled_note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
