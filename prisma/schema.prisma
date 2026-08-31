@@ -16,53 +16,49 @@ model User {
 }
 
 model Member {
-  id                   String               @id @default(uuid()) @db.Uuid
-  private_id           String?
-  name                 String
-  normalized_name      String?
-  avatar_url           String?
-  gender               String?
-  birthDate            String?
-  deathDate            String?
-  tree_id              String?              @db.Uuid
-  created_at           DateTime             @default(now())
+  id                    String               @id @default(uuid()) @db.Uuid
+  private_id            String?
+  name                  String
+  normalized_name       String?
+  avatar_url            String?
+  gender                String?
+  birthDate             String?
+  deathDate             String?
+  tree_id               String?              @db.Uuid
+  created_at            DateTime             @default(now())
   /// Thế hệ đã tính sẵn — giá trị HIỆU LỰC = profile.generation (nhập tay, ưu
   /// tiên) nếu có, ngược lại suy ra từ member_relationships. Ghi bởi job nền
   /// `generation-recompute`; đọc trực tiếp ở request path để không phải traverse
   /// đồ thị. Nguồn sự thật cho phần nhập tay vẫn là profiles.generation.
   generation            Int?
   generation_updated_at DateTime?
-  anniversaries        Anniversary[]
-  comments             Comment[]
-  child_relationships  MemberRelationship[] @relation("RelChild")
-  parent_relationships MemberRelationship[] @relation("RelParent")
-  profile              Profile?
-  from_relationships   Relationship[]       @relation("FromMember")
-  to_relationships     Relationship[]       @relation("ToMember")
-  user_metadata        UserMetadata?
-  tree                 Tree?                @relation(fields: [tree_id], references: [id])
-  cemeteries           Cemetery[]
-  media                Media[]
-  event_attendances    EventAttendee[]
-  life_events          LifeEvent[]
-  memories             Memory[]
+  anniversaries         Anniversary[]
+  cemeteries            Cemetery[]
+  comments              Comment[]
+  event_attendances     EventAttendee[]
+  life_events           LifeEvent[]
+  media                 Media[]
+  child_relationships   MemberRelationship[] @relation("RelChild")
+  parent_relationships  MemberRelationship[] @relation("RelParent")
+  tree                  Tree?                @relation(fields: [tree_id], references: [id])
+  memorial_incense      MemorialIncense[]
+  memorial_tributes     MemorialTribute[]
+  memories              Memory[]
+  profile               Profile?
+  from_relationships    Relationship[]       @relation("FromMember")
+  to_relationships      Relationship[]       @relation("ToMember")
+  user_metadata         UserMetadata?
 
   @@index([normalized_name])
   @@index([name])
   @@index([tree_id])
   @@index([generation])
-  // Lọc + sắp xếp cho GET /v2/members — xem 002_member_search_and_filter_indexes.sql.
-  // `map:` tường minh để tên khớp CHÍNH XÁC file SQL (Prisma tự sinh tên dài hơn
-  // như members_generation_created_at_id_idx → migrate diff sẽ báo drift).
-  @@index([created_at(sort: Desc), id], map: "members_created_at_id_idx")
+  @@index([created_at(sort: Desc), id])
   @@index([generation, created_at(sort: Desc), id], map: "members_generation_created_at_idx")
   @@index([tree_id, created_at(sort: Desc), id], map: "members_tree_created_at_idx")
   @@index([gender, created_at(sort: Desc), id], map: "members_gender_created_at_idx")
-  /// GIN trigram cho `ILIKE '%x%'` (nameSearchWhere). Cần extension pg_trgm.
-  /// `map:` tường minh để không đụng tên với btree members_normalized_name_idx /
-  /// members_name_idx ở trên (Prisma tự sinh tên trùng nếu không đặt).
-  @@index([normalized_name(ops: raw("gin_trgm_ops"))], type: Gin, map: "members_normalized_name_trgm_idx")
-  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "members_name_trgm_idx")
+  @@index([normalized_name(ops: raw("gin_trgm_ops"))], map: "members_normalized_name_trgm_idx", type: Gin)
+  @@index([name(ops: raw("gin_trgm_ops"))], map: "members_name_trgm_idx", type: Gin)
   @@map("members")
 }
 
@@ -86,10 +82,6 @@ model Profile {
   isNotable      Boolean  @default(false)
   member         Member   @relation(fields: [member_id], references: [id])
 
-  /// profiles_is_committee_idx / profiles_is_notable_idx là index PHẦN
-  /// (`WHERE "isCommittee"` / `WHERE "isNotable"`), Prisma KHÔNG biểu diễn được.
-  /// Chúng chỉ tồn tại trong 002_member_search_and_filter_indexes.sql —
-  /// `migrate diff` không thấy. Chuẩn bị cho Phase 2 (đổi predicate committee/notable).
   @@map("profiles")
 }
 
@@ -173,23 +165,19 @@ model Media {
   views            Int         @default(0)
   size_bytes       Int?
   created_at       DateTime    @default(now())
-  member           Member?     @relation(fields: [member_id], references: [id])
   album            MediaAlbum? @relation(fields: [album_id], references: [id])
   event            Event?      @relation(fields: [event_id], references: [id])
+  member           Member?     @relation(fields: [member_id], references: [id])
 
-  // Xem prisma/manual-migrations/003_media_library_indexes.sql — `map:` tường minh
-  // để tên khớp CHÍNH XÁC file SQL (Prisma tự sinh tên khác → migrate diff báo drift).
-  @@index([created_at(sort: Desc), id], map: "media_created_at_id_idx")
+  @@index([created_at(sort: Desc), id])
   @@index([type, created_at(sort: Desc), id], map: "media_type_created_at_idx")
   @@index([views(sort: Desc), id], map: "media_views_idx")
   @@index([event_id, created_at(sort: Desc), id], map: "media_event_created_at_idx")
   @@index([album_id, created_at(sort: Desc), id], map: "media_album_created_at_idx")
   @@index([uploader_id, created_at(sort: Desc), id], map: "media_uploader_created_at_idx")
   @@index([member_id, created_at(sort: Desc), id], map: "media_member_created_at_idx")
-  /// GIN trigram cho tìm kiếm `ILIKE '%x%'` trên normalized_title. Cần pg_trgm.
-  @@index([normalized_title(ops: raw("gin_trgm_ops"))], type: Gin, map: "media_normalized_title_trgm_idx")
-  /// GIN cho lọc tag (array containment).
-  @@index([tags], type: Gin, map: "media_tags_gin_idx")
+  @@index([normalized_title(ops: raw("gin_trgm_ops"))], map: "media_normalized_title_trgm_idx", type: Gin)
+  @@index([tags], map: "media_tags_gin_idx", type: Gin)
   @@map("media")
 }
 
@@ -239,7 +227,6 @@ model UserMetadata {
   linked_at         DateTime?
   profile_member    Member?   @relation(fields: [profile_member_id], references: [id])
 
-  // Danh sách "guest chờ duyệt" của admin sắp theo thời điểm đăng ký.
   @@index([created_at(sort: Desc), id])
   @@map("user_metadata")
 }
@@ -256,8 +243,8 @@ model Cemetery {
   constructionDate String?
   created_at       DateTime      @default(now())
   updated_at       DateTime      @updatedAt
-  member           Member?       @relation(fields: [member_id], references: [id])
   anniversaries    Anniversary[]
+  member           Member?       @relation(fields: [member_id], references: [id])
 
   @@index([member_id])
   @@map("cemeteries")
@@ -273,8 +260,8 @@ model Anniversary {
   isLunar     Boolean   @default(false)
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
-  member      Member?   @relation(fields: [member_id], references: [id])
   cemetery    Cemetery? @relation(fields: [cemetery_id], references: [id])
+  member      Member?   @relation(fields: [member_id], references: [id])
 
   @@index([member_id])
   @@index([cemetery_id])
@@ -337,12 +324,152 @@ model Memory {
   text       String
   photos     String[] @default([])
   created_at DateTime @default(now())
-  member     Member?  @relation(fields: [member_id], references: [id])
   author     User     @relation(fields: [author_id], references: [id])
+  member     Member?  @relation(fields: [member_id], references: [id])
 
   @@index([member_id])
   @@index([event_id])
   @@map("memories")
+}
+
+/// Một nén hương. Không mang danh tính tự do: tác giả luôn là `User` thật, nên
+/// lượt thắp có thể chặn trùng và truy vết được.
+model MemorialIncense {
+  id         String   @id @default(uuid()) @db.Uuid
+  /// null = thắp cho tổ tiên nói chung (nút "Thắp hương" ở ban thờ).
+  member_id  String?  @db.Uuid
+  /// CỐ Ý không có @relation sang `User` và không có FK dưới DB. Bảng
+  /// public."User" TRỐNG (0 dòng) — danh tính thật nằm ở auth.users của
+  /// Supabase. `memories` có FK author_id -> "User"(id) và vì thế MỌI insert
+  /// vào bảng đó đều vi phạm FK (memories cũng đang trống). Đừng lặp lại.
+  user_id    String   @db.Uuid
+  /// Ngày theo giờ VN (Asia/Ho_Chi_Minh), do APP tính chứ không phải DB —
+  /// `now()` của Postgres là UTC, sau 17h giờ VN sẽ nhảy sang ngày hôm sau.
+  /// Cột này tồn tại CHỈ để hai partial unique index chặn thắp trùng trong
+  /// ngày; Prisma không diễn đạt được partial unique nên chúng chỉ nằm trong
+  /// prisma/manual-migrations/005_memorial.sql. ĐỪNG bỏ cột này đi.
+  offered_on DateTime @db.Date
+  created_at DateTime @default(now())
+  member     Member?  @relation(fields: [member_id], references: [id], onDelete: Cascade)
+
+  @@index([member_id])
+  @@index([user_id, created_at(sort: Desc)], map: "memorial_incense_user_created_idx")
+  @@map("memorial_incense")
+}
+
+/// Lời tưởng niệm. `onDelete` lệch với MemorialIncense là CỐ Ý: xoá một member
+/// không được xoá những lời người ta viết về họ (SetNull), nhưng số nén hương
+/// thì vô nghĩa nếu không còn người nhận (Cascade).
+model MemorialTribute {
+  id          String   @id @default(uuid()) @db.Uuid
+  content     String   @db.VarChar(500)
+  /// null = lời tưởng niệm gửi tổ tiên nói chung.
+  member_id   String?  @db.Uuid
+  /// CỐ Ý không có @relation sang `User` và không có FK dưới DB. Bảng
+  /// public."User" TRỐNG (0 dòng) — danh tính thật nằm ở auth.users của
+  /// Supabase. `memories` có FK author_id -> "User"(id) và vì thế MỌI insert
+  /// vào bảng đó đều vi phạm FK (memories cũng đang trống). Đừng lặp lại.
+  user_id     String   @db.Uuid
+  /// Tên tác giả CHỐT LÚC GHI. Denormalize là cố ý: `User` ở schema này gần
+  /// như rỗng (auth nằm bên Supabase Auth), nên resolve lúc ĐỌC sẽ tốn một
+  /// network call sang Supabase cho MỖI lời tưởng niệm. Xem resolveAuthorName.
+  author_name String
+  created_at  DateTime @default(now())
+  member      Member?  @relation(fields: [member_id], references: [id])
+
+  @@index([created_at(sort: Desc), id(sort: Desc)], map: "memorial_tribute_created_id_idx")
+  @@index([member_id, created_at(sort: Desc), id(sort: Desc)], map: "memorial_tribute_member_created_idx")
+  @@map("memorial_tribute")
+}
+
+/// Dòng DUY NHẤT chứa thông tin liên hệ của dòng họ. Singleton ép bằng
+/// `@default("default")` trên khoá chính: mọi upsert đều nhắm id="default" nên
+/// không bao giờ đẻ ra dòng thứ hai.
+///
+/// `id` KHÔNG phải @db.Uuid (khác mọi bảng còn lại trong schema này) — đó là
+/// CỐ Ý: giá trị là chuỗi "default", không phải uuid. Đổi sang uuid là mất luôn
+/// cơ chế singleton.
+model ContactInfo {
+  id            String   @id @default("default")
+  /// Nhà thờ họ. Nullable CẢ KHỐI: một chi họ có thể chưa có nhà thờ riêng.
+  venue_name    String?
+  venue_address String?
+  venue_image   String?
+  /// "Nhiệm kỳ 2023 – 2028" — clan tự soạn, trả nguyên văn.
+  board_term    String?
+  /// Số ngày làm việc ban liên lạc hứa trả lời. FE dựng phụ đề form từ số này.
+  response_days Int?
+  updated_at    DateTime @updatedAt
+
+  channels ContactChannel[]
+  hours    ContactHours[]
+
+  @@map("contact_info")
+}
+
+model ContactChannel {
+  id       String      @id @default(uuid()) @db.Uuid
+  info_id  String
+  info     ContactInfo @relation(fields: [info_id], references: [id], onDelete: Cascade)
+  /// 'address' | 'phone' | 'email' | 'group'. KHÔNG phải enum của Postgres:
+  /// FE đã chốt bốn giá trị này trong ContactChannel['type'], và một enum DB
+  /// buộc phải migrate mới thêm được loại kênh thứ năm.
+  type     String
+  label    String
+  value    String
+  /// Có thể null — channelHref() bên FE tự suy `tel:`/`mailto:` từ `value`.
+  href     String?
+  position Int         @default(0)
+
+  @@index([info_id, position])
+  @@map("contact_channel")
+}
+
+model ContactHours {
+  id       String      @id @default(uuid()) @db.Uuid
+  info_id  String
+  info     ContactInfo @relation(fields: [info_id], references: [id], onDelete: Cascade)
+  label    String
+  value    String
+  position Int         @default(0)
+
+  @@index([info_id, position])
+  @@map("contact_hours")
+}
+
+/// Hộp thư đến của ban liên lạc.
+model ContactMessage {
+  id             String   @id @default(uuid()) @db.Uuid
+  /// Mã ngắn người nhà đọc qua điện thoại: "LH-2608-0431". KHÔNG phải bộ đếm
+  /// tăng dần — số thứ tự làm lộ ban liên lạc nhận bao nhiêu thư mỗi tháng.
+  reference_code String   @unique
+  /// GENEALOGY | GRAVE | EVENT | SCHOLARSHIP | OTHER (CONTACT_TOPICS).
+  topic          String
+  full_name      String
+  phone          String
+  email          String?
+  branch         String?
+  content        String   @db.VarChar(2000)
+  /// [{ url, name, mimeType, size }] — xem ContactAttachment.
+  attachments    Json     @default("[]")
+  /// NEW | IN_PROGRESS | ANSWERED | SPAM (CONTACT_STATUSES).
+  status         String   @default("NEW")
+  /// Có giá trị khi người gửi TÌNH CỜ đang đăng nhập. Phần lớn là khách vãng
+  /// lai nên null là trường hợp THƯỜNG, không phải ngoại lệ.
+  ///
+  /// CỐ Ý không có @relation sang `User` và không có FK dưới DB — y hệt
+  /// memorial_tribute.user_id. Bảng public."User" TRỐNG (danh tính thật nằm ở
+  /// auth.users của Supabase); đặt FK vào đây là làm MỌI thư của người đã đăng
+  /// nhập vi phạm ràng buộc, tức là hỏng đúng nhóm người dùng tử tế nhất.
+  user_id        String?  @db.Uuid
+  /// sha256(ip + secret). Chỉ để gom cụm hành vi spam khi rà soát, KHÔNG để
+  /// truy ra một con người — vì thế lưu hash chứ không lưu địa chỉ.
+  sender_ip_hash String?
+  created_at     DateTime @default(now())
+
+  @@index([status, created_at(sort: Desc)])
+  @@index([created_at(sort: Desc)])
+  @@map("contact_message")
 }
 
 enum RelationshipType {

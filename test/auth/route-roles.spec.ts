@@ -13,6 +13,8 @@ import { ArticlesController } from '../../src/articles/articles.controller';
 import { LifeEventsController } from '../../src/life-events/life-events.controller';
 import { MemoriesController } from '../../src/memories/memories.controller';
 import { MediaController } from '../../src/media/media.controller';
+import { MemorialController } from '../../src/memorial/memorial.controller';
+import { ContactController } from '../../src/contact/contact.controller';
 import { QueueController } from '../../src/queue/queue.controller';
 
 /**
@@ -89,6 +91,23 @@ const TABLE: Array<[string, any, Record<string, Expectation>]> = [
     getBlobStorageUsage: 'admin', deleteMedia: 'admin', deleteAlbum: 'admin',
   }],
   // Người gọi là QStash, danh tính chứng minh bằng chữ ký chứ không phải token.
+  // 'member' ở đây nghĩa là "member TRỞ LÊN", nên editor cũng thắp hương được.
+  // api-memorial.md §4 muốn loại editor ra; làm vậy cần một guard theo Set như
+  // PII_ROLES. Đã cân nhắc và quyết định không làm — xem chú thích MemorialController.
+  ['MemorialController', MemorialController, {
+    getStats: 'public', getAncestors: 'public', getTributes: 'public',
+    burnIncense: 'member', createTribute: 'member', deleteTribute: 'admin',
+  }],
+  // CẢ HAI route đều public, và route GHI không có guard là CHỦ Ý — không phải
+  // chỗ bị quên gắn quyền. Người cần viết cho ban liên lạc nhất chính là người
+  // CHƯA có tài khoản (chắt chút chưa đăng ký, người thân đang chờ admin duyệt
+  // liên kết). @Roles('member') ở đây là đóng cửa với đúng nhóm mà form sinh ra
+  // để phục vụ (api-contact.md §4). Lớp bảo vệ là ContactThrottleGuard (rate
+  // limit đếm trên Redis), không phải role — gỡ nó ra là mở toang.
+  ['ContactController', ContactController, {
+    getInfo: 'public', createMessage: 'public',
+    updateInfo: 'admin', getMessages: 'admin', updateMessageStatus: 'admin',
+  }],
   ['QueueController', QueueController, { handleCallback: 'public' }],
 ];
 

@@ -2188,6 +2188,359 @@ paths:
       security:
         - 
           bearer: []
+  /v2/memorial/stats:
+    get:
+      operationId: MemorialController_getStats
+      summary: "Ba con số trên ban thờ: số đời, tổng nén hương, tổng lời tưởng niệm (public)"
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemorialStatsDto"
+      tags:
+        - Memorial (Góc nhớ tổ tiên)
+      security:
+        - 
+          bearer: []
+  /v2/memorial/ancestors:
+    get:
+      operationId: MemorialController_getAncestors
+      summary: Danh sách tổ tiên (member có deathDate) kèm số nén hương của từng cụ (public)
+      parameters:
+        - 
+          name: page
+          required: false
+          in: query
+          schema:
+            type: number
+        - 
+          name: pageSize
+          required: false
+          in: query
+          description: Mặc định 20, tối đa 100
+          schema:
+            type: number
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedMemorialAncestorsDto"
+      tags:
+        - Memorial (Góc nhớ tổ tiên)
+      security:
+        - 
+          bearer: []
+  /v2/memorial/tributes:
+    get:
+      operationId: MemorialController_getTributes
+      summary: Lời tưởng niệm, mới nhất trước (public)
+      parameters:
+        - 
+          name: page
+          required: false
+          in: query
+          schema:
+            type: number
+        - 
+          name: pageSize
+          required: false
+          in: query
+          description: Mặc định 20, tối đa 100
+          schema:
+            type: number
+        - 
+          name: memberId
+          required: false
+          in: query
+          description: Chỉ lấy lời tưởng niệm gửi riêng cụ này
+          schema:
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedMemorialTributesDto"
+      tags:
+        - Memorial (Góc nhớ tổ tiên)
+      security:
+        - 
+          bearer: []
+    post:
+      operationId: MemorialController_createTribute
+      summary: Viết lời tưởng niệm (10–500 ký tự sau khi trim)
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTributeDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemorialTributeDto"
+        404:
+          description: memberId không tồn tại
+        422:
+          description: Thành viên còn sống
+      tags:
+        - Memorial (Góc nhớ tổ tiên)
+      security:
+        - 
+          bearer: []
+  /v2/memorial/incense:
+    post:
+      operationId: MemorialController_burnIncense
+      summary: Thắp hương. Bỏ trống memberId = thắp cho tổ tiên nói chung. Giới hạn 1 lượt/người/ngày.
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BurnIncenseDto"
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BurnIncenseResponseDto"
+        404:
+          description: memberId không tồn tại
+        409:
+          description: Hôm nay đã thắp hương cho người này rồi
+        422:
+          description: Thành viên còn sống — hương chỉ dành cho người đã khuất
+      tags:
+        - Memorial (Góc nhớ tổ tiên)
+      security:
+        - 
+          bearer: []
+  /v2/memorial/tributes/{id}:
+    delete:
+      operationId: MemorialController_deleteTribute
+      summary: Xoá lời tưởng niệm (kiểm duyệt). Xoá hẳn, không có hàng đợi.
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        204:
+          description: Đã xoá
+        404:
+          description: Không còn tồn tại
+      tags:
+        - Memorial (Góc nhớ tổ tiên)
+      security:
+        - 
+          bearer: []
+  /v2/contact/info:
+    get:
+      operationId: ContactController_getInfo
+      summary: "Thông tin liên hệ: kênh liên lạc, nhà thờ họ, giờ mở cửa, ban liên lạc (public)"
+      description: "Chưa seed dòng contact_info vẫn trả 200 với danh sách rỗng — KHÔNG phải 404: trang cần phân biệt \"dòng họ chưa điền\" với \"request lỗi\". `board[].phone`/`.email` là null với người gọi không có quyền xem thông tin liên lạc (dưới `member`, và cả `editor`)."
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactInfoDto"
+      tags:
+        - Contact (Liên hệ Ban liên lạc)
+      security:
+        - 
+          bearer: []
+    put:
+      operationId: ContactController_updateInfo
+      summary: Cập nhật thông tin liên hệ của dòng họ (admin)
+      description: "THAY THẾ TRỌN KHỐI: `channels` và `hours` được ghi lại theo đúng thứ tự trong mảng, nên gửi cả danh sách chứ không gửi từng dòng. Shape khớp chính xác thứ GET /contact/info trả về (trừ `board`, vốn chiếu từ `members` — sửa ban liên lạc ở màn hình Thành viên, bằng cách bật `clanRole` cho người đó). Xoá cache của route public ngay sau khi lưu."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateContactInfoDto"
+      responses:
+        200:
+          description: Khối thông tin sau khi lưu.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactInfoDto"
+        400:
+          description: Dữ liệu không hợp lệ
+      tags:
+        - Contact (Liên hệ Ban liên lạc)
+      security:
+        - 
+          bearer: []
+  /v2/contact/messages:
+    post:
+      operationId: ContactController_createMessage
+      summary: Gửi tin nhắn cho ban liên lạc (public, có giới hạn tần suất)
+      description: "Multipart MỘT LẦN GỬI, không phải upload-rồi-tham-chiếu: người nhà đính kèm ảnh chụp một trang viết tay, và luồng hai bước sẽ bỏ lại tệp mồ côi mỗi lần họ bỏ dở form. Tối đa 3 tệp (image/jpeg, image/png, application/pdf), mỗi tệp và TỔNG body đều bị chặn ở 4.5 MB. Giới hạn tần suất: 3/giờ, 10/ngày theo IP."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - topic
+                - fullName
+                - phone
+                - content
+              properties:
+                topic:
+                  type: string
+                  enum:
+                    - GENEALOGY
+                    - GRAVE
+                    - EVENT
+                    - SCHOLARSHIP
+                    - OTHER
+                fullName:
+                  type: string
+                  example: Nguyễn Văn An
+                phone:
+                  type: string
+                  example: 0988 123 456
+                email:
+                  type: string
+                  example: an.nguyen@example.com
+                branch:
+                  type: string
+                  example: Chi thứ ba, Đông Ngạc
+                content:
+                  type: string
+                  minLength: 20
+                  maxLength: 2000
+                attachments:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  maxItems: 3
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactMessageReceiptDto"
+        400:
+          description: Dữ liệu không hợp lệ — `message` là câu tiếng Việt cho người gửi đọc
+        413:
+          description: Tệp đính kèm hoặc tổng body vượt giới hạn
+        429:
+          description: Vượt giới hạn tần suất theo IP
+      tags:
+        - Contact (Liên hệ Ban liên lạc)
+      security:
+        - 
+          bearer: []
+    get:
+      operationId: ContactController_getMessages
+      summary: Hộp thư ban liên lạc — mới nhất trước (admin)
+      description: "KHÔNG cache: admin vừa đổi trạng thái phải thấy ngay. `sender_ip_hash` cố ý KHÔNG được trả ra — nó để rà soát spam trực tiếp trên DB, không phải để nhận diện người gửi trên BO."
+      parameters:
+        - 
+          name: page
+          required: false
+          in: query
+          schema:
+            type: number
+        - 
+          name: pageSize
+          required: false
+          in: query
+          description: Mặc định 20, tối đa 100
+          schema:
+            type: number
+        - 
+          name: status
+          required: false
+          in: query
+          schema:
+            enum:
+              - NEW
+              - IN_PROGRESS
+              - ANSWERED
+              - SPAM
+            type: string
+        - 
+          name: topic
+          required: false
+          in: query
+          schema:
+            enum:
+              - GENEALOGY
+              - GRAVE
+              - EVENT
+              - SCHOLARSHIP
+              - OTHER
+            type: string
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedContactMessagesDto"
+      tags:
+        - Contact (Liên hệ Ban liên lạc)
+      security:
+        - 
+          bearer: []
+  /v2/contact/messages/{id}:
+    patch:
+      operationId: ContactController_updateMessageStatus
+      summary: Đánh dấu một tin nhắn đã xử lý tới đâu (admin)
+      parameters:
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateContactMessageStatusDto"
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactMessageDto"
+        404:
+          description: Không tìm thấy tin nhắn này
+      tags:
+        - Contact (Liên hệ Ban liên lạc)
+      security:
+        - 
+          bearer: []
 info:
   title: Family Tree API v2
   description: "## Vietnamese Family Tree Management API\n\n**Base URL:** `http://localhost:3002/v2`\n\n**Authentication:** Bearer JWT token (same as backend v1)\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ mới (BIOLOGICAL/ADOPTED/SPOUSE) + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày giỗ (filter by member, month, upcoming)\n- **Events** — Sự kiện dòng họ + notification queue\n- **Media** — Thư viện media: upload mọi loại (ảnh nén lossless bằng sharp; video/audio/tài liệu upload thẳng) → Vercel Blob; phân trang/lọc/tìm kiếm + thống kê + album\n- **Graves** — Mộ phần với tọa độ GPS + tìm kiếm gần nhất\n\n### Queue Jobs (QStash + Redis)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → Vercel Blob → cập nhật avatar_url |\n| media-process | Upload media | Ảnh: sharp nén lossless; khác: upload thẳng → Vercel Blob (off-request) |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| notification | New member/relationship/event | Log (Phase 1) |\n"
@@ -4116,3 +4469,504 @@ components:
         date:
           format: date-time
           type: string
+    MemorialStatsDto:
+      type: object
+      properties:
+        generations:
+          type: number
+          example: 7
+          description: Cùng con số GET /tree/stats trả về (MAX(generation)).
+        incenseTotal:
+          type: number
+          example: 2148
+          description: Tổng mọi nén hương, kể cả lượt gửi tổ tiên nói chung.
+        tributeTotal:
+          type: number
+          example: 316
+      required:
+        - generations
+        - incenseTotal
+        - tributeTotal
+    MemorialAncestorDto:
+      type: object
+      properties:
+        memberId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Nguyễn Văn Thủy
+        birthDate:
+          type: object
+          nullable: true
+          example: 1830-01-01
+        deathDate:
+          type: object
+          nullable: true
+          example: 1905-01-01
+        generation:
+          type: object
+          nullable: true
+          example: 1
+        isFounder:
+          type: boolean
+          description: true với thế hệ thấp nhất đang có — FE hiện "Thủy tổ".
+        avatarUrl:
+          type: object
+          nullable: true
+          format: uri
+        incenseCount:
+          type: number
+          example: 428
+          description: Lượt thắp cho RIÊNG cụ này; lượt clan-wide không tính vào ai.
+      required:
+        - memberId
+        - name
+        - birthDate
+        - deathDate
+        - generation
+        - isFounder
+        - avatarUrl
+        - incenseCount
+    PaginatedMemorialAncestorsDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemorialAncestorDto"
+        total:
+          type: number
+          example: 42
+        page:
+          type: number
+          example: 1
+        pageSize:
+          type: number
+          example: 20
+      required:
+        - data
+        - total
+        - page
+        - pageSize
+    MemorialTributeDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        authorName:
+          type: string
+          description: Đã chốt lúc ghi. KHÔNG BAO GIỜ là email — endpoint này public.
+        authorUserId:
+          type: string
+          format: uuid
+        memberId:
+          type: object
+          nullable: true
+          format: uuid
+          description: null = gửi tổ tiên nói chung.
+        memberName:
+          type: object
+          nullable: true
+      required:
+        - id
+        - content
+        - createdAt
+        - authorName
+        - authorUserId
+        - memberId
+        - memberName
+    PaginatedMemorialTributesDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemorialTributeDto"
+        total:
+          type: number
+          example: 316
+        page:
+          type: number
+          example: 1
+        pageSize:
+          type: number
+          example: 20
+      required:
+        - data
+        - total
+        - page
+        - pageSize
+    BurnIncenseDto:
+      type: object
+      properties:
+        memberId:
+          type: string
+          format: uuid
+          description: Bỏ trống = thắp cho tổ tiên nói chung (nút ở ban thờ).
+    BurnIncenseResponseDto:
+      type: object
+      properties:
+        incenseCount:
+          type: number
+          example: 429
+          description: Số mới của cụ đó; 0 với lượt gửi tổ tiên nói chung.
+        incenseTotal:
+          type: number
+          example: 2149
+      required:
+        - incenseCount
+        - incenseTotal
+    CreateTributeDto:
+      type: object
+      properties:
+        content:
+          type: string
+          minLength: 10
+          maxLength: 500
+          example: Con cháu đời thứ 6 xin kính cẩn dâng nén hương tưởng nhớ công đức tổ tiên.
+        memberId:
+          type: string
+          format: uuid
+          description: Bỏ trống = lời tưởng niệm gửi tổ tiên nói chung.
+      required:
+        - content
+    ContactChannelDto:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - address
+            - phone
+            - email
+            - group
+          description: Quyết định icon và nhãn hành động — FE tự suy nhãn, API KHÔNG gửi.
+        label:
+          type: string
+          example: Nhà thờ họ Nguyễn
+        value:
+          type: string
+          example: Thôn Nguyễn Xá, xã Đông Ngạc, huyện Từ Liêm, Hà Nội
+        href:
+          type: string
+          nullable: true
+          description: "Có thể null. channelHref() bên FE tự suy tel:/mailto: từ `value` cho kênh phone/email."
+      required:
+        - type
+        - label
+        - value
+        - href
+    ContactVenueDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Nhà thờ họ Nguyễn
+        address:
+          type: string
+          example: Đông Ngạc, Từ Liêm, Hà Nội
+        imageUrl:
+          type: string
+          nullable: true
+      required:
+        - name
+        - address
+        - imageUrl
+    ContactHoursDto:
+      type: object
+      properties:
+        label:
+          type: string
+          example: Thứ Hai – Thứ Sáu
+        value:
+          type: string
+          example: 08:00 – 17:00
+      required:
+        - label
+        - value
+    ContactBoardMemberDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Có giá trị khi người này nằm trong cây gia phả, để thẻ liên kết sang trang cá nhân. Tách khỏi `id` để sau này thêm được một ghế ban liên lạc do người NGOÀI cây nắm giữ.
+        name:
+          type: string
+          example: Nguyễn Văn An
+        role:
+          type: string
+          example: Trưởng tộc
+        phone:
+          type: string
+          nullable: true
+          description: "PII: null với người gọi không có quyền xem (thấp hơn `member`, và cả `editor`)."
+        email:
+          type: string
+          nullable: true
+          description: "PII: null với người gọi không có quyền xem — xem `phone`."
+        avatarUrl:
+          type: string
+          nullable: true
+      required:
+        - id
+        - memberId
+        - name
+        - role
+        - phone
+        - email
+        - avatarUrl
+    ContactInfoDto:
+      type: object
+      properties:
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactChannelDto"
+        venue:
+          nullable: true
+          description: null khi dòng họ chưa có nhà thờ riêng, hoặc chưa khai báo.
+          allOf:
+            - 
+              $ref: "#/components/schemas/ContactVenueDto"
+        hours:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactHoursDto"
+        board:
+          description: Chiếu từ `members` (profile.isCommittee), KHÔNG phải bảng riêng.
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactBoardMemberDto"
+        boardTerm:
+          type: string
+          nullable: true
+          example: Nhiệm kỳ 2023 – 2028
+        responseDays:
+          type: number
+          nullable: true
+          example: 3
+      required:
+        - channels
+        - venue
+        - hours
+        - board
+        - boardTerm
+        - responseDays
+    ContactMessageReceiptDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          format: date-time
+          type: string
+        referenceCode:
+          type: string
+          example: LH-2608-0431
+          description: Mã ngắn để người nhà đọc qua điện thoại khi hỏi lại.
+      required:
+        - id
+        - createdAt
+        - referenceCode
+    UpsertContactVenueDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Nhà thờ họ Nguyễn
+        address:
+          type: string
+          example: Đông Ngạc, Từ Liêm, Hà Nội
+        imageUrl:
+          type: object
+          nullable: true
+          description: URL ảnh đã upload qua /v2/media.
+      required:
+        - name
+        - address
+    UpsertContactChannelDto:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - address
+            - phone
+            - email
+            - group
+        label:
+          type: string
+          example: Nhà thờ họ Nguyễn
+        value:
+          type: string
+          example: Thôn Nguyễn Xá, xã Đông Ngạc, huyện Từ Liêm, Hà Nội
+        href:
+          type: object
+          nullable: true
+          example: https://maps.google.com/?q=...
+      required:
+        - type
+        - label
+        - value
+    UpsertContactHoursDto:
+      type: object
+      properties:
+        label:
+          type: string
+          example: Thứ Hai – Thứ Sáu
+        value:
+          type: string
+          example: 08:00 – 17:00
+      required:
+        - label
+        - value
+    UpdateContactInfoDto:
+      type: object
+      properties:
+        venue:
+          nullable: true
+          description: null = dòng họ không có nhà thờ riêng. Bỏ qua trường này cũng được hiểu là null.
+          allOf:
+            - 
+              $ref: "#/components/schemas/UpsertContactVenueDto"
+        channels:
+          description: Thứ tự trong mảng LÀ thứ tự hiển thị.
+          type: array
+          items:
+            $ref: "#/components/schemas/UpsertContactChannelDto"
+        hours:
+          description: Thứ tự trong mảng LÀ thứ tự hiển thị.
+          type: array
+          items:
+            $ref: "#/components/schemas/UpsertContactHoursDto"
+        boardTerm:
+          type: object
+          nullable: true
+          example: Nhiệm kỳ 2023 – 2028
+        responseDays:
+          type: object
+          nullable: true
+          minimum: 1
+          maximum: 365
+          example: 3
+      required:
+        - channels
+        - hours
+    ContactMessageDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        referenceCode:
+          type: string
+          example: LH-2608-0431
+        topic:
+          type: string
+          enum:
+            - GENEALOGY
+            - GRAVE
+            - EVENT
+            - SCHOLARSHIP
+            - OTHER
+        fullName:
+          type: string
+          example: Nguyễn Văn An
+        phone:
+          type: string
+          example: 0988 123 456
+        email:
+          type: string
+          nullable: true
+        branch:
+          type: string
+          nullable: true
+        content:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+              name:
+                type: string
+              mimeType:
+                type: string
+              size:
+                type: number
+        status:
+          type: string
+          enum:
+            - NEW
+            - IN_PROGRESS
+            - ANSWERED
+            - SPAM
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Có giá trị khi người gửi tình cờ đang đăng nhập. Phần lớn thư là của khách.
+        createdAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - referenceCode
+        - topic
+        - fullName
+        - phone
+        - email
+        - branch
+        - content
+        - attachments
+        - status
+        - userId
+        - createdAt
+    PaginatedContactMessagesDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactMessageDto"
+        total:
+          type: number
+          example: 42
+        page:
+          type: number
+          example: 1
+        pageSize:
+          type: number
+          example: 20
+      required:
+        - data
+        - total
+        - page
+        - pageSize
+    UpdateContactMessageStatusDto:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - NEW
+            - IN_PROGRESS
+            - ANSWERED
+            - SPAM
+      required:
+        - status

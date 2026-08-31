@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "database-design": {
+      "source": "skillcreatorai/Ai-Agent-Skills",
+      "sourceType": "github",
+      "skillPath": "skills/database-design/SKILL.md",
+      "computedHash": "cd27a6d944304538d80693287d9902bcf843cc633a4fb5647e5676a7074da372"
+    }
+  }
+}

@@ -12,6 +12,8 @@ import { GravesModule } from './graves/graves.module';
 import { LifeEventsModule } from './life-events/life-events.module';
 import { MemoriesModule } from './memories/memories.module';
 import { ArticlesModule } from './articles/articles.module';
+import { MemorialModule } from './memorial/memorial.module';
+import { ContactModule } from './contact/contact.module';
 import { QueueModule } from './queue/queue.module';
 import { GenerationModule } from './generation/generation.module';
 import { RedisModule } from './redis.module';
@@ -37,6 +39,8 @@ import { SupabaseModule } from './supabase/supabase.module';
     LifeEventsModule,
     MemoriesModule,
     ArticlesModule,
+    MemorialModule,
+    ContactModule,
   ],
   controllers: [AppController],
 })
