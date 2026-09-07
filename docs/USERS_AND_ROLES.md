@@ -110,7 +110,7 @@ role **tối thiểu** — `editor` bao gồm cả admin.
 
 | Nhóm | Route | Role |
 |---|---|---|
-| **auth** | `POST /auth/register`, `/auth/login` | public |
+| **auth** | `POST /auth/register`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password` | public |
 | | `POST /auth/logout`, `/auth/change-password`, `GET /auth/me`, `/auth/roles` | auth |
 | | `GET /auth/users`, `PUT .../roles`, `POST\|DELETE .../link-member` | **admin** |
 | **members** | `GET /members/committee`, `/notable`, `/stats` | public |

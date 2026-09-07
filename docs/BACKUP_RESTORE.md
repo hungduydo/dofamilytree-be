@@ -20,6 +20,11 @@
 
 ## 1. Hệ thống backup hiện tại
 
+> **Trạng thái: đang chạy.** Lần chạy tự động đầu tiên thành công ngày
+> **07/09/2026** — dump, export Auth, kê kho ảnh, mã hoá, đẩy lên R2, và job
+> `verify` restore lại vào Postgres 17 rỗng đều xanh. Xem tab Actions →
+> *Database backup*.
+
 | | Cái gì | Chạy khi nào | Lưu ở đâu |
 |---|---|---|---|
 | **Postgres `public`** | DDL + toàn bộ dữ liệu (`public.dump` custom format + `public.sql` plain) | Hằng ngày 00:00 VN + chạy tay | R2 `db/{daily,weekly,monthly}/<timestamp>/` |
@@ -58,7 +63,11 @@ pnpm backup:upload             # đẩy lên R2 (tier tự chọn theo ngày)
 `backup:seal` phải chạy SAU cả ba script trên — `auth-users.json` chứa email và
 metadata người dùng, `backup:upload` sẽ từ chối nếu còn file chưa mã hoá.
 
-Cần `pg_dump` phiên bản ≥ Postgres của Supabase (macOS: `brew install libpq`).
+Cần `pg_dump` phiên bản **≥ Postgres của Supabase (hiện là 17.6)** — `pg_dump`
+từ chối làm việc khi server mới hơn nó (`server version mismatch`). macOS:
+`brew install libpq`. Trên CI phải cài `postgresql-client-17` VÀ prepend
+`/usr/lib/postgresql/17/bin` vào PATH, vì runner của GitHub có sẵn bản 16 thắng
+trong PATH.
 Không cần AWS CLI — script dùng `@aws-sdk/client-s3` đã có sẵn trong repo.
 
 Kiểm tra bản vừa tạo có restore được không (cần Docker):
@@ -179,7 +188,8 @@ aws s3 cp "s3://$R2_BACKUP_BUCKET/storage/<key>" "s3://$R2_BUCKET_NAME/<key>" $R
 
 1. Tạo bucket **`dofamilytree-backup`**, tách khỏi bucket ảnh. **Không** bật public access.
 2. Tạo API token riêng cho bucket này (Object Read & Write) → `R2_BACKUP_ACCESS_KEY_ID` / `R2_BACKUP_SECRET_ACCESS_KEY`.
-3. Đặt **lifecycle rule theo prefix** (tự xoá, không script nào cần quyền delete):
+3. ⚠️ **CHƯA LÀM** — đặt **lifecycle rule theo prefix** (tự xoá, không script nào
+   cần quyền delete). Chưa có rule thì file backup tích tụ vô hạn:
 
    | Prefix | Xoá sau |
    |---|---|
@@ -187,6 +197,9 @@ aws s3 cp "s3://$R2_BACKUP_BUCKET/storage/<key>" "s3://$R2_BUCKET_NAME/<key>" $R
    | `db/weekly/` | 60 ngày |
    | `db/monthly/` | 365 ngày |
    | `storage/` | *không xoá* |
+
+> Bucket, API token và 14 GitHub Secrets đã tạo xong (07/09/2026). Chỉ còn
+> lifecycle rule ở mục 3 bên trên.
 
 ### GitHub Secrets (Settings → Secrets and variables → Actions)
 
@@ -210,6 +223,8 @@ Backup chưa từng restore thử là backup chưa chắc dùng được. Mỗi 
 2. Làm đầy đủ mục 3 vào một Supabase project tạm, trỏ app local vào đó, đăng nhập được.
 3. Ghi lại vào bảng dưới.
 
-| Ngày diễn tập | Người làm | Kết quả | Ghi chú |
+| Ngày | Loại | Kết quả | Ghi chú |
 |---|---|---|---|
-| *(chưa có)* | | | |
+| 06/09/2026 | Thủ công, đầy đủ | ✅ | Dump production → mã hoá → R2 → tải về → giải mã → restore vào `postgres:17-alpine`: 24 bảng, 7 index GIN, members 479 / member_relationships 835 / profiles 479 / user_metadata 8 |
+| 07/09/2026 | Tự động (CI) | ✅ | Job `verify` restore bản vừa tạo, số dòng khớp mốc lần trước |
+| | | | *Diễn tập ĐẦY ĐỦ (khôi phục vào Supabase project tạm + đăng nhập thật) chưa làm — xem mục 5* |

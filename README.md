@@ -8,8 +8,8 @@ NestJS REST API — phiên bản mới song song với Express backend v1.
 | Port | (default) | **3002** |
 | Relationship table | `relationships` | **`member_relationships`** |
 | Relationship types | PARENT / CHILD / SPOUSE | **BIOLOGICAL / ADOPTED / SPOUSE** |
-| Cache | Vercel Blob | **Redis (ioredis)** |
-| Queue | — | **BullMQ (4 queues)** |
+| Cache | Vercel Blob | **Upstash Redis (REST)** |
+| Queue | — | **Upstash QStash (HTTP callback)** |
 | Image processing | — | **sharp (compress + resize)** |
 | Docs | Swagger | **Swagger `/docs`** |
 
@@ -26,15 +26,17 @@ NestJS REST API — phiên bản mới song song với Express backend v1.
 
 ## Cài đặt
 
+Yêu cầu **Node >= 22** (pnpm 11 pin trong `packageManager` cần Node 22.13+) và **pnpm**.
+
 ```bash
 # 1. Cài dependencies
 pnpm install
 
 # 2. Copy env
 cp .env.example .env
-# Điền DATABASE_URL, JWT_SECRET, REDIS_HOST, BLOB_READ_WRITE_TOKEN...
+# Bắt buộc: DATABASE_URL, DIRECT_URL, SUPABASE_URL, SUPABASE_SECRET_KEY, JWT_SECRET
 
-# 3. Generate Prisma client (schema dùng chung từ backend/)
+# 3. Generate Prisma client
 pnpm prisma:generate
 
 # 4. Áp schema — xem "Migration thủ công" bên dưới.
@@ -82,41 +84,38 @@ Swagger UI: **http://localhost:3002/docs**
 ## Cấu trúc thư mục
 
 ```
-backend-v2/
+family-be-v2/
 ├── src/
-│   ├── prisma/               # PrismaService (global singleton)
-│   ├── auth/                 # JWT Guard + Strategy (reuse JWT_SECRET từ v1)
+│   ├── auth/                 # Đăng ký/đăng nhập, JWT guard, phân quyền, quên mật khẩu
 │   ├── members/              # Member + Profile CRUD
-│   │   └── dto/              # CreateMemberDto, UpdateMemberDto
 │   ├── relationships/        # MemberRelationship CRUD + search
-│   │   └── dto/              # CreateRelationshipDto, SearchRelationshipDto
 │   ├── tree/                 # Cây gia phả (Redis cache + BFS subtree)
+│   ├── generation/           # Tính/backfill đời
 │   ├── events/               # Anniversaries + Events
-│   │   └── dto/              # CreateAnniversaryDto, CreateEventDto, ...
-│   ├── media/                # Upload ảnh → image-process queue
+│   ├── life-events/          # Mốc đời của từng member
+│   ├── memories/             # Kỷ niệm
+│   ├── memorial/             # Thắp hương, lời tưởng niệm
+│   ├── articles/             # Bài viết
 │   ├── graves/               # Cemetery + GPS nearby search
-│   │   └── dto/              # CreateGraveDto, UpdateGraveDto
-│   ├── queue/
-│   │   ├── queue.module.ts   # BullMQ setup (4 queues)
-│   │   └── processors/       # avatar-upload, report-generate, notification, image-process
-│   ├── redis.provider.ts     # ioredis client (token: REDIS_CLIENT)
-│   ├── utils/
-│   │   └── vietnamese-helper.ts  # removeVietnameseTones()
-│   ├── app.module.ts
-│   └── main.ts               # Port 3002, global prefix /v2
+│   ├── contact/              # Form liên hệ (public, chặn bằng rate limit)
+│   ├── media/                # Upload ảnh: multipart hoặc presigned PUT
+│   ├── storage/              # Facade R2 / Vercel Blob (STORAGE_PROVIDER)
+│   ├── supabase/             # Client service-role + resolver secret key
+│   ├── queue/                # QStash: service, signature guard, callback controller
+│   ├── prisma/               # PrismaService (global singleton)
+│   ├── redis.provider.ts     # Upstash Redis REST client
+│   ├── swagger.config.ts     # Nguồn spec duy nhất cho /docs và swagger:export
+│   ├── main.ts               # Port 3002, prefix /v2
+│   └── vercel.ts             # Entry cho Vercel (Express adapter)
 ├── prisma/
-│   └── schema.prisma         # Copy từ backend/ (có thêm MemberRelationship)
-├── test/                     # Unit tests (Jest + @nestjs/testing)
-│   ├── members/
-│   ├── relationships/
-│   ├── tree/
-│   ├── events/
-│   ├── media/
-│   └── graves/
+│   ├── schema.prisma
+│   └── manual-migrations/    # DDL áp tay — KHÔNG có runner tự chạy
 ├── scripts/
-│   ├── migrate-relationships.ts   # Migrate data cũ → bảng mới (idempotent)
-│   └── export-swagger.ts          # Export swagger.json + swagger.yaml → docs/
-└── docs/                          # Generated swagger files (gitignored nếu muốn)
+│   ├── backup/               # db-backup, auth-export, storage-manifest, seal, upload, verify
+│   └── *.ts                  # backfill, bootstrap-admin, audit-roles, restore…
+├── .github/workflows/        # db-backup (hằng ngày + verify), storage-sync (hằng tuần)
+├── test/                     # Jest + @nestjs/testing
+└── docs/                     # BACKUP_RESTORE, USERS_AND_ROLES, swagger.{json,yaml}
 ```
 
 ---
@@ -226,14 +225,24 @@ khai và một số route ghi yêu cầu role tối thiểu — xem bảng trong
 
 ---
 
-## BullMQ Queues
+## Tác vụ nền (Upstash QStash)
 
-| Queue | Trigger | Xử lý |
-|-------|---------|--------|
-| `avatar-upload` | Create/Update member có file avatar | Upload buffer → Vercel Blob → cập nhật `avatar_url` |
-| `image-process` | POST `/v2/media/upload` | sharp resize (thumb 300px + full 1200px) → Vercel Blob |
+Không dùng BullMQ/worker thường trú — app chạy serverless trên Vercel. Tác vụ
+được **QStash gọi ngược lại** qua `POST /v2/queue/callback/:task`, danh tính xác
+minh bằng chữ ký ([`qstash-signature.guard.ts`](src/queue/qstash-signature.guard.ts))
+chứ không phải token người dùng.
+
+| Task | Trigger | Xử lý |
+|------|---------|--------|
+| `avatar-upload` | Create/Update member có file avatar | Upload buffer → storage → cập nhật `avatar_url` |
+| `image-process` | Upload ảnh | sharp resize (thumb + full) → storage |
+| `media-process` | Hoàn tất presigned upload | Nén lossless, sinh metadata, xoá cache thống kê |
 | `report-generate` | Create/Delete member | Tính stats (total, generations, deceased) → Redis |
-| `notification` | New member / relationship / event | Log (Phase 1); mở rộng email/push sau |
+| `generation-recompute` | Đổi quan hệ cha/con | Tính lại đời cho toàn cây |
+| `notification` | Member/quan hệ/sự kiện mới | Log (Phase 1); mở rộng email/push sau |
+
+Tên task khai ở [`queue.constants.ts`](src/queue/queue.constants.ts), xử lý ở
+[`tasks.service.ts`](src/queue/tasks.service.ts).
 
 ---
 
@@ -276,8 +285,13 @@ pnpm exec prisma db pull && pnpm prisma:generate
 
 ## Backup & khôi phục
 
-Supabase gói free **không có auto-backup**. Hệ thống backup tự dựng chạy trên
-GitHub Actions hằng ngày và tự restore thử để chứng minh bản backup dùng được.
+Supabase gói free **không có auto-backup lẫn PITR**. Hệ thống backup tự dựng chạy
+trên GitHub Actions **00:00 giờ VN hằng ngày**, và mỗi lần chạy đều tự restore bản
+vừa tạo vào một Postgres rỗng rồi kiểm số bảng, index GIN và số dòng — backup
+không restore được thì không phải backup, nên workflow báo đỏ thay vì im lặng.
+
+Phạm vi: Postgres `public` (DDL + data), Supabase Auth (`auth.users` kèm password
+hash), và bản kê kho ảnh. Mọi file **gzip + GPG AES256** trước khi lên R2.
 
 ```bash
 pnpm db:backup                 # dump public + auth → backup/<timestamp>/
@@ -301,19 +315,17 @@ pnpm test:watch     # Watch mode
 pnpm test:cov       # Coverage report
 ```
 
-Các file test trong `test/`:
+Hiện có **647 test / 32 suite**, phủ các vùng: `auth` (đăng ký, đăng nhập, đổi &
+đặt lại mật khẩu, phân quyền theo route), `members`, `relationships`, `tree`,
+`generation`, `events`, `media`, `graves`, `memorial`, `contact`, `queue`,
+`supabase`.
 
-| File | Test Cases |
-|------|-----------|
-| `members/members.service.spec.ts` | createMember, getMemberById, search, update, delete, queue emission |
-| `members/members.controller.spec.ts` | Route → Service delegation |
-| `relationships/relationships.service.spec.ts` | add, self-relate, duplicate parent, getChildren, getParents, getSpouses, ancestors, descendants, search |
-| `relationships/relationships.controller.spec.ts` | Route → Service delegation |
-| `tree/tree.service.spec.ts` | Redis cache hit/miss, regenerate, subtree BFS, stats, CRUD |
-| `tree/tree.controller.spec.ts` | Route → Service delegation |
-| `events/events.service.spec.ts` | Anniversary CRUD, upcoming, createEvent + notification queue |
-| `media/media.service.spec.ts` | upload → image-process queue, delete + blob removal |
-| `graves/graves.service.spec.ts` | CRUD, getNearby Haversine filter |
+`test/jest.setup.ts` cấp sẵn env giả (`SUPABASE_URL`, `SUPABASE_SECRET_KEY`) nên
+test **không đọc `.env` của máy dev** — chạy được trên máy trắng và trên CI.
+
+`test/auth/route-roles.spec.ts` đáng chú ý: nó đối chiếu TỪNG handler của mọi
+controller với bảng phân quyền kỳ vọng, và **fail khi có handler mới chưa được
+khai**. Thêm route mà quên khai quyền là test đỏ ngay, không lọt im lặng.
 
 ---
 
@@ -331,29 +343,20 @@ Xuất ra:
 
 ## Environment Variables
 
-```env
-# Database (cùng với backend v1)
-DATABASE_URL=postgresql://...
-DIRECT_URL=postgresql://...
+Danh sách đầy đủ kèm giải thích: **[`.env.example`](.env.example)**. Đừng chép lại
+ở đây — hai nơi sẽ lệch nhau.
 
-# Supabase
-SUPABASE_URL=https://xxx.supabase.co
+Hai nguyên tắc:
 
-# JWT (cùng secret với backend v1)
-JWT_SECRET=your-jwt-secret
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=          # để trống nếu không có password
-
-# Vercel Blob
-BLOB_READ_WRITE_TOKEN=xxx
-
-# App
-PORT=3002
-NODE_ENV=development
-```
+1. **Env chỉ chứa secret và endpoint theo môi trường.** Các con số cấu hình
+   (giới hạn upload, thời hạn presigned URL, hạn mức lưu trữ, trần đính kèm form
+   liên hệ) là **hằng số trong code** — [`src/media/media.constants.ts`](src/media/media.constants.ts)
+   và [`src/contact/contact.constants.ts`](src/contact/contact.constants.ts) —
+   vì chúng không bí mật, không đổi theo môi trường, và để cạnh phần giải thích
+   tại sao chọn con số đó thì dễ hiểu hơn nhiều.
+2. **Supabase dùng hệ API key mới.** `SUPABASE_SECRET_KEY` (`sb_secret_…`) thay cho
+   `service_role` legacy đã bị tắt. Backend không dùng anon/publishable key ở đâu —
+   đó là việc của frontend.
 
 ---
 
@@ -372,4 +375,3 @@ pnpm migrate:relationships
 ```
 
 Script dùng `upsert` (idempotent — chạy lại nhiều lần vẫn an toàn). Bảng cũ `relationships` giữ nguyên cho backend v1.
-lsof -ti:3002 | xargs kill -9 2>/dev/null; echo "done"
