@@ -20,6 +20,12 @@
     "audit:roles": "ts-node scripts/audit-user-roles.ts",
     "backfill:media": "ts-node scripts/backfill-media-metadata.ts",
     "swagger:export": "ts-node scripts/export-swagger.ts",
+    "db:backup": "bash scripts/backup/db-backup.sh",
+    "backup:auth-export": "ts-node scripts/backup/auth-export.ts",
+    "backup:storage-manifest": "ts-node scripts/backup/storage-manifest.ts",
+    "backup:seal": "bash scripts/backup/seal.sh",
+    "backup:upload": "ts-node scripts/backup/upload-r2.ts",
+    "backup:verify": "bash scripts/backup/verify-restore.sh",
     "postinstall": "prisma generate",
     "prepare": "husky",
     "type-check": "tsc --noEmit"

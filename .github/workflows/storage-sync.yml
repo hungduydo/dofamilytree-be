@@ -1,0 +1,47 @@
+# Sao chép kho ảnh sang bucket backup.
+#
+# TẠI SAO BUCKET THỨ HAI: Cloudflare R2 không có object versioning — xoá nhầm là
+# mất vĩnh viễn. Bản sao ở bucket khác (lý tưởng là khác API token) là lớp bảo
+# vệ duy nhất. Manifest hằng ngày trong workflow db-backup chỉ KÊ, không SAO.
+#
+# `rclone copy` (không phải `sync`) — cố ý không xoá bên đích, để việc xoá nhầm
+# ở bucket nguồn không lan sang bản backup.
+name: Storage sync
+
+on:
+  schedule:
+    - cron: '30 18 * * 0' # 01:30 giờ VN Chủ nhật
+  workflow_dispatch:
+
+concurrency:
+  group: storage-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Cài rclone
+        run: sudo -v && curl -fsSL https://rclone.org/install.sh | sudo bash
+
+      - name: Copy bucket ảnh → bucket backup
+        env:
+          RCLONE_CONFIG_SRC_TYPE: s3
+          RCLONE_CONFIG_SRC_PROVIDER: Cloudflare
+          RCLONE_CONFIG_SRC_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          RCLONE_CONFIG_SRC_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_SRC_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_DST_TYPE: s3
+          RCLONE_CONFIG_DST_PROVIDER: Cloudflare
+          RCLONE_CONFIG_DST_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          RCLONE_CONFIG_DST_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_DST_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+        run: |
+          rclone copy \
+            "src:${{ secrets.R2_BUCKET_NAME }}" \
+            "dst:${{ secrets.R2_BACKUP_BUCKET }}/storage/" \
+            --checksum --transfers 8 --stats 30s --stats-one-line -v

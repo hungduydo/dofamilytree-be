@@ -15,6 +15,15 @@ NestJS REST API — phiên bản mới song song với Express backend v1.
 
 ---
 
+> ## ⛔ KHÔNG chạy `prisma migrate dev` / `migrate reset` với DB production
+>
+> Ngày 31/08/2026 một lệnh `prisma migrate dev` đã reset schema `public` và xoá
+> sạch dữ liệu production. Supabase gói free không có auto-backup lẫn PITR.
+> Đổi schema thì dùng file SQL tay (mục [Migration thủ công](#migration-thủ-công)),
+> và **chạy backup trước** — xem [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md).
+
+---
+
 ## Cài đặt
 
 ```bash
@@ -28,8 +37,8 @@ cp .env.example .env
 # 3. Generate Prisma client (schema dùng chung từ backend/)
 pnpm prisma:generate
 
-# 4. Chạy migration schema (PHẢI chạy từ backend/)
-cd ../backend && pnpm exec prisma migrate dev --name add_member_relationships
+# 4. Áp schema — xem "Migration thủ công" bên dưới.
+#    ⛔ KHÔNG dùng `prisma migrate dev` với DB production.
 
 # 5. (Optional) Migrate dữ liệu cũ sang bảng mới
 pnpm migrate:relationships
@@ -44,6 +53,10 @@ runner nào tự chạy chúng**. Chạy bằng `DIRECT_URL`, không phải `DAT
 ```bash
 psql "$DIRECT_URL" -f prisma/manual-migrations/001_add_member_generation.sql
 ```
+
+**Trước mỗi lần áp DDL**, chạy tay workflow *Database backup* trên GitHub Actions
+(hoặc `pnpm db:backup` ở local) và đợi nó xong. Sau khi áp xong, `prisma db pull`
+để đồng bộ lại `schema.prisma`.
 
 Sau khi chạy, backfill dữ liệu thế hệ:
 
@@ -250,10 +263,33 @@ model MemberRelationship {
 }
 ```
 
-Migration command (chạy từ `backend/`):
+Áp schema bằng SQL tay (⛔ **không** `prisma migrate dev` với DB production —
+xem [Migration thủ công](#migration-thủ-công) và
+[docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md)):
 ```bash
-cd backend && pnpm exec prisma migrate dev --name add_member_relationships
+pnpm db:backup                                       # backup trước đã
+psql "$DIRECT_URL" -f prisma/manual-migrations/00X_*.sql
+pnpm exec prisma db pull && pnpm prisma:generate
 ```
+
+---
+
+## Backup & khôi phục
+
+Supabase gói free **không có auto-backup**. Hệ thống backup tự dựng chạy trên
+GitHub Actions hằng ngày và tự restore thử để chứng minh bản backup dùng được.
+
+```bash
+pnpm db:backup                 # dump public + auth → backup/<timestamp>/
+pnpm backup:auth-export        # tài khoản Supabase Auth ra JSON + đối soát user_metadata
+pnpm backup:storage-manifest   # kê toàn bộ object trong kho ảnh
+pnpm backup:seal               # gzip + GPG (chạy SAU 3 lệnh trên)
+pnpm backup:upload             # đẩy lên bucket backup trên R2
+pnpm backup:verify             # restore thử vào Postgres rỗng (cần VERIFY_URL)
+```
+
+Runbook đầy đủ (thứ tự khôi phục, thiết lập R2/GitHub Secrets, diễn tập hằng quý):
+**[docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md)**
 
 ---
 

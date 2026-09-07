@@ -55,3 +55,6 @@ pids
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .vercel
+
+# Backup dump (KHÔNG BAO GIỜ commit — chứa PII + password hash)
+/backup

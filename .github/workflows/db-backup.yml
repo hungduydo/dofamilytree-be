@@ -1,0 +1,173 @@
+# Backup Supabase Postgres + Auth + kê kho ảnh, rồi RESTORE THỬ để chứng minh
+# bản backup dùng được.
+#
+# Supabase gói free không có auto-backup lẫn PITR. Ngày 31/08/2026 một lần
+# `prisma migrate dev` đã xoá sạch schema public và không có gì để khôi phục.
+# Runbook khôi phục: docs/BACKUP_RESTORE.md
+name: Database backup
+
+on:
+  schedule:
+    - cron: '0 17 * * *' # 00:00 giờ VN mỗi ngày
+  workflow_dispatch: # chạy tay TRƯỚC mỗi lần đổi schema
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+  R2_BACKUP_BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
+  R2_BACKUP_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+  R2_BACKUP_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # pg_dump phải >= version server của Supabase. Bản mặc định của runner đi
+      # sau, nên lấy từ PGDG.
+      - name: Cài postgresql-client-17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Chọn timestamp và tier lưu trữ
+        id: meta
+        run: |
+          echo "ts=$(date -u +%Y-%m-%dT%H-%M-%SZ)" >> "$GITHUB_OUTPUT"
+          # Ngày 1 → monthly, Chủ nhật → weekly, còn lại → daily.
+          if [ "$(date -u +%d)" = "01" ]; then tier=monthly
+          elif [ "$(date -u +%u)" = "7" ]; then tier=weekly
+          else tier=daily; fi
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+
+      - name: Dump Postgres (public + auth)
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          BACKUP_TIMESTAMP: ${{ steps.meta.outputs.ts }}
+          # Cố ý CHƯA nén/mã hoá ở bước này: job verify cần đọc lại bản dump thô.
+          # Việc mã hoá làm ở bước ngay trước khi upload.
+          BACKUP_DEFER_ENCRYPT: '1'
+        run: pnpm db:backup
+
+      - name: Export Supabase Auth ra JSON
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BACKUP_TIMESTAMP: ${{ steps.meta.outputs.ts }}
+        run: pnpm backup:auth-export
+
+      - name: Kê kho ảnh
+        env:
+          STORAGE_PROVIDER: ${{ secrets.STORAGE_PROVIDER }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+          BACKUP_TIMESTAMP: ${{ steps.meta.outputs.ts }}
+        run: pnpm backup:storage-manifest
+
+      # Chuyển bản chưa mã hoá sang job verify. Artifact của GitHub là private
+      # trong repo private; retention ngắn vì bản lưu lâu dài nằm trên R2.
+      - name: Chuyển cho job verify
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-raw
+          path: backup/${{ steps.meta.outputs.ts }}/
+          retention-days: 3
+          if-no-files-found: error
+
+      # upload-r2.ts từ chối đẩy file chưa mã hoá, nên hai bước này phải đi liền nhau.
+      - name: Niêm phong (gzip + GPG) rồi đẩy lên R2
+        env:
+          BACKUP_GPG_PASSPHRASE: ${{ secrets.BACKUP_GPG_PASSPHRASE }}
+          BACKUP_TIMESTAMP: ${{ steps.meta.outputs.ts }}
+          BACKUP_TIER: ${{ steps.meta.outputs.tier }}
+        run: |
+          pnpm backup:seal
+          pnpm backup:upload
+
+    outputs:
+      ts: ${{ steps.meta.outputs.ts }}
+      tier: ${{ steps.meta.outputs.tier }}
+
+  # Backup không restore được thì không phải backup. Job này restore bản vừa tạo
+  # vào một Postgres rỗng và kiểm tra số bảng, index GIN, số dòng.
+  verify:
+    needs: backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: verify
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cài postgresql-client-17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: backup-raw
+          path: backup/${{ needs.backup.outputs.ts }}
+
+      # Số dòng của lần verify trước, để phát hiện sụt dữ liệu bất thường.
+      - name: Lấy số dòng lần trước
+        continue-on-error: true # lần chạy đầu tiên chưa có file này
+        run: pnpm backup:upload --get db/latest-counts.json latest-counts.json
+
+      - name: Restore thử và kiểm tra
+        env:
+          VERIFY_URL: postgresql://postgres:verify@localhost:5432/postgres
+          BACKUP_TIMESTAMP: ${{ needs.backup.outputs.ts }}
+          PREV_COUNTS: latest-counts.json
+        run: bash scripts/backup/verify-restore.sh
+
+      - name: Ghi lại số dòng cho lần sau
+        run: |
+          pnpm backup:upload --put \
+            "backup/${{ needs.backup.outputs.ts }}/counts.json" db/latest-counts.json
