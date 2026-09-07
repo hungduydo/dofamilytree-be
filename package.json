@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "description": "Family tree API v2 - NestJS + Upstash Redis + QStash",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "packageManager": "pnpm@11.0.8",
   "scripts": {
