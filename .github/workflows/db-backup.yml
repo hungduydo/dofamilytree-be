@@ -43,6 +43,11 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-17
+          # Runner đã có sẵn postgresql-client-16 ở /usr/bin và nó thắng trong
+          # PATH. Supabase chạy Postgres 17.6, mà pg_dump từ chối làm việc khi
+          # server mới hơn nó ("server version mismatch") — nên phải trỏ thẳng
+          # vào thư mục binary của bản 17.
+          echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -143,6 +148,11 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-17
+          # Runner đã có sẵn postgresql-client-16 ở /usr/bin và nó thắng trong
+          # PATH. Supabase chạy Postgres 17.6, mà pg_dump từ chối làm việc khi
+          # server mới hơn nó ("server version mismatch") — nên phải trỏ thẳng
+          # vào thư mục binary của bản 17.
+          echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
