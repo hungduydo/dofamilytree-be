@@ -24,9 +24,10 @@ const prisma = new PrismaClient();
 
 async function emailMap(userIds: string[]): Promise<Map<string, string>> {
   const map = new Map<string, string>();
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return map;
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!process.env.SUPABASE_URL || !key) return map;
 
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = createClient(process.env.SUPABASE_URL, key);
   const wanted = new Set(userIds);
 
   for (let page = 1; page <= 50 && wanted.size; page++) {

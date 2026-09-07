@@ -338,8 +338,6 @@ DIRECT_URL=postgresql://...
 
 # Supabase
 SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_ANON_KEY=xxx
-SUPABASE_SERVICE_ROLE_KEY=xxx
 
 # JWT (cùng secret với backend v1)
 JWT_SECRET=your-jwt-secret

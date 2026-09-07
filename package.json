@@ -95,6 +95,9 @@
     ],
     "coverageDirectory": "coverage",
     "testEnvironment": "node",
+    "setupFiles": [
+      "<rootDir>/test/jest.setup.ts"
+    ],
     "roots": [
       "<rootDir>/test/",
       "<rootDir>/src/"

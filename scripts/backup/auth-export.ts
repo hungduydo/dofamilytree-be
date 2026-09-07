@@ -38,7 +38,7 @@ type ExportedUser = {
 async function listAllAuthUsers(): Promise<ExportedUser[]> {
   const supabase = createClient(
     process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)!,
   );
 
   const users: ExportedUser[] = [];
@@ -81,8 +81,8 @@ function resolveOutDir(): string {
 }
 
 async function main() {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('✖ Thiếu SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.');
+  if (!process.env.SUPABASE_URL || !(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
+    console.error('✖ Thiếu SUPABASE_URL / SUPABASE_SECRET_KEY.');
     process.exit(1);
   }
 

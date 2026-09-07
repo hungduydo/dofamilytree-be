@@ -59,14 +59,25 @@ export function isAllowedMime(mimetype?: string): boolean {
  * File lớn hơn nên đi đường presigned URL (`POST /v2/media/upload-url`) —
  * client PUT thẳng lên R2, không qua function nên không dính trần nào.
  */
-export const MAX_UPLOAD_BYTES =
-  Number(process.env.MEDIA_MAX_UPLOAD_BYTES) || 50 * 1024 * 1024; // 50 MB
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 
 /**
  * Trần cứng của tầng platform, chỉ dùng để CẢNH BÁO lúc bootstrap khi
  * `MAX_UPLOAD_BYTES` được đặt cao hơn — lúc đó client sẽ gặp 413 lạ của Vercel
  * thay vì lỗi có message của ta.
  */
+/**
+ * Project trên Vercel đã bật Fluid Compute chưa — quyết định trần request body
+ * dùng để so sánh trong cảnh báo bootstrap (4.5MB nếu chưa, 100MB nếu rồi).
+ *
+ * Để `false` vì đó là hành vi đang chạy (trước đây phải đặt biến môi trường
+ * MEDIA_FLUID_COMPUTE_ENABLED=true mới thành true, và không nơi nào đặt).
+ * LƯU Ý: Fluid Compute hiện là mặc định của Vercel — kiểm tra lại trên dashboard,
+ * nếu đã bật thì đổi thành `true`, khi đó cảnh báo sẽ thôi kêu oan với
+ * MAX_UPLOAD_BYTES 50MB.
+ */
+export const FLUID_COMPUTE_ENABLED = false;
+
 export const VERCEL_BODY_LIMIT_BYTES = {
   withoutFluid: 4.5 * 1024 * 1024,
   withFluid: 100 * 1024 * 1024,
@@ -81,12 +92,10 @@ export function formatBytes(bytes: number): string {
 }
 
 /** Thời hạn presigned PUT URL (giây). Đủ dài cho file lớn trên mạng chậm. */
-export const PRESIGN_EXPIRES_SECONDS =
-  Number(process.env.MEDIA_PRESIGN_EXPIRES_SECONDS) || 15 * 60; // 15 phút
+export const PRESIGN_EXPIRES_SECONDS = 15 * 60; // 15 phút
 
 /** Trần size cho đường presigned — file đi thẳng lên R2 nên rộng hơn nhiều. */
-export const MAX_PRESIGNED_BYTES =
-  Number(process.env.MEDIA_MAX_PRESIGNED_BYTES) || 2 * 1024 ** 3; // 2 GB
+export const MAX_PRESIGNED_BYTES = 2 * 1024 ** 3; // 2 GB
 
 /**
  * Key của file trên storage. Dùng CHUNG cho cả hai luồng upload (multipart qua
@@ -108,5 +117,4 @@ export function storageKeyFor(mediaId: string, filename: string): string {
 }
 
 /** Hạn mức lưu trữ hiển thị ở thẻ "Dung lượng lưu trữ" (mặc định 100 GB). */
-export const STORAGE_QUOTA_BYTES =
-  Number(process.env.MEDIA_STORAGE_QUOTA_BYTES) || 100 * 1024 ** 3;
+export const STORAGE_QUOTA_BYTES = 100 * 1024 ** 3;

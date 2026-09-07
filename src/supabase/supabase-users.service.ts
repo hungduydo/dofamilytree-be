@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { getSupabaseSecretKey, getSupabaseUrl, hasSupabaseSecretKey } from './supabase-key';
 
 /**
  * Đọc thông tin tài khoản từ Supabase Auth bằng service role key.
@@ -13,16 +14,13 @@ export class SupabaseUsersService {
   private client: SupabaseClient | null = null;
 
   isConfigured(): boolean {
-    return !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+    return hasSupabaseSecretKey();
   }
 
   /** Lazy — không dựng client ở môi trường (test) không có credentials. */
   private getClient(): SupabaseClient {
     if (!this.client) {
-      this.client = createClient(
-        process.env.SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      );
+      this.client = createClient(getSupabaseUrl(), getSupabaseSecretKey());
     }
     return this.client;
   }

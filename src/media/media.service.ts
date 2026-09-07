@@ -33,6 +33,7 @@ import {
   storageKeyFor,
   MAX_UPLOAD_BYTES,
   VERCEL_BODY_LIMIT_BYTES,
+  FLUID_COMPUTE_ENABLED,
   STORAGE_QUOTA_BYTES,
   MAX_PRESIGNED_BYTES,
   PRESIGN_EXPIRES_SECONDS,
@@ -95,14 +96,15 @@ export class MediaService {
    */
   private warnIfUploadLimitUnreachable(): void {
     if (!process.env.VERCEL) return;
-    const platformLimit = process.env.MEDIA_FLUID_COMPUTE_ENABLED === 'true'
+    const platformLimit = FLUID_COMPUTE_ENABLED
       ? VERCEL_BODY_LIMIT_BYTES.withFluid
       : VERCEL_BODY_LIMIT_BYTES.withoutFluid;
     if (MAX_UPLOAD_BYTES > platformLimit) {
       this.logger.warn(
         `MAX_UPLOAD_BYTES (${formatBytes(MAX_UPLOAD_BYTES)}) > trần request body của Vercel ` +
         `(${formatBytes(platformLimit)}). File ở giữa hai mức sẽ bị platform chặn với 413 ` +
-        `không đọc được. Bật Fluid Compute (và đặt MEDIA_FLUID_COMPUTE_ENABLED=true), ` +
+        `không đọc được. Bật Fluid Compute (và đặt FLUID_COMPUTE_ENABLED=true trong ` +
+        `media.constants.ts), ` +
         `hoặc hướng client sang POST /v2/media/upload-url.`,
       );
     }

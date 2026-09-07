@@ -10,7 +10,8 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { getSupabaseSecretKey, getSupabaseUrl } from '../supabase/supabase-key';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -28,10 +29,18 @@ export { AVAILABLE_ROLES };
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
+  private supabaseClient: SupabaseClient | null = null;
+
+  /**
+   * Lazy — dựng ở field initializer thì thiếu env là chết ngay lúc khởi tạo
+   * module (và test không mock env cũng vỡ). Chỉ cần key khi thật sự gọi Supabase.
+   */
+  private get supabase(): SupabaseClient {
+    if (!this.supabaseClient) {
+      this.supabaseClient = createClient(getSupabaseUrl(), getSupabaseSecretKey());
+    }
+    return this.supabaseClient;
+  }
 
   constructor(
     private readonly prisma: PrismaService,

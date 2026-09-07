@@ -76,12 +76,11 @@ export const CONTACT_ATTACHMENTS_MAX = 3;
  * gãy bằng 413 của CHÍNH NÓ — client nhận lỗi không có message tiếng Việt của
  * ta. Con số này khớp MAX_UPLOAD_BYTES trong frontend/src/lib/apiClient.ts.
  *
- * Media dùng con số RỘNG HƠN NHIỀU (MEDIA_MAX_UPLOAD_BYTES, mặc định 50MB) vì
+ * Media dùng con số RỘNG HƠN NHIỀU (MAX_UPLOAD_BYTES, 50MB) vì
  * nó có đường presigned PUT thẳng lên storage cho file lớn. Contact KHÔNG có
  * đường đó — form gửi một phát multipart — nên phải bám trần platform.
  */
-export const CONTACT_ATTACHMENT_MAX_BYTES =
-  Number(process.env.CONTACT_ATTACHMENT_MAX_BYTES) || 4.5 * 1024 * 1024;
+export const CONTACT_ATTACHMENT_MAX_BYTES = 4.5 * 1024 * 1024;
 
 /**
  * Trần cho TOÀN BỘ body, không chỉ từng file. Ba file 4,4 MB lọt qua kiểm tra

@@ -25,7 +25,10 @@ function arg(name: string): string | undefined {
 
 /** Supabase admin API không có "tìm theo email", nên phải phân trang mà quét. */
 async function findUserIdByEmail(email: string): Promise<string> {
-  const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const supabase = createClient(
+    process.env.SUPABASE_URL!,
+    (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)!,
+  );
   const target = email.trim().toLowerCase();
 
   for (let page = 1; page <= 50; page++) {

@@ -36,6 +36,11 @@ const reflector = new Reflector();
 const TABLE: Array<[string, any, Record<string, Expectation>]> = [
   ['AuthController', AuthController, {
     register: 'open', login: 'open',
+    // Quên mật khẩu: cả hai route CỐ Ý không cần token — người dùng đang bị khoá
+    // ngoài, có token thì đã chẳng cần tới. reset-password tự xác thực bằng
+    // access token recovery trong body (auth.service.ts:252 gọi Supabase để
+    // validate), không phải bằng JWT của app.
+    forgotPassword: 'open', resetPassword: 'open',
     logout: 'auth', changePassword: 'auth', getMe: 'auth', getRoles: 'auth',
     listUsers: 'admin', assignRoles: 'admin', linkMember: 'admin', unlinkMember: 'admin',
   }],
