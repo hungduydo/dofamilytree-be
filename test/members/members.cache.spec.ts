@@ -12,6 +12,8 @@ import {
   MEMBERS_CACHE_TTL_STATS,
 } from '../../src/members/members.cache-keys';
 import { CONTACT_INFO_CACHE_KEYS } from '../../src/contact/contact.cache-keys';
+import { CACHE_KEY_FULL, CACHE_KEY_STATS } from '../../src/tree/tree.cache-keys';
+import { MEMORIAL_CACHE_KEYS } from '../../src/memorial/memorial.cache-keys';
 
 /**
  * Cache ba endpoint public: hit (bỏ qua DB) / miss (ghi cache) / Redis chết
@@ -115,6 +117,9 @@ describe('MembersService — caching', () => {
       expect(mockRedis.del).toHaveBeenCalledWith(
         CACHE_KEY_MEMBERS_COMMITTEE, CACHE_KEY_MEMBERS_NOTABLE, CACHE_KEY_MEMBERS_STATS,
         ...CONTACT_INFO_CACHE_KEYS,
+        // lifeStatus hiện trên thống kê, dấu † của cây và danh sách tổ tiên.
+        CACHE_KEY_STATS, CACHE_KEY_FULL,
+        ...MEMORIAL_CACHE_KEYS,
       );
     };
 

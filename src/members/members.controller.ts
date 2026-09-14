@@ -17,6 +17,7 @@ import { CanSeePii, CurrentMeta } from '../auth/caller-meta.decorator';
 import { CallerMeta } from '../auth/user-meta';
 import { MembersService, MEMBER_SORT_FIELDS, MEMBER_GENDERS, MemberSortField, SortOrder } from './members.service';
 import { MEMBER_VIEWS, resolveView } from './members.view';
+import { LIFE_STATUSES } from './life-status';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
 import {
@@ -84,6 +85,7 @@ export class MembersController {
   @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'] })
   @ApiQuery({ name: 'tree_id', required: false, type: String, description: 'Lọc theo chi nhánh (UUID, FK tới Tree). Dropdown lấy từ GET /v2/tree.' })
   @ApiQuery({ name: 'gender', required: false, enum: MEMBER_GENDERS, description: 'Lọc theo giới tính' })
+  @ApiQuery({ name: 'lifeStatus', required: false, enum: LIFE_STATUSES, description: 'Lọc theo trạng thái sống/mất (UNKNOWN = cần bổ sung)' })
   @ApiQuery({
     name: 'view',
     required: false,
@@ -111,10 +113,11 @@ export class MembersController {
     @Query('tree_id') treeId?: string,
     @Query('gender') gender?: string,
     @CanSeePii() canSeePii?: boolean,
+    @Query('lifeStatus') lifeStatus?: string,
   ) {
     return this.membersService.getAllMembers(
       page, pageSize, name, generation, sortBy, sortOrder,
-      resolveView(view), treeId, gender, canSeePii,
+      resolveView(view), treeId, gender, canSeePii, lifeStatus,
     );
   }
 

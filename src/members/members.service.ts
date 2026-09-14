@@ -27,6 +27,9 @@ import { CallerMeta, ANONYMOUS_META } from '../auth/user-meta';
 import { CONTACT_INFO_CACHE_KEYS } from '../contact/contact.cache-keys';
 import { committeeRoleLabel } from './committee-role';
 import { hasAtLeast } from '../auth/roles.constants';
+import { CACHE_KEY_FULL, CACHE_KEY_STATS } from '../tree/tree.cache-keys';
+import { MEMORIAL_CACHE_KEYS } from '../memorial/memorial.cache-keys';
+import { LifeStatus, deriveLifeStatus, hasRealDeathDate, isLifeStatus } from './life-status';
 import {
   MEMBER_LITE_SELECT,
   MEMBER_TABLE_SELECT,
@@ -195,6 +198,7 @@ export class MembersService {
     treeId?: string,
     gender?: string,
     canSeePii = false,
+    lifeStatus?: string,
   ) {
     // `take` phải tính TRƯỚC rồi mới suy ra `skip`. Trước đây `skip` dùng
     // `pageSize` chưa cap trong khi `take` cap ở 100, nên ?pageSize=1000&page=2
@@ -207,6 +211,7 @@ export class MembersService {
       ...(generation !== undefined ? { generation } : {}),
       ...(treeId ? { tree_id: treeId } : {}),
       ...(gender && (MEMBER_GENDERS as readonly string[]).includes(gender) ? { gender } : {}),
+      ...(isLifeStatus(lifeStatus) ? { lifeStatus } : {}),
     };
 
     const field: MemberSortField = MEMBER_SORT_FIELDS.includes(sortBy) ? sortBy : 'created_at';
@@ -323,6 +328,7 @@ export class MembersService {
           gender: dto.gender,
           birthDate: dto.birthDate,
           deathDate: dto.deathDate,
+          lifeStatus: this.resolveLifeStatus(dto.lifeStatus, dto.deathDate, dto),
           tree_id: dto.tree_id,
           // Giá trị nhập tay hiện ngay, không phải chờ job nền chạy xong.
           generation: dto.generation ?? null,
@@ -384,7 +390,37 @@ export class MembersService {
     // (Đã bị đúng lỗi này trong lúc kiểm thử /bo/contact, chứ không phải lo xa.)
     //
     // Xoá CẢ HAI biến thể pii/public — xem contact.cache-keys.ts.
-    return this.cache.del(...MEMBERS_CACHE_KEYS, ...CONTACT_INFO_CACHE_KEYS);
+    //
+    // tree:stats / tree:chart:full / memorial:* đi kèm vì cả ba đọc lifeStatus
+    // (số đã mất, dấu † trên cây, danh sách tổ tiên).
+    return this.cache.del(
+      ...MEMBERS_CACHE_KEYS,
+      ...CONTACT_INFO_CACHE_KEYS,
+      CACHE_KEY_STATS,
+      CACHE_KEY_FULL,
+      ...MEMORIAL_CACHE_KEYS,
+    );
+  }
+
+  /**
+   * Quy tắc ghi lifeStatus (dùng cho cả create lẫn update):
+   *   - có deathDate thật ⇒ luôn DECEASED; kèm ALIVE tường minh ⇒ 400;
+   *   - có lifeStatus tường minh ⇒ dùng nó;
+   *   - không có gì (chỉ create) ⇒ suy từ deathDate/birthDate — DECEASED hoặc UNKNOWN.
+   */
+  private resolveLifeStatus(
+    requested: LifeStatus | undefined,
+    deathDate: string | null | undefined,
+    derivedFrom?: { birthDate?: string | null },
+  ): LifeStatus {
+    if (hasRealDeathDate(deathDate)) {
+      if (requested === 'ALIVE') {
+        throw new BadRequestException('Thành viên có ngày mất thì không thể đánh dấu là còn sống');
+      }
+      return 'DECEASED';
+    }
+    if (requested) return requested;
+    return deriveLifeStatus({ deathDate, birthDate: derivedFrom?.birthDate }).status;
   }
 
   /**
@@ -433,6 +469,16 @@ export class MembersService {
     });
     if (!existing) throw new NotFoundException(`Member ${id} not found`);
 
+    // Chỉ đụng tới lifeStatus khi request có nhắc tới nó hoặc tới deathDate.
+    // Xoá deathDate KHÔNG tự đổi trạng thái: người mất không rõ ngày vẫn là DECEASED.
+    const nextLifeStatus =
+      dto.lifeStatus !== undefined || dto.deathDate !== undefined
+        ? this.resolveLifeStatus(
+            dto.lifeStatus ?? (existing.lifeStatus as LifeStatus),
+            dto.deathDate !== undefined ? dto.deathDate : existing.deathDate,
+          )
+        : undefined;
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const memberData: any = {};
       if (dto.fullName) {
@@ -442,6 +488,7 @@ export class MembersService {
       if (dto.gender) memberData.gender = dto.gender;
       if (dto.birthDate !== undefined) memberData.birthDate = dto.birthDate;
       if (dto.deathDate !== undefined) memberData.deathDate = dto.deathDate;
+      if (nextLifeStatus !== undefined) memberData.lifeStatus = nextLifeStatus;
       if (dto.tree_id !== undefined) memberData.tree_id = dto.tree_id;
       // Mirror giá trị nhập tay sang cột hiệu lực để editor thấy ngay; job nền
       // sau đó lan nó xuống hậu duệ.

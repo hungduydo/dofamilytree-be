@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 
 /**
  * Projection cho thẻ tổ tiên. Cố ý KHÔNG lấy nguyên row Member: thẻ chỉ cần
- * sáu cột, còn `profile` mang cả PII (phone/address) mà đây là endpoint public.
+ * sáu cột (mọi dòng ở đây đều DECEASED nên không cần lifeStatus), còn `profile` mang cả PII (phone/address) mà đây là endpoint public.
  */
 export const MEMORIAL_ANCESTOR_SELECT = {
   id: true,

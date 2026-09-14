@@ -4,6 +4,7 @@ import {
   IsString, IsOptional, MaxLength, MinLength, IsIn, IsUUID, IsEmail, IsArray,
 } from 'class-validator';
 import { CLAN_ROLES, toRoleTagsArray } from './create-member.dto';
+import { LIFE_STATUSES, LifeStatus } from '../life-status';
 
 export class UpdateMemberDto {
   @ApiPropertyOptional()
@@ -27,6 +28,14 @@ export class UpdateMemberDto {
   @IsOptional()
   @IsString()
   deathDate?: string;
+
+  @ApiPropertyOptional({
+    enum: LIFE_STATUSES,
+    description: 'Có deathDate thật ⇒ luôn DECEASED; ALIVE kèm deathDate thật ⇒ 400. Xoá deathDate KHÔNG tự đổi trạng thái.',
+  })
+  @IsOptional()
+  @IsIn(LIFE_STATUSES)
+  lifeStatus?: LifeStatus;
 
   @ApiPropertyOptional()
   @IsOptional()

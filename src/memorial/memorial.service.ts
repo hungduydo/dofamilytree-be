@@ -19,6 +19,7 @@ import {
   memorialTributesKey,
 } from './memorial.cache-keys';
 import { MEMORIAL_ANCESTOR_SELECT, MEMORIAL_TRIBUTE_SELECT } from './memorial.select';
+import { DECEASED_WHERE } from '../members/life-status';
 import type {
   BurnIncenseResponseDto,
   MemorialAncestorDto,
@@ -38,21 +39,11 @@ const MAX_PAGE_SIZE = 100;
 const ANONYMOUS_AUTHOR = 'Thành viên dòng họ';
 
 /**
- * "Đã khuất" = có ngày mất THẬT. api-memorial.md §2 nói "deathDate khác null",
- * nhưng dữ liệu thật KHÔNG chỉ có null: 12/25 member có `deathDate = ''` (chuỗi
- * rỗng do form v1 gửi lên) và tất cả đều còn sống. Chỉ lọc `not: null` là gần
- * một nửa danh sách tổ tiên thành người đang sống — trong đó có cả người bị gắn
- * nhãn "Thủy tổ".
- *
- * `deathDate` là String tự do chứ không phải DateTime, nên đây là chỗ duy nhất
- * biết cách đọc nó. Mọi query "người đã khuất" trong module này PHẢI dùng hằng
- * này, và index members_deceased_order_idx (005_memorial.sql) có mệnh đề WHERE
- * khớp CHÍNH XÁC với nó — sửa một bên phải sửa bên kia, nếu không index ngừng
- * phục vụ và query rơi về seq scan.
+ * "Đã khuất" = `lifeStatus = DECEASED`, KHÔNG suy từ deathDate nữa: tổ tiên các
+ * đời đầu đã mất mà không ai biết ngày. Định nghĩa + lý do nằm ở
+ * src/members/life-status.ts; re-export để import cũ vẫn chạy.
  */
-export const DECEASED_WHERE: Prisma.MemberWhereInput = {
-  AND: [{ deathDate: { not: null } }, { deathDate: { not: '' } }],
-};
+export { DECEASED_WHERE };
 
 /** Người gọi, lấy từ req.user (jwt.strategy.validate). */
 export interface MemorialCaller {
@@ -108,12 +99,11 @@ export class MemorialService {
   }
 
   /**
-   * Tổ tiên = member CÓ ngày mất. Không cờ riêng, không bảng tuyển chọn — xem
-   * api-memorial.md §2.
+   * Tổ tiên = member có lifeStatus DECEASED (có hoặc không có ngày mất).
    *
    * Thứ tự: generation ASC NULLS LAST, deathDate ASC, name ASC, id ASC. `id` là
    * tiebreaker để phân trang ổn định (cùng quy ước với getAllMembers). Index
-   * members_deceased_order_idx (partial, 005_memorial.sql) phục vụ trọn bộ lọc +
+   * members_deceased_order_idx_v2 (partial, 008_member_life_status.sql) phục vụ trọn bộ lọc +
    * sắp xếp + phân trang.
    */
   async getAncestors(page: number, pageSize: number) {
@@ -146,12 +136,11 @@ export class MemorialService {
       // "Thủy tổ" = thế hệ THẤP NHẤT của CẢ CÂY, không hardcode 1: cây này bắt
       // rễ ở đời 0, cây khác có thể nhập từ đời 2 trở đi.
       //
-      // CỐ Ý tính trên toàn bộ members chứ KHÔNG chỉ trên người đã khuất. Trên
-      // dữ liệu hiện tại, người ở đời gốc chưa được nhập ngày mất nên không có
-      // mặt trong danh sách này, và kết quả là KHÔNG AI mang nhãn "Thủy tổ" —
-      // đúng như mong muốn. Nếu tính _min chỉ trong nhóm đã khuất thì người đời
-      // thấp nhất CÒN LẠI sẽ bị phong nhầm là thủy tổ dù cha ông họ vẫn nằm
-      // trong cây. Thiếu nhãn còn hơn gắn sai nhãn.
+      // CỐ Ý tính trên toàn bộ members chứ KHÔNG chỉ trên người đã khuất: nếu
+      // người đời gốc chưa được đánh dấu DECEASED thì KHÔNG AI mang nhãn "Thủy
+      // tổ". Tính _min chỉ trong nhóm đã khuất sẽ phong nhầm người đời thấp nhất
+      // CÒN LẠI là thủy tổ dù cha ông họ vẫn nằm trong cây. Thiếu nhãn còn hơn
+      // gắn sai nhãn.
       this.prisma.member.aggregate({ _min: { generation: true } }),
     ]);
 
@@ -301,11 +290,11 @@ export class MemorialService {
   private async assertDeceasedMember(memberId: string): Promise<void> {
     const member = await this.prisma.member.findUnique({
       where: { id: memberId },
-      select: { id: true, deathDate: true },
+      select: { id: true, lifeStatus: true },
     });
     if (!member) throw new NotFoundException('Không tìm thấy thành viên này');
-    // Chuỗi rỗng = chưa nhập ngày mất, tức là còn sống — xem DECEASED_WHERE.
-    if (member.deathDate == null || member.deathDate.trim() === '') {
+    // UNKNOWN cũng bị chặn: chưa xác nhận đã mất thì không lập bàn thờ.
+    if (member.lifeStatus !== 'DECEASED') {
       throw new UnprocessableEntityException(
         'Chỉ có thể dâng hương và lời tưởng niệm cho người đã khuất',
       );

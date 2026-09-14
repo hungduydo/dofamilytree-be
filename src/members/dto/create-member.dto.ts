@@ -3,6 +3,7 @@ import { Transform } from 'class-transformer';
 import {
   IsString, IsNotEmpty, MaxLength, MinLength, IsOptional, IsIn, IsUUID, IsEmail, IsArray,
 } from 'class-validator';
+import { LIFE_STATUSES, LifeStatus } from '../life-status';
 
 /** Normalise roleTags coming from multipart (single value → string) or JSON into a string[]. */
 export const toRoleTagsArray = ({ value }: { value: unknown }): string[] | undefined => {
@@ -41,6 +42,14 @@ export class CreateMemberDto {
   @IsOptional()
   @IsString()
   deathDate?: string;
+
+  @ApiPropertyOptional({
+    enum: LIFE_STATUSES,
+    description: 'Bỏ trống ⇒ suy từ deathDate/birthDate (DECEASED hoặc UNKNOWN). Có deathDate thật ⇒ luôn DECEASED.',
+  })
+  @IsOptional()
+  @IsIn(LIFE_STATUSES)
+  lifeStatus?: LifeStatus;
 
   @ApiPropertyOptional({ example: 'Kỹ sư phần mềm' })
   @IsOptional()

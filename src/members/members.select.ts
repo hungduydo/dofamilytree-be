@@ -25,6 +25,7 @@ export const MEMBER_LITE_SELECT = {
   name: true,
   avatar_url: true,
   generation: true,
+  lifeStatus: true,
 } satisfies Prisma.MemberSelect;
 
 /**
@@ -50,6 +51,7 @@ export const MEMBER_TABLE_SELECT = {
   gender: true,
   birthDate: true,
   deathDate: true,
+  lifeStatus: true,
   tree_id: true,
   generation: true,
   created_at: true,

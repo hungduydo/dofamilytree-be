@@ -4,6 +4,7 @@ import { Redis as UpstashRedis } from '@upstash/redis';
 import { SafeCache } from '../utils/safe-cache';
 
 import { CACHE_KEY_FULL, CACHE_KEY_STATS, CACHE_TTL } from './tree.cache-keys';
+import { computeTreeStats } from './tree-stats';
 import { Prisma } from '@prisma/client';
 
 // memberToNode chỉ đọc profile.fullName và profile.generation — kéo cả row
@@ -31,6 +32,7 @@ export interface FamilyChartNode {
     birthday?: string;
     avatar?: string;
     generation?: number;
+    lifeStatus?: string;
     desc?: string;
   };
 }
@@ -178,7 +180,7 @@ export class TreeService {
     // Only trust the cache if it carries the full shape the dashboard needs;
     // older cache entries (or the background task's partial shape) are ignored
     // so the UI never renders with missing fields.
-    if (cached && 'born20th21st' in cached && 'lastUpdate' in cached) {
+    if (cached && 'born20th21st' in cached && 'lastUpdate' in cached && 'alive' in cached) {
       return { ...cached, cacheStatus: 'hit' };
     }
 
@@ -187,44 +189,9 @@ export class TreeService {
     return { ...report, cacheStatus: 'miss' };
   }
 
-  // Computes the full report shape the frontend dashboard expects:
-  // { totalMembers, generations, deceased, born20th21st, lastUpdate }.
-  // `generation`/`totalGenerations` kept as aliases for backward compat.
+  // Full report shape the frontend dashboard expects — see tree-stats.ts.
   async computeStats() {
-    const [totalMembers, deceasedCount, maxGen, birthMembers, latestProfile] =
-      await Promise.all([
-        this.prisma.member.count(),
-        this.prisma.member.count({ where: { deathDate: { not: null } } }),
-        // Phải khớp với TasksService.handleReportGenerate — xem chú thích ở đó.
-        this.prisma.member.aggregate({ _max: { generation: true } }),
-        this.prisma.member.findMany({
-          where: { birthDate: { not: null } },
-          select: { birthDate: true },
-        }),
-        this.prisma.profile.aggregate({ _max: { updated_at: true } }),
-      ]);
-
-    // birthDate is a free-form String; count those parsing to a year in 1901–2100.
-    let born20th21st = 0;
-    for (const m of birthMembers) {
-      const year = new Date(m.birthDate as string).getFullYear();
-      if (year >= 1901 && year <= 2100) born20th21st++;
-    }
-
-    const generations = maxGen._max.generation || 0;
-    const lastUpdate = latestProfile._max.updated_at
-      ? latestProfile._max.updated_at.toISOString().split('T')[0]
-      : null;
-
-    return {
-      totalMembers,
-      generations,
-      totalGenerations: generations, // backward-compat alias
-      deceased: deceasedCount,
-      born20th21st,
-      lastUpdate,
-      generatedAt: new Date().toISOString(),
-    };
+    return computeTreeStats(this.prisma);
   }
 
   // ─── Tree CRUD ────────────────────────────────────────────────────────────
@@ -301,7 +268,12 @@ export class TreeService {
         avatar: m.avatar_url || undefined,
         // `??` chứ không phải `||`: thế hệ 0 nếu có phải sống sót.
         generation: m.generation ?? m.profile?.generation ?? undefined,
-        desc: m.deathDate ? `† ${m.deathDate}` : undefined,
+        lifeStatus: m.lifeStatus,
+        // Người mất không rõ ngày vẫn mang dấu †.
+        desc:
+          m.lifeStatus === 'DECEASED'
+            ? m.deathDate?.trim() ? `† ${m.deathDate}` : '†'
+            : undefined,
       },
     };
   }

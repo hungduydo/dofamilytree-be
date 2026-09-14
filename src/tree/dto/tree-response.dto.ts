@@ -38,6 +38,9 @@ export class FamilyChartDataDto {
   @ApiPropertyOptional()
   generation?: number;
 
+  @ApiPropertyOptional({ enum: ['ALIVE', 'DECEASED', 'UNKNOWN'] })
+  lifeStatus?: string;
+
   @ApiPropertyOptional()
   desc?: string;
 }
@@ -98,8 +101,14 @@ export class StatsResponseDto {
   @ApiProperty({ example: 5, description: 'Alias của generations (backward-compat)' })
   totalGenerations: number;
 
-  @ApiProperty({ example: 30, description: 'Số thành viên đã mất' })
+  @ApiProperty({ example: 30, description: 'Số thành viên đã mất (lifeStatus = DECEASED)' })
   deceased: number;
+
+  @ApiProperty({ example: 60, description: 'Số thành viên còn sống (lifeStatus = ALIVE)' })
+  alive: number;
+
+  @ApiProperty({ example: 30, description: 'Số thành viên chưa rõ sống/mất (lifeStatus = UNKNOWN)' })
+  unknownLifeStatus: number;
 
   @ApiProperty({ example: 80, description: 'Sinh trong khoảng 1901–2100' })
   born20th21st: number;

@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { LIFE_STATUSES, LifeStatus } from '../life-status';
 
 /** Mirrors the Prisma `Profile` model returned via `include: { profile: true }`. */
 export class ProfileResponseDto {
@@ -119,6 +120,9 @@ export class MemberResponseDto {
 
   @ApiPropertyOptional({ nullable: true, example: '2020-12-31' })
   deathDate: string | null;
+
+  @ApiProperty({ enum: LIFE_STATUSES, description: 'Nguồn sự thật cho sống/mất — KHÔNG suy từ deathDate' })
+  lifeStatus: LifeStatus;
 
   @ApiPropertyOptional({ nullable: true, format: 'uuid', description: 'Chi nhánh — FK tới Tree' })
   tree_id: string | null;
@@ -254,6 +258,9 @@ export class MemberTableDto {
 
   @ApiPropertyOptional({ nullable: true, example: '2020-12-31' })
   deathDate: string | null;
+
+  @ApiProperty({ enum: LIFE_STATUSES })
+  lifeStatus: LifeStatus;
 
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   tree_id: string | null;

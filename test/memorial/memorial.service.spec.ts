@@ -20,10 +20,10 @@ const mockRedis = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
 const mockSupabase = { getDisplayName: jest.fn() };
 
 const CALLER = { id: 'u_1', displayName: null, profileMemberId: null };
-const DECEASED = { id: 'm_1', deathDate: '1905-01-01' };
-const ALIVE = { id: 'm_2', deathDate: null };
-// Dữ liệu THẬT: 12/480 member mang chuỗi rỗng thay vì null và tất cả đều còn sống.
-const ALIVE_EMPTY_STRING = { id: 'm_3', deathDate: '' };
+const DECEASED = { id: 'm_1', lifeStatus: 'DECEASED' };
+const ALIVE = { id: 'm_2', lifeStatus: 'ALIVE' };
+// Chưa xác nhận đã mất thì chưa lập bàn thờ.
+const UNKNOWN = { id: 'm_3', lifeStatus: 'UNKNOWN' };
 
 describe('MemorialService', () => {
   let service: MemorialService;
@@ -66,14 +66,15 @@ describe('MemorialService', () => {
     it.each([
       ['burnIncense', (s: MemorialService) => s.burnIncense(CALLER, 'm_3')],
       ['createTribute', (s: MemorialService) => s.createTribute(CALLER, 'x'.repeat(20), 'm_3')],
-    ])('%s: deathDate là CHUỖI RỖNG cũng là còn sống → 422', async (_name, call) => {
-      mockPrisma.member.findUnique.mockResolvedValue(ALIVE_EMPTY_STRING);
+    ])('%s: trạng thái UNKNOWN → 422', async (_name, call) => {
+      mockPrisma.member.findUnique.mockResolvedValue(UNKNOWN);
       await expect(call(service)).rejects.toThrow(UnprocessableEntityException);
     });
 
-    it('deathDate toàn khoảng trắng vẫn là còn sống → 422', async () => {
-      mockPrisma.member.findUnique.mockResolvedValue({ id: 'm_4', deathDate: '   ' });
-      await expect(service.burnIncense(CALLER, 'm_4')).rejects.toThrow(UnprocessableEntityException);
+    it('chỉ đọc lifeStatus, KHÔNG suy từ deathDate', async () => {
+      mockPrisma.member.findUnique.mockResolvedValue(null);
+      await expect(service.burnIncense(CALLER, 'm_x')).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.member.findUnique.mock.calls[0][0].select).toEqual({ id: true, lifeStatus: true });
     });
 
     it('không truyền memberId (gửi tổ tiên nói chung) thì KHÔNG kiểm tra member nào', async () => {
@@ -211,12 +212,9 @@ describe('MemorialService', () => {
     it('lọc đúng "đã khuất thật" và sắp xếp generation NULLS LAST', async () => {
       await service.getAncestors(2, 6);
       const args = mockPrisma.member.findMany.mock.calls[0][0];
-      // Phải loại CẢ null LẪN chuỗi rỗng, khớp mệnh đề WHERE của
-      // members_deceased_order_idx — lệch là mất index.
+      // Khớp mệnh đề WHERE của members_deceased_order_idx_v2 — lệch là mất index.
       expect(args.where).toEqual(DECEASED_WHERE);
-      expect(args.where).toEqual({
-        AND: [{ deathDate: { not: null } }, { deathDate: { not: '' } }],
-      });
+      expect(args.where).toEqual({ lifeStatus: 'DECEASED' });
       expect(args.skip).toBe(6);
       expect(args.orderBy[0]).toEqual({ generation: { sort: 'asc', nulls: 'last' } });
       // `id` cuối cùng để phân trang ổn định.

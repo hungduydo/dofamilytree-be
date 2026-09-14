@@ -6,6 +6,8 @@ import { GenerationService } from '../generation/generation.service';
 import { StorageService } from '../storage/storage.service';
 import { mediaProgressKey, MEDIA_PROGRESS_TTL, MEDIA_CACHE_KEYS } from '../media/media.cache-keys';
 import { storageKeyFor } from '../media/media.constants';
+import { computeTreeStats } from '../tree/tree-stats';
+import { CACHE_KEY_STATS, CACHE_TTL } from '../tree/tree.cache-keys';
 
 export type MediaUploadProgress = {
   status: 'pending' | 'processing' | 'ready' | 'failed';
@@ -64,46 +66,11 @@ export class TasksService {
     this.logger.log('Generating family tree report...');
 
     try {
-      const [totalMembers, maxGenMember, deceasedCount, birthMembers, latestProfile] =
-        await Promise.all([
-          this.prisma.member.count(),
-          // members.generation là giá trị HIỆU LỰC (nhập tay ưu tiên, ngược lại
-          // suy ra), nên đây mới là độ sâu thật của dòng họ. profiles.generation
-          // gần như luôn null vì không ai nhập tay.
-          this.prisma.member.aggregate({ _max: { generation: true } }),
-          this.prisma.member.count({ where: { deathDate: { not: null } } }),
-          this.prisma.member.findMany({
-            where: { birthDate: { not: null } },
-            select: { birthDate: true },
-          }),
-          this.prisma.profile.aggregate({ _max: { updated_at: true } }),
-        ]);
+      // Dùng chung với TreeService.computeStats() nên cache hit luôn đủ field.
+      const report = await computeTreeStats(this.prisma);
 
-      let born20th21st = 0;
-      for (const m of birthMembers) {
-        const year = new Date(m.birthDate as string).getFullYear();
-        if (year >= 1901 && year <= 2100) born20th21st++;
-      }
-
-      const generations = maxGenMember._max.generation || 0;
-      const lastUpdate = latestProfile._max.updated_at
-        ? latestProfile._max.updated_at.toISOString().split('T')[0]
-        : null;
-
-      // Must match TreeService.computeStats() so cache hits carry every field
-      // the dashboard reads.
-      const report = {
-        totalMembers,
-        generations,
-        totalGenerations: generations, // backward-compat alias
-        deceased: deceasedCount,
-        born20th21st,
-        lastUpdate,
-        generatedAt: new Date().toISOString(),
-      };
-
-      await this.redis.set('tree:stats', JSON.stringify(report), { ex: 3600 });
-      this.logger.log(`Report generated and cached: ${totalMembers} members`);
+      await this.redis.set(CACHE_KEY_STATS, JSON.stringify(report), { ex: CACHE_TTL });
+      this.logger.log(`Report generated and cached: ${report.totalMembers} members`);
     } catch (error) {
       this.logger.error('Failed to generate report', error);
       throw error;

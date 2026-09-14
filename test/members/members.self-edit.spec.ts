@@ -86,6 +86,8 @@ describe('MembersService.updateMemberProfile — quyền sửa', () => {
       ['clanRole', { clanRole: 'truong-toc' }],
       ['roleTags', { roleTags: ['vip'] }],
       ['notes', { notes: 'tự ghi chú' }],
+      // Người tự sửa hồ sơ của mình đang sống; trạng thái do ban quản trị quản lý.
+      ['lifeStatus', { lifeStatus: 'DECEASED' }],
     ])('gửi kèm %s → 400, KHÔNG ghi gì', async (_field, patch) => {
       await expect(
         service.updateMemberProfile(OWN_ID, patch as any, undefined, member),

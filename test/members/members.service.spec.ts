@@ -79,6 +79,34 @@ describe('MembersService', () => {
       await expect(service.createMember({ fullName: '', gender: 'M' })).rejects.toThrow(BadRequestException);
     });
 
+    describe('lifeStatus', () => {
+      beforeEach(() => {
+        mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
+        mockPrisma.member.create.mockResolvedValue({ id: 'uuid-1' });
+        mockPrisma.profile.create.mockResolvedValue({ id: 'p-1' });
+      });
+      const createdStatus = () => mockPrisma.member.create.mock.calls[0][0].data.lifeStatus;
+
+      it.each([
+        ['không có gì → UNKNOWN (không tự suy ALIVE)', { birthDate: '1990-01-01' }, 'UNKNOWN'],
+        ['deathDate rỗng → UNKNOWN', { deathDate: '' }, 'UNKNOWN'],
+        ['có deathDate thật → DECEASED', { deathDate: '2001-02-03' }, 'DECEASED'],
+        ['sinh quá 110 năm → DECEASED', { birthDate: '1800' }, 'DECEASED'],
+        ['truyền tường minh ALIVE → ALIVE', { lifeStatus: 'ALIVE' }, 'ALIVE'],
+        ['DECEASED không có ngày mất → DECEASED', { lifeStatus: 'DECEASED' }, 'DECEASED'],
+      ])('%s', async (_name, patch, expected) => {
+        await service.createMember({ fullName: 'Nguyễn Văn A', gender: 'M', ...patch } as any);
+        expect(createdStatus()).toBe(expected);
+      });
+
+      it('ALIVE kèm deathDate thật → 400', async () => {
+        await expect(
+          service.createMember({ fullName: 'A', gender: 'M', deathDate: '2001', lifeStatus: 'ALIVE' } as any),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockPrisma.member.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('should queue notification after create', async () => {
       const dto = { fullName: 'Test Member', gender: 'F' };
       mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
@@ -233,6 +261,58 @@ describe('MembersService', () => {
 
       const result = await service.updateMemberProfile('uuid-1', { fullName: 'Updated', gender: 'M' }, undefined, EDITOR_CALLER);
       expect(result).toHaveProperty('id', 'uuid-1');
+    });
+
+    describe('lifeStatus', () => {
+      const existing = (patch: object) =>
+        mockPrisma.member.findUnique.mockResolvedValue({
+          id: 'uuid-1', profile: { id: 'p-1' }, deathDate: null, lifeStatus: 'UNKNOWN', ...patch,
+        });
+      beforeEach(() => {
+        mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
+        mockPrisma.member.update.mockResolvedValue({ id: 'uuid-1' });
+        mockPrisma.profile.update.mockResolvedValue({ id: 'p-1' });
+      });
+      const updatedData = () => mockPrisma.member.update.mock.calls[0][0].data;
+
+      it('không nhắc tới lifeStatus/deathDate → không đụng cột', async () => {
+        existing({});
+        await service.updateMemberProfile('uuid-1', { occupation: 'X' } as any, undefined, EDITOR_CALLER);
+        expect(updatedData()).not.toHaveProperty('lifeStatus');
+      });
+
+      it('thêm deathDate thật → ép DECEASED', async () => {
+        existing({ lifeStatus: 'UNKNOWN' });
+        await service.updateMemberProfile('uuid-1', { deathDate: '2010-05-05' } as any, undefined, EDITOR_CALLER);
+        expect(updatedData().lifeStatus).toBe('DECEASED');
+      });
+
+      it('xoá deathDate KHÔNG tự chuyển về còn sống', async () => {
+        existing({ deathDate: '2010', lifeStatus: 'DECEASED' });
+        await service.updateMemberProfile('uuid-1', { deathDate: '' } as any, undefined, EDITOR_CALLER);
+        expect(updatedData().lifeStatus).toBe('DECEASED');
+      });
+
+      it('đặt ALIVE khi member đang có deathDate thật → 400', async () => {
+        existing({ deathDate: '2010', lifeStatus: 'DECEASED' });
+        await expect(
+          service.updateMemberProfile('uuid-1', { lifeStatus: 'ALIVE' } as any, undefined, EDITOR_CALLER),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockPrisma.member.update).not.toHaveBeenCalled();
+      });
+
+      it('xoá deathDate và đặt ALIVE cùng lúc → được', async () => {
+        existing({ deathDate: '2010', lifeStatus: 'DECEASED' });
+        await service.updateMemberProfile('uuid-1', { deathDate: '', lifeStatus: 'ALIVE' } as any, undefined, EDITOR_CALLER);
+        expect(updatedData().lifeStatus).toBe('ALIVE');
+      });
+
+      it('xoá cache tree:stats, tree:chart:full và memorial sau khi ghi', async () => {
+        existing({});
+        await service.updateMemberProfile('uuid-1', { lifeStatus: 'DECEASED' } as any, undefined, EDITOR_CALLER);
+        const deletedKeys = mockRedis.del.mock.calls.flat();
+        expect(deletedKeys).toEqual(expect.arrayContaining(['tree:stats', 'tree:chart:full', 'memorial:stats']));
+      });
     });
 
     it('should throw NotFoundException when member not found', async () => {

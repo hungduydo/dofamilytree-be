@@ -9,6 +9,7 @@ const mockPrisma = {
     findUnique: jest.fn(),
     count: jest.fn(),
     aggregate: jest.fn(),
+    groupBy: jest.fn(),
   },
   profile: {
     aggregate: jest.fn(),
@@ -180,9 +181,12 @@ describe('TreeService', () => {
   describe('getStats', () => {
     it('should return full dashboard stats shape from DB on cache miss', async () => {
       mockRedis.get.mockResolvedValue(null);
-      mockPrisma.member.count
-        .mockResolvedValueOnce(50) // total
-        .mockResolvedValueOnce(10); // deceased
+      mockPrisma.member.count.mockResolvedValueOnce(50); // total
+      mockPrisma.member.groupBy.mockResolvedValue([
+        { lifeStatus: 'DECEASED', _count: { _all: 10 } },
+        { lifeStatus: 'ALIVE', _count: { _all: 25 } },
+        { lifeStatus: 'UNKNOWN', _count: { _all: 15 } },
+      ]);
       // generations giờ đọc từ members.generation (giá trị hiệu lực), còn
       // lastUpdate vẫn từ profiles.updated_at.
       mockPrisma.member.aggregate.mockResolvedValue({ _max: { generation: 5 } });
@@ -200,6 +204,9 @@ describe('TreeService', () => {
       expect(result.generations).toBe(5);
       expect(result.totalGenerations).toBe(5); // backward-compat alias
       expect(result.deceased).toBe(10);
+      expect(result.alive).toBe(25);
+      expect(result.unknownLifeStatus).toBe(15);
+      expect(mockPrisma.member.groupBy).toHaveBeenCalledWith({ by: ['lifeStatus'], _count: { _all: true } });
       expect(result.born20th21st).toBe(1);
       expect(result.lastUpdate).toBe('2024-01-15');
       expect(result.cacheStatus).toBe('miss');
@@ -207,7 +214,7 @@ describe('TreeService', () => {
 
     it('returns cache hit only when cached entry has the full shape', async () => {
       mockRedis.get.mockResolvedValue(JSON.stringify({
-        totalMembers: 10, generations: 3, deceased: 2,
+        totalMembers: 10, generations: 3, deceased: 2, alive: 5, unknownLifeStatus: 3,
         born20th21st: 5, lastUpdate: '2024-01-01', generatedAt: new Date().toISOString(),
       }));
 
@@ -222,7 +229,8 @@ describe('TreeService', () => {
       mockRedis.get.mockResolvedValue(JSON.stringify({
         totalMembers: 10, totalGenerations: 3, deceased: 2, generatedAt: new Date().toISOString(),
       }));
-      mockPrisma.member.count.mockResolvedValueOnce(10).mockResolvedValueOnce(2);
+      mockPrisma.member.count.mockResolvedValueOnce(10);
+      mockPrisma.member.groupBy.mockResolvedValue([]);
       mockPrisma.member.aggregate.mockResolvedValue({ _max: { generation: 3 } });
       mockPrisma.profile.aggregate.mockResolvedValue({ _max: { updated_at: null } });
       mockPrisma.member.findMany.mockResolvedValue([]);

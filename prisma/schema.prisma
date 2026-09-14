@@ -24,6 +24,10 @@ model Member {
   gender                String?
   birthDate             String?
   deathDate             String?
+  /// Trạng thái sống/mất TƯỜNG MINH: ALIVE | DECEASED | UNKNOWN. Nguồn sự thật
+  /// cho "đã khuất" — KHÔNG suy từ deathDate nữa, vì nhiều tổ tiên đã mất mà
+  /// không rõ ngày. Xem src/members/life-status.ts và 008_member_life_status.sql.
+  lifeStatus            String               @default("UNKNOWN") @map("life_status")
   tree_id               String?              @db.Uuid
   created_at            DateTime             @default(now())
   /// Thế hệ đã tính sẵn — giá trị HIỆU LỰC = profile.generation (nhập tay, ưu
@@ -53,6 +57,7 @@ model Member {
   @@index([name])
   @@index([tree_id])
   @@index([generation])
+  @@index([lifeStatus], map: "members_life_status_idx")
   @@index([created_at(sort: Desc), id])
   @@index([generation, created_at(sort: Desc), id], map: "members_generation_created_at_idx")
   @@index([tree_id, created_at(sort: Desc), id], map: "members_tree_created_at_idx")

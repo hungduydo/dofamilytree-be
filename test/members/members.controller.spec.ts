@@ -39,7 +39,7 @@ describe('MembersController', () => {
     mockMembersService.getAllMembers.mockResolvedValue({ data: [], total: 0 });
     await controller.getAllMembers(1, 10, undefined);
     expect(mockMembersService.getAllMembers).toHaveBeenCalledWith(
-      1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined, undefined,
+      1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined, undefined, undefined,
     );
   });
 
@@ -47,7 +47,7 @@ describe('MembersController', () => {
     mockMembersService.getAllMembers.mockResolvedValue({ data: [], total: 0 });
     await controller.getAllMembers(1, 10, 'nguyen');
     expect(mockMembersService.getAllMembers).toHaveBeenCalledWith(
-      1, 10, 'nguyen', undefined, undefined, undefined, 'full', undefined, undefined, undefined,
+      1, 10, 'nguyen', undefined, undefined, undefined, 'full', undefined, undefined, undefined, undefined,
     );
   });
 
@@ -55,7 +55,7 @@ describe('MembersController', () => {
     mockMembersService.getAllMembers.mockResolvedValue({ data: [], total: 0 });
     await controller.getAllMembers(1, 10, undefined, 3, 'generation', 'asc');
     expect(mockMembersService.getAllMembers).toHaveBeenCalledWith(
-      1, 10, undefined, 3, 'generation', 'asc', 'full', undefined, undefined, undefined,
+      1, 10, undefined, 3, 'generation', 'asc', 'full', undefined, undefined, undefined, undefined,
     );
   });
 
