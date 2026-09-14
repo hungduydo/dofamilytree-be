@@ -19,9 +19,13 @@ export class MemoriesService {
   async create(memberId: string, authorId: string, dto: CreateMemoryDto) {
     return this.prisma.memory.create({
       data: {
-        member_id: memberId,
         event_id: dto.event_id,
-        author_id: authorId,
+        // Prisma không cho trộn khoá thô (member_id) với nested relation → dùng connect.
+        member: { connect: { id: memberId } },
+        // Bảng "User" chỉ là bảng neo cho FK author_id (user thật nằm ở Supabase
+        // auth) và không có luồng nào ghi vào — gán thẳng author_id sẽ vỡ FK
+        // (P2003 → 500). connectOrCreate tạo dòng neo ở lần viết đầu tiên.
+        author: { connectOrCreate: { where: { id: authorId }, create: { id: authorId } } },
         text: dto.text,
         photos: dto.photos ?? [],
       },
