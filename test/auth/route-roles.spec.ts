@@ -83,10 +83,14 @@ const TABLE: Array<[string, any, Record<string, Expectation>]> = [
     create: 'editor', update: 'editor', delete: 'admin',
   }],
   ['LifeEventsController', LifeEventsController, {
-    getByMember: 'public', create: 'editor', delete: 'admin',
+    // 'member' chỉ là cửa vào — "chính chủ, hoặc editor (ghi) / admin (xoá)"
+    // nằm trong LifeEventsService.assertCanManage (life-events.service.spec.ts).
+    getByMember: 'public', create: 'member', update: 'member', delete: 'member',
   }],
   ['MemoriesController', MemoriesController, {
-    getByMember: 'public', create: 'member', delete: 'admin',
+    // update/delete: "tác giả hoặc admin" nằm trong MemoriesService.assertCanChange
+    // (memories.service.spec.ts).
+    getByMember: 'public', create: 'member', update: 'member', delete: 'member',
   }],
   ['MediaController', MediaController, {
     getMedia: 'public', getMediaStats: 'public', getAlbums: 'public', incrementViews: 'public',

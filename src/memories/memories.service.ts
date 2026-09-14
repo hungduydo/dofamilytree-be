@@ -1,6 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateMemoryDto } from './dto/memory.dto';
+import { hasAtLeast } from '../auth/roles.constants';
+import { ANONYMOUS_META, CallerMeta } from '../auth/user-meta';
+import { CreateMemoryDto, UpdateMemoryDto } from './dto/memory.dto';
 
 @Injectable()
 export class MemoriesService {
@@ -26,7 +28,35 @@ export class MemoriesService {
     });
   }
 
-  async delete(id: string) {
-    await this.prisma.memory.deleteMany({ where: { id } });
+  /**
+   * Kỷ niệm là lời của NGƯỜI VIẾT, không phải của người được nhắc tới — nên chỉ
+   * tác giả (hoặc admin gỡ nội dung) sửa/xoá được, kể cả khi kỷ niệm nằm trên hồ
+   * sơ của chính mình. Kỷ niệm phải thuộc đúng member trên URL, không thì ghép id
+   * lạ vào URL nào cũng qua.
+   */
+  private async assertCanChange(memberId: string, id: string, userId: string, caller: CallerMeta) {
+    const memory = await this.prisma.memory.findFirst({ where: { id, member_id: memberId } });
+    if (!memory) throw new NotFoundException(`Memory ${id} not found`);
+    if (memory.author_id === userId || hasAtLeast(caller.roles, 'admin')) return memory;
+    throw new ForbiddenException('Chỉ người viết mới sửa hoặc xoá được kỷ niệm này');
+  }
+
+  async update(
+    memberId: string,
+    id: string,
+    userId: string,
+    dto: UpdateMemoryDto,
+    caller: CallerMeta = ANONYMOUS_META,
+  ) {
+    await this.assertCanChange(memberId, id, userId, caller);
+    return this.prisma.memory.update({
+      where: { id },
+      data: { text: dto.text, photos: dto.photos, event_id: dto.event_id },
+    });
+  }
+
+  async delete(memberId: string, id: string, userId: string, caller: CallerMeta = ANONYMOUS_META) {
+    await this.assertCanChange(memberId, id, userId, caller);
+    await this.prisma.memory.delete({ where: { id } });
   }
 }

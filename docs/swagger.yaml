@@ -66,6 +66,38 @@ paths:
       security:
         - 
           bearer: []
+  /v2/auth/forgot-password:
+    post:
+      operationId: AuthController_forgotPassword
+      summary: Gửi email đặt lại mật khẩu (không cần đăng nhập). Luôn trả về thông điệp trung lập.
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordDto"
+      responses:
+        200:
+          description: ""
+      tags:
+        - Auth
+  /v2/auth/reset-password:
+    post:
+      operationId: AuthController_resetPassword
+      summary: Đặt lại mật khẩu bằng access token recovery từ email (không cần đăng nhập).
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordDto"
+      responses:
+        200:
+          description: ""
+      tags:
+        - Auth
   /v2/auth/change-password:
     post:
       operationId: AuthController_changePassword
@@ -1924,7 +1956,7 @@ paths:
           bearer: []
     post:
       operationId: LifeEventsController_create
-      summary: Add a life event to a member
+      summary: "Add a life event (member: chỉ hồ sơ của chính mình; editor trở lên: mọi người)"
       parameters:
         - 
           name: memberId
@@ -1951,10 +1983,50 @@ paths:
         - 
           bearer: []
   /v2/members/{memberId}/life-events/{id}:
+    put:
+      operationId: LifeEventsController_update
+      summary: "Update a life event (member: chỉ hồ sơ của chính mình; editor trở lên: mọi người)"
+      parameters:
+        - 
+          name: memberId
+          required: true
+          in: path
+          schema:
+            type: string
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLifeEventDto"
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifeEventResponseDto"
+      tags:
+        - Life Events (Quá trình sinh sống)
+      security:
+        - 
+          bearer: []
     delete:
       operationId: LifeEventsController_delete
-      summary: Delete a life event
+      summary: "Delete a life event (member: chỉ hồ sơ của chính mình; admin: mọi người)"
       parameters:
+        - 
+          name: memberId
+          required: true
+          in: path
+          schema:
+            type: string
         - 
           name: id
           required: true
@@ -2023,10 +2095,50 @@ paths:
         - 
           bearer: []
   /v2/members/{memberId}/memories/{id}:
+    put:
+      operationId: MemoriesController_update
+      summary: Update a memory (tác giả hoặc admin)
+      parameters:
+        - 
+          name: memberId
+          required: true
+          in: path
+          schema:
+            type: string
+        - 
+          name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMemoryDto"
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryResponseDto"
+      tags:
+        - Memories (Kỷ niệm)
+      security:
+        - 
+          bearer: []
     delete:
       operationId: MemoriesController_delete
-      summary: Delete a memory
+      summary: Delete a memory (tác giả hoặc admin)
       parameters:
+        - 
+          name: memberId
+          required: true
+          in: path
+          schema:
+            type: string
         - 
           name: id
           required: true
@@ -2681,6 +2793,28 @@ components:
           example: password123
       required:
         - email
+        - password
+    ForgotPasswordDto:
+      type: object
+      properties:
+        email:
+          type: string
+          example: user@example.com
+      required:
+        - email
+    ResetPasswordDto:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          description: Access token lấy từ session recovery của Supabase (sau khi người dùng bấm link trong email đặt lại mật khẩu).
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        password:
+          type: string
+          example: newPassword456
+          minLength: 6
+      required:
+        - accessToken
         - password
     ChangePasswordDto:
       type: object
@@ -4397,6 +4531,22 @@ components:
       required:
         - date
         - title
+    UpdateLifeEventDto:
+      type: object
+      properties:
+        date:
+          type: string
+          example: 1990-05-12
+          description: Ngày diễn ra (chuỗi, giống Member.birthDate)
+        title:
+          type: string
+          example: Tốt nghiệp đại học
+        description:
+          type: string
+        category:
+          type: string
+          example: education
+          description: Loại mốc (học vấn, sự nghiệp...)
     MemoryResponseDto:
       type: object
       properties:
@@ -4448,6 +4598,22 @@ components:
           description: Gắn với một sự kiện (tùy chọn)
       required:
         - text
+    UpdateMemoryDto:
+      type: object
+      properties:
+        text:
+          type: string
+          example: Kỷ niệm khó quên trong ngày họp mặt dòng họ...
+        photos:
+          description: Ảnh kỷ niệm
+          type: array
+          items:
+            type: string
+            format: uri
+        event_id:
+          type: string
+          format: uuid
+          description: Gắn với một sự kiện (tùy chọn)
     ArticleResponseDto:
       type: object
       properties:

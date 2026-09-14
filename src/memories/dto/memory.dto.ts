@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsOptional, IsArray, IsUUID, MaxLength } from 'class-validator';
 
 export class CreateMemoryDto {
@@ -19,6 +19,9 @@ export class CreateMemoryDto {
   @IsUUID()
   event_id?: string;
 }
+
+/** Mọi field đều tuỳ chọn — chỉ những field gửi lên mới được ghi. */
+export class UpdateMemoryDto extends PartialType(CreateMemoryDto) {}
 
 /** Mirrors the Prisma `Memory` model. */
 export class MemoryResponseDto {

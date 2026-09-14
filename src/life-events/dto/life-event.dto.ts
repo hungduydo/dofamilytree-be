@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsOptional, MaxLength } from 'class-validator';
 
 export class CreateLifeEventDto {
@@ -25,6 +25,9 @@ export class CreateLifeEventDto {
   @MaxLength(50)
   category?: string;
 }
+
+/** Mọi field đều tuỳ chọn — chỉ những field gửi lên mới được ghi. */
+export class UpdateLifeEventDto extends PartialType(CreateLifeEventDto) {}
 
 /** Mirrors the Prisma `LifeEvent` model. */
 export class LifeEventResponseDto {
