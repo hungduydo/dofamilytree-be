@@ -74,7 +74,7 @@ describe('GET /members query params (HTTP thật)', () => {
   it('có generation', async () => {
     const res = await get('?page=1&pageSize=10&generation=3');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, 3, undefined, undefined, 'full', undefined, undefined, false, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, 3, undefined, undefined, 'full', undefined, undefined, false, {});
   });
 
   it('generation rỗng (FE gửi generation=) là KHÔNG lọc, không phải lọc thế hệ 0', async () => {
@@ -82,19 +82,19 @@ describe('GET /members query params (HTTP thật)', () => {
     expect(res.status).toBe(200);
     // Regression: ValidationPipe({transform:true}) từng ép '' thành 0, mà 0 là
     // một thế hệ có thật trong dữ liệu → lọc nhầm thay vì bỏ lọc.
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined, false, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined, false, {});
   });
 
   it('generation=0 vẫn lọc được (0 là thế hệ có thật)', async () => {
     const res = await get('?generation=0');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, 0, undefined, undefined, 'full', undefined, undefined, false, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, 0, undefined, undefined, 'full', undefined, undefined, false, {});
   });
 
   it('có sortBy + sortOrder', async () => {
     const res = await get('?sortBy=generation&sortOrder=asc');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, 'generation', 'asc', 'full', undefined, undefined, false, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, 'generation', 'asc', 'full', undefined, undefined, false, {});
   });
 
   it('generation không phải số → 400', async () => {
@@ -105,30 +105,73 @@ describe('GET /members query params (HTTP thật)', () => {
   it('name filter vẫn hoạt động khi không có generation', async () => {
     const res = await get('?name=nguyen');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, 'nguyen', undefined, undefined, undefined, 'full', undefined, undefined, false, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, 'nguyen', undefined, undefined, undefined, 'full', undefined, undefined, false, {});
   });
 
   it('view=lite được truyền thẳng', async () => {
     const res = await get('?view=lite');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'lite', undefined, undefined, false, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'lite', undefined, undefined, false, {});
   });
 
   it('view rỗng → full (không 400)', async () => {
     const res = await get('?view=');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined, false, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined, false, {});
   });
 
   it('view lạ → full', async () => {
     const res = await get('?view=bogus');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined, false, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', undefined, undefined, false, {});
+  });
+
+  describe('bộ lọc mới', () => {
+    const lastFilters = () => mockMembersService.getAllMembers.mock.calls[mockMembersService.getAllMembers.mock.calls.length - 1][10];
+
+    it('lifeStatus hợp lệ được truyền, giá trị lạ bị bỏ qua', async () => {
+      await get('?lifeStatus=DECEASED');
+      expect(lastFilters().lifeStatus).toBe('DECEASED');
+      await get('?lifeStatus=zombie');
+      expect(lastFilters().lifeStatus).toBeUndefined();
+    });
+
+    it('missing: danh sách cách dấu phẩy, lọc theo allowlist, bỏ trùng', async () => {
+      const res = await get('?missing=birthDate,avatar,xyz,avatar');
+      expect(res.status).toBe(200);
+      expect(lastFilters().missing).toEqual(['birthDate', 'avatar']);
+    });
+
+    it('missing lặp lại nhiều lần (?missing=a&missing=b) cũng nhận', async () => {
+      await get('?missing=parents&missing=deathDate');
+      expect(lastFilters().missing).toEqual(['parents', 'deathDate']);
+    });
+
+    it('khoảng năm sinh được parse thành số', async () => {
+      const res = await get('?birthYearFrom=1900&birthYearTo=1950');
+      expect(res.status).toBe(200);
+      expect(lastFilters()).toEqual(expect.objectContaining({ birthYearFrom: 1900, birthYearTo: 1950 }));
+    });
+
+    it('năm sinh rỗng là KHÔNG lọc', async () => {
+      const res = await get('?birthYearFrom=&birthYearTo=');
+      expect(res.status).toBe(200);
+      expect(lastFilters().birthYearFrom).toBeUndefined();
+    });
+
+    it.each([
+      ['không phải số', '?birthYearFrom=abc'],
+      ['from > to', '?birthYearFrom=1950&birthYearTo=1900'],
+      ['ngoài khoảng', '?birthYearTo=99999'],
+    ])('năm sinh %s → 400', async (_name, qs) => {
+      const res = await get(qs);
+      expect(res.status).toBe(400);
+    });
   });
 
   it('tree_id + gender được truyền thẳng', async () => {
     const res = await get('?tree_id=abc&gender=M');
     expect(res.status).toBe(200);
-    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', 'abc', 'M', false, undefined);
+    expect(mockMembersService.getAllMembers).toHaveBeenLastCalledWith(1, 10, undefined, undefined, undefined, undefined, 'full', 'abc', 'M', false, {});
   });
 });

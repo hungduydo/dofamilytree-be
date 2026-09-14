@@ -30,6 +30,7 @@ import { hasAtLeast } from '../auth/roles.constants';
 import { CACHE_KEY_FULL, CACHE_KEY_STATS } from '../tree/tree.cache-keys';
 import { MEMORIAL_CACHE_KEYS } from '../memorial/memorial.cache-keys';
 import { LifeStatus, deriveLifeStatus, hasRealDeathDate, isLifeStatus } from './life-status';
+import { BIRTH_YEAR_MAX, BIRTH_YEAR_MIN, MemberListFilters, missingFieldWhere } from './member-filters';
 import {
   MEMBER_LITE_SELECT,
   MEMBER_TABLE_SELECT,
@@ -198,7 +199,7 @@ export class MembersService {
     treeId?: string,
     gender?: string,
     canSeePii = false,
-    lifeStatus?: string,
+    filters: MemberListFilters = {},
   ) {
     // `take` phải tính TRƯỚC rồi mới suy ra `skip`. Trước đây `skip` dùng
     // `pageSize` chưa cap trong khi `take` cap ở 100, nên ?pageSize=1000&page=2
@@ -206,13 +207,18 @@ export class MembersService {
     const take = Math.min(Math.max(pageSize, 1), 100);
     const skip = (Math.max(page, 1) - 1) * take;
 
-    const where = {
-      ...this.nameSearchWhere(name),
-      ...(generation !== undefined ? { generation } : {}),
-      ...(treeId ? { tree_id: treeId } : {}),
-      ...(gender && (MEMBER_GENDERS as readonly string[]).includes(gender) ? { gender } : {}),
-      ...(isLifeStatus(lifeStatus) ? { lifeStatus } : {}),
-    };
+    // AND thay vì spread: tìm theo tên và "thiếu dữ liệu" đều sinh `OR`, spread
+    // hai object có cùng khoá `OR` sẽ âm thầm làm mất một điều kiện.
+    const conditions: Prisma.MemberWhereInput[] = [
+      this.nameSearchWhere(name) ?? {},
+      generation !== undefined ? { generation } : {},
+      treeId ? { tree_id: treeId } : {},
+      gender && (MEMBER_GENDERS as readonly string[]).includes(gender) ? { gender } : {},
+      isLifeStatus(filters.lifeStatus) ? { lifeStatus: filters.lifeStatus } : {},
+      ...(filters.missing ?? []).map(missingFieldWhere),
+      await this.birthYearWhere(filters.birthYearFrom, filters.birthYearTo),
+    ].filter((c) => Object.keys(c).length > 0);
+    const where: Prisma.MemberWhereInput = conditions.length ? { AND: conditions } : {};
 
     const field: MemberSortField = MEMBER_SORT_FIELDS.includes(sortBy) ? sortBy : 'created_at';
     const order: SortOrder = sortOrder === 'asc' ? 'asc' : 'desc';
@@ -247,6 +253,28 @@ export class MembersService {
     ]);
 
     return { data, total, page, pageSize };
+  }
+
+  /**
+   * birthDate là String tự do ("1990-01-01", "1850", "02/03/1975"...) nên Prisma
+   * không so sánh số được. Lấy cụm 4 chữ số ĐẦU TIÊN làm năm, lọc ra id rồi đưa
+   * vào `id IN` — bảng vài trăm dòng nên một query phụ là rẻ. Người không đọc
+   * được năm sinh bị loại khỏi kết quả (dùng `missing=birthDate` để tìm họ).
+   *
+   * `[0-9]` chứ không phải `\d`: trong template literal có tag, `\d` là escape
+   * không hợp lệ và giá trị "cooked" Prisma nhận được sẽ là undefined.
+   */
+  private async birthYearWhere(from?: number, to?: number): Promise<Prisma.MemberWhereInput> {
+    if (from === undefined && to === undefined) return {};
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM (
+        SELECT id, substring("birthDate" from '[0-9]{4}')::int AS year FROM members
+      ) AS m
+      WHERE m.year IS NOT NULL
+        AND m.year >= ${from ?? BIRTH_YEAR_MIN}
+        AND m.year <= ${to ?? BIRTH_YEAR_MAX}
+    `;
+    return { id: { in: rows.map((r) => r.id) } };
   }
 
   private nameSearchWhere(query?: string) {

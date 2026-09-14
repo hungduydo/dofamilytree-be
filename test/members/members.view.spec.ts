@@ -85,13 +85,11 @@ describe('MembersService — view/select shape', () => {
 
     it('filter tree_id + gender lọt vào where; gender rác thì không', async () => {
       await service.getAllMembers(1, 10, undefined, undefined, 'created_at', 'desc', 'full', 'tree-1', 'M');
-      expect(listArg().where).toEqual(
-        expect.objectContaining({ tree_id: 'tree-1', gender: 'M' }),
-      );
+      expect(listArg().where).toEqual({ AND: [{ tree_id: 'tree-1' }, { gender: 'M' }] });
 
       mockPrisma.member.findMany.mockClear();
       await service.getAllMembers(1, 10, undefined, undefined, 'created_at', 'desc', 'full', undefined, 'HACK');
-      expect(listArg().where).not.toHaveProperty('gender');
+      expect(listArg().where).toEqual({});
     });
   });
 

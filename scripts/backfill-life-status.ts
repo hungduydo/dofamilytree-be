@@ -5,7 +5,8 @@
  *   1. có ngày mất thật (không null, không chuỗi rỗng/khoảng trắng), HOẶC
  *   2. thuộc đời 1–13 (members.generation, giá trị hiệu lực), HOẶC
  *   3. sinh cách đây hơn 110 năm.
- * Còn lại giữ UNKNOWN để admin tự chỉnh (lọc bằng GET /v2/members?lifeStatus=UNKNOWN).
+ * Còn lại (không xác định được là đã mất) → ALIVE. Admin sửa lại từng người nếu
+ * sai (lọc bằng GET /v2/members?lifeStatus=ALIVE).
  *
  * CHỈ ghi member đang UNKNOWN ⇒ chạy lại an toàn, không đè giá trị admin đã sửa.
  * Chạy SAU 008_member_life_status.sql và SAU khi generation đã backfill.
@@ -44,12 +45,16 @@ async function main() {
 
   const now = new Date();
   const toDeceased: string[] = [];
+  const toAlive: typeof members = [];
   const byReason = new Map<string, typeof members>();
 
   for (const m of members) {
     if (m.lifeStatus !== 'UNKNOWN') continue;
     const { status, reason } = deriveLifeStatus(m, { now, ancestorMaxGeneration: ANCESTOR_MAX_GENERATION });
-    if (status !== 'DECEASED' || !reason) continue;
+    if (status !== 'DECEASED' || !reason) {
+      toAlive.push(m);
+      continue;
+    }
     toDeceased.push(m.id);
     const list = byReason.get(reason) ?? [];
     list.push(m);
@@ -65,8 +70,14 @@ async function main() {
     }
   }
 
-  const unknownLeft = (before.get('UNKNOWN') ?? 0) - toDeceased.length;
-  console.log(`\nTổng: ${toDeceased.length} → DECEASED, ${unknownLeft} vẫn UNKNOWN (admin cần chỉnh).`);
+  console.log(`\n→ ALIVE (không xác định được là đã mất): ${toAlive.length}`);
+  for (const m of toAlive) {
+    console.log(
+      `  - đời ${String(m.generation ?? '?').padStart(3)} | ${m.name} | sinh: ${m.birthDate || '—'}`,
+    );
+  }
+
+  console.log(`\nTổng: ${toDeceased.length} → DECEASED, ${toAlive.length} → ALIVE.`);
 
   if (dryRun) {
     console.log('\nDry run — không ghi gì. Bỏ --dry-run để áp dụng.');
@@ -74,12 +85,19 @@ async function main() {
   }
 
   let updated = 0;
-  for (let i = 0; i < toDeceased.length; i += PERSIST_CHUNK) {
-    const { count } = await prisma.member.updateMany({
-      where: { id: { in: toDeceased.slice(i, i + PERSIST_CHUNK) }, lifeStatus: 'UNKNOWN' },
-      data: { lifeStatus: 'DECEASED' },
-    });
-    updated += count;
+  const aliveIds = toAlive.map((m) => m.id);
+  for (const [ids, lifeStatus] of [
+    [toDeceased, 'DECEASED'],
+    [aliveIds, 'ALIVE'],
+  ] as const) {
+    for (let i = 0; i < ids.length; i += PERSIST_CHUNK) {
+      // Điều kiện lifeStatus: 'UNKNOWN' chặn đè giá trị admin vừa sửa trong lúc script chạy.
+      const { count } = await prisma.member.updateMany({
+        where: { id: { in: ids.slice(i, i + PERSIST_CHUNK) }, lifeStatus: 'UNKNOWN' },
+        data: { lifeStatus },
+      });
+      updated += count;
+    }
   }
 
   console.log(`\n✅ Xong. ${updated} dòng đã cập nhật.`);

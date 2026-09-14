@@ -197,7 +197,7 @@ describe('MembersService', () => {
 
       await service.getAllMembers(1, 10, undefined, 3);
       expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ generation: 3 }) }),
+        expect.objectContaining({ where: { AND: [{ generation: 3 }] } }),
       );
     });
 
@@ -221,6 +221,58 @@ describe('MembersService', () => {
       expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: [{ created_at: 'desc' }, { id: 'asc' }] }),
       );
+    });
+  });
+
+  describe('getAllMembers — bộ lọc', () => {
+    beforeEach(() => {
+      mockPrisma.member.findMany.mockResolvedValue([]);
+      mockPrisma.member.count.mockResolvedValue(0);
+    });
+    const whereArg = () => mockPrisma.member.findMany.mock.calls[0][0].where;
+    const call = (filters: object, name?: string) =>
+      service.getAllMembers(1, 10, name, undefined, 'created_at', 'desc', 'table', undefined, undefined, false, filters);
+
+    it('không có bộ lọc nào → where rỗng', async () => {
+      await call({});
+      expect(whereArg()).toEqual({});
+    });
+
+    it('tên + thiếu dữ liệu cùng lúc: cả hai OR đều giữ lại (AND, không spread)', async () => {
+      await call({ missing: ['birthDate', 'avatar'] }, 'nguyen');
+      const { AND } = whereArg();
+      expect(AND).toHaveLength(3);
+      expect(AND[1]).toEqual({ OR: [{ birthDate: null }, { birthDate: '' }] });
+      expect(AND[2]).toEqual({ OR: [{ avatar_url: null }, { avatar_url: '' }] });
+    });
+
+    it('missing=parents bỏ qua cạnh SPOUSE', async () => {
+      await call({ missing: ['parents'] });
+      expect(whereArg().AND[0]).toEqual({ child_relationships: { none: { type: { not: 'SPOUSE' } } } });
+    });
+
+    it('missing=deathDate chỉ tính người đã mất', async () => {
+      await call({ missing: ['deathDate'] });
+      expect(whereArg().AND[0]).toEqual({
+        AND: [{ lifeStatus: 'DECEASED' }, { OR: [{ deathDate: null }, { deathDate: '' }] }],
+      });
+    });
+
+    it('khoảng năm sinh: lấy id từ query phụ rồi lọc id IN', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 'a' }, { id: 'b' }]);
+      await call({ birthYearFrom: 1900 });
+      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      // Tham số bind: from = 1900, to mặc định = trần.
+      expect(mockPrisma.$queryRaw.mock.calls[0].slice(1)).toEqual([1900, 2200]);
+      expect(whereArg()).toEqual({ AND: [{ id: { in: ['a', 'b'] } }] });
+      // count phải dùng CÙNG where, nếu không total lệch với data.
+      expect(mockPrisma.member.count.mock.calls[0][0].where).toEqual(whereArg());
+    });
+
+    it('không lọc năm sinh thì KHÔNG chạy query phụ', async () => {
+      await call({ lifeStatus: 'ALIVE' });
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+      expect(whereArg()).toEqual({ AND: [{ lifeStatus: 'ALIVE' }] });
     });
   });
 

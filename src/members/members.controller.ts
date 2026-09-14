@@ -18,6 +18,7 @@ import { CallerMeta } from '../auth/user-meta';
 import { MembersService, MEMBER_SORT_FIELDS, MEMBER_GENDERS, MemberSortField, SortOrder } from './members.service';
 import { MEMBER_VIEWS, resolveView } from './members.view';
 import { LIFE_STATUSES } from './life-status';
+import { MEMBER_MISSING_FIELDS, buildMemberListFilters } from './member-filters';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
 import {
@@ -87,6 +88,15 @@ export class MembersController {
   @ApiQuery({ name: 'gender', required: false, enum: MEMBER_GENDERS, description: 'Lọc theo giới tính' })
   @ApiQuery({ name: 'lifeStatus', required: false, enum: LIFE_STATUSES, description: 'Lọc theo trạng thái sống/mất (UNKNOWN = cần bổ sung)' })
   @ApiQuery({
+    name: 'missing',
+    required: false,
+    type: String,
+    description: `Thiếu dữ liệu, nhiều giá trị cách nhau dấu phẩy (AND): ${MEMBER_MISSING_FIELDS.join(', ')}. ` +
+      '`parents` = chưa gắn cha/mẹ; `deathDate` = đã mất nhưng thiếu ngày mất.',
+  })
+  @ApiQuery({ name: 'birthYearFrom', required: false, type: Number, description: 'Năm sinh từ (gồm cả năm này)' })
+  @ApiQuery({ name: 'birthYearTo', required: false, type: Number, description: 'Năm sinh đến (gồm cả năm này)' })
+  @ApiQuery({
     name: 'view',
     required: false,
     enum: MEMBER_VIEWS,
@@ -114,10 +124,15 @@ export class MembersController {
     @Query('gender') gender?: string,
     @CanSeePii() canSeePii?: boolean,
     @Query('lifeStatus') lifeStatus?: string,
+    @Query('missing') missing?: string | string[],
+    // `any` + ParseOptionalIntPipe: cùng lý do với `generation` ở trên.
+    @Query('birthYearFrom', ParseOptionalIntPipe) birthYearFrom?: any,
+    @Query('birthYearTo', ParseOptionalIntPipe) birthYearTo?: any,
   ) {
     return this.membersService.getAllMembers(
       page, pageSize, name, generation, sortBy, sortOrder,
-      resolveView(view), treeId, gender, canSeePii, lifeStatus,
+      resolveView(view), treeId, gender, canSeePii,
+      buildMemberListFilters({ lifeStatus, missing, birthYearFrom, birthYearTo }),
     );
   }
 

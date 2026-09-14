@@ -103,7 +103,10 @@ export class RelationshipsService {
 
   async getParents(memberId: string) {
     return this.prisma.memberRelationship.findMany({
-      where: { child_id: memberId },
+      where: {
+        child_id: memberId,
+        type: { in: ['BIOLOGICAL', 'ADOPTED'] },
+      },
       include: { parent: { include: { profile: EMBEDDED_PROFILE } } },
     });
   }
