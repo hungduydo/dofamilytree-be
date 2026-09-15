@@ -16,16 +16,26 @@ import {
   MEMORIAL_CACHE_KEYS,
   MEMORIAL_CACHE_TTL,
   memorialAncestorsKey,
+  memorialIncenseTodayKey,
   memorialTributesKey,
 } from './memorial.cache-keys';
 import { MEMORIAL_ANCESTOR_SELECT, MEMORIAL_TRIBUTE_SELECT } from './memorial.select';
 import { DECEASED_WHERE } from '../members/life-status';
+import { TODAY_INCENSE_LIMIT } from './dto/memorial.dto';
 import type {
   BurnIncenseResponseDto,
+  IncenseOfferingDto,
   MemorialAncestorDto,
   MemorialStatsDto,
   MemorialTributeDto,
+  TodayIncenseDto,
 } from './dto/memorial.dto';
+
+/**
+ * Projection của một nén hương cho FE. CỐ Ý không có user_id: danh sách hôm nay
+ * là endpoint PUBLIC và không có lý do gì để lộ ai đã thắp.
+ */
+const INCENSE_OFFERING_SELECT = { id: true, member_id: true, created_at: true } as const;
 
 /** Trần pageSize, giống MembersService.getAllMembers. */
 const MAX_PAGE_SIZE = 100;
@@ -212,33 +222,65 @@ export class MemorialService {
     return { data, total, page: currentPage, pageSize: take };
   }
 
+  /**
+   * Các nén thắp HÔM NAY theo giờ VN, mới nhất trước — FE dựng lư hương từ đây
+   * nên F5 không làm mất nén, và qua nửa đêm lư tự trống.
+   *
+   * Lọc theo `offered_on` (chính cột mà giới hạn mỗi ngày dùng) chứ KHÔNG theo
+   * khoảng created_at, để "hôm nay" ở đây và "hôm nay" của lượt 409 luôn là một.
+   * Không có index riêng cho offered_on: bảng lớn tuyến tính theo số người thật
+   * mỗi ngày (xem api-memorial.md §3.4), quét vài chục nghìn dòng là rẻ.
+   */
+  async getTodayIncense(): Promise<TodayIncenseDto> {
+    const date = todayInVietnam();
+    const cacheKey = memorialIncenseTodayKey(date);
+    const cached = await this.cache.get<TodayIncenseDto>(cacheKey);
+    if (cached) return cached;
+
+    const where: Prisma.MemorialIncenseWhereInput = { offered_on: new Date(date) };
+    const [rows, total] = await Promise.all([
+      this.prisma.memorialIncense.findMany({
+        where,
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        take: TODAY_INCENSE_LIMIT,
+        select: INCENSE_OFFERING_SELECT,
+      }),
+      this.prisma.memorialIncense.count({ where }),
+    ]);
+
+    const result: TodayIncenseDto = { date, total, offerings: rows.map(toOfferingDto) };
+    await this.cache.set(cacheKey, result, MEMORIAL_CACHE_TTL);
+    return result;
+  }
+
   // ─── Ghi ──────────────────────────────────────────────────────────────────
 
   async burnIncense(caller: MemorialCaller, memberId?: string): Promise<BurnIncenseResponseDto> {
     if (memberId) await this.assertDeceasedMember(memberId);
 
-    try {
-      await this.prisma.memorialIncense.create({
+    const created = await this.prisma.memorialIncense
+      .create({
         data: {
           member_id: memberId ?? null,
           user_id: caller.id,
           offered_on: new Date(todayInVietnam()),
         },
+        select: INCENSE_OFFERING_SELECT,
+      })
+      .catch((error: unknown) => {
+        // P2002 = vi phạm unique. Việc chặn 1 lượt/user/người-nhận/ngày nằm ở HAI
+        // partial unique index (005_memorial.sql), không phải ở đây: không tốn
+        // round-trip kiểm tra trước, và hai request đồng thời không lách qua được
+        // như SELECT-rồi-INSERT.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          throw new ConflictException(
+            memberId
+              ? 'Hôm nay bạn đã thắp hương cho cụ rồi. Xin mời trở lại vào ngày mai.'
+              : 'Hôm nay bạn đã thắp hương rồi. Xin mời trở lại vào ngày mai.',
+          );
+        }
+        throw error;
       });
-    } catch (error) {
-      // P2002 = vi phạm unique. Việc chặn 1 lượt/user/người-nhận/ngày nằm ở HAI
-      // partial unique index (005_memorial.sql), không phải ở đây: không tốn
-      // round-trip kiểm tra trước, và hai request đồng thời không lách qua được
-      // như SELECT-rồi-INSERT.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException(
-          memberId
-            ? 'Hôm nay bạn đã thắp hương cho cụ rồi. Xin mời trở lại vào ngày mai.'
-            : 'Hôm nay bạn đã thắp hương rồi. Xin mời trở lại vào ngày mai.',
-        );
-      }
-      throw error;
-    }
 
     // Hai COUNT trong MỘT round-trip. Lượt clan-wide không thuộc về ai nên
     // incenseCount trả 0 — đúng hợp đồng ở api-memorial.md §3.4.
@@ -252,6 +294,7 @@ export class MemorialService {
     return {
       incenseCount: memberId ? Number(row?.member_count ?? 0) : 0,
       incenseTotal: Number(row?.total ?? 0),
+      offering: toOfferingDto(created),
     };
   }
 
@@ -346,7 +389,8 @@ export class MemorialService {
    * FE refetch NGAY sau khi thắp hương, một response cached sẽ hiện số cũ.
    */
   private async invalidateMemorialCaches(): Promise<void> {
-    await this.cache.del(...MEMORIAL_CACHE_KEYS);
+    // Khoá "hôm nay" mang ngày nên không nằm trong danh sách hằng — thêm ở đây.
+    await this.cache.del(...MEMORIAL_CACHE_KEYS, memorialIncenseTodayKey(todayInVietnam()));
   }
 }
 
@@ -364,6 +408,11 @@ export function todayInVietnam(now: Date = new Date()): string {
     month: '2-digit',
     day: '2-digit',
   }).format(now);
+}
+
+/** Row Prisma → hợp đồng của FE. */
+function toOfferingDto(row: { id: string; member_id: string | null; created_at: Date }): IncenseOfferingDto {
+  return { id: row.id, memberId: row.member_id, offeredAt: row.created_at.toISOString() };
 }
 
 /** Row Prisma (snake_case) → hợp đồng của FE (camelCase). */
