@@ -38,6 +38,7 @@ import {
   MemorialTributeDto,
   PaginatedMemorialAncestorsDto,
   PaginatedMemorialTributesDto,
+  TodayIncenseDto,
 } from './dto/memorial.dto';
 import { MemorialCaller, MemorialService } from './memorial.service';
 
@@ -96,6 +97,16 @@ export class MemorialController {
     @Query('memberId') memberId?: string,
   ) {
     return this.memorialService.getTributes(page, pageSize, memberId || undefined);
+  }
+
+  @Public()
+  @Get('incense/today')
+  @ApiOperation({
+    summary: 'Các nén hương thắp hôm nay (giờ VN), mới nhất trước — FE dựng lư hương từ đây (public)',
+  })
+  @ApiOkResponse({ type: TodayIncenseDto })
+  getTodayIncense() {
+    return this.memorialService.getTodayIncense();
   }
 
   @Post('incense')

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { TODAY_INCENSE_LIMIT } from '../../src/memorial/dto/memorial.dto';
 import { DECEASED_WHERE, MemorialService, todayInVietnam } from '../../src/memorial/memorial.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { SupabaseUsersService } from '../../src/supabase/supabase-users.service';
@@ -11,7 +12,7 @@ import { SupabaseUsersService } from '../../src/supabase/supabase-users.service'
  */
 const mockPrisma = {
   member: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn(), aggregate: jest.fn() },
-  memorialIncense: { create: jest.fn(), groupBy: jest.fn() },
+  memorialIncense: { create: jest.fn(), groupBy: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   memorialTribute: { create: jest.fn(), findMany: jest.fn(), count: jest.fn(), deleteMany: jest.fn() },
   userMetadata: { findUnique: jest.fn() },
   $queryRaw: jest.fn(),
@@ -20,6 +21,8 @@ const mockRedis = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
 const mockSupabase = { getDisplayName: jest.fn() };
 
 const CALLER = { id: 'u_1', displayName: null, profileMemberId: null };
+/** Dòng `create` trả về với INCENSE_OFFERING_SELECT. */
+const INCENSE_ROW = { id: 'i_1', member_id: null, created_at: new Date('2026-09-15T03:00:00.000Z') };
 const DECEASED = { id: 'm_1', lifeStatus: 'DECEASED' };
 const ALIVE = { id: 'm_2', lifeStatus: 'ALIVE' };
 // Chưa xác nhận đã mất thì chưa lập bàn thờ.
@@ -78,7 +81,7 @@ describe('MemorialService', () => {
     });
 
     it('không truyền memberId (gửi tổ tiên nói chung) thì KHÔNG kiểm tra member nào', async () => {
-      mockPrisma.memorialIncense.create.mockResolvedValue({});
+      mockPrisma.memorialIncense.create.mockResolvedValue(INCENSE_ROW);
       mockPrisma.$queryRaw.mockResolvedValue([{ member_count: 0n, total: 7n }]);
       await service.burnIncense(CALLER);
       expect(mockPrisma.member.findUnique).not.toHaveBeenCalled();
@@ -104,7 +107,7 @@ describe('MemorialService', () => {
 
     it('offered_on ghi theo giờ VN, không phải UTC', async () => {
       mockPrisma.member.findUnique.mockResolvedValue(DECEASED);
-      mockPrisma.memorialIncense.create.mockResolvedValue({});
+      mockPrisma.memorialIncense.create.mockResolvedValue(INCENSE_ROW);
       mockPrisma.$queryRaw.mockResolvedValue([{ member_count: 1n, total: 1n }]);
       await service.burnIncense(CALLER, 'm_1');
       const { offered_on } = mockPrisma.memorialIncense.create.mock.calls[0][0].data;
@@ -158,10 +161,53 @@ describe('MemorialService', () => {
     });
 
     it('thắp cho tổ tiên nói chung trả incenseCount = 0', async () => {
-      mockPrisma.memorialIncense.create.mockResolvedValue({});
+      mockPrisma.memorialIncense.create.mockResolvedValue(INCENSE_ROW);
       mockPrisma.$queryRaw.mockResolvedValue([{ member_count: 5n, total: 2149n }]);
       const result = await service.burnIncense(CALLER);
-      expect(result).toEqual({ incenseCount: 0, incenseTotal: 2149 });
+      expect(result).toEqual({
+        incenseCount: 0,
+        incenseTotal: 2149,
+        offering: { id: 'i_1', memberId: null, offeredAt: '2026-09-15T03:00:00.000Z' },
+      });
+    });
+  });
+
+  // ─── Nén hương hôm nay ──────────────────────────────────────────────────────
+
+  describe('getTodayIncense', () => {
+    beforeEach(() => {
+      mockPrisma.memorialIncense.findMany.mockResolvedValue([]);
+      mockPrisma.memorialIncense.count.mockResolvedValue(0);
+    });
+
+    it('lọc theo offered_on = hôm nay giờ VN, mới nhất trước, có trần', async () => {
+      const result = await service.getTodayIncense();
+      const args = mockPrisma.memorialIncense.findMany.mock.calls[0][0];
+      expect(args.where.offered_on.toISOString().slice(0, 10)).toBe(todayInVietnam());
+      expect(mockPrisma.memorialIncense.count.mock.calls[0][0].where).toEqual(args.where);
+      expect(args.orderBy).toEqual([{ created_at: 'desc' }, { id: 'desc' }]);
+      expect(args.take).toBe(TODAY_INCENSE_LIMIT);
+      expect(result).toEqual({ date: todayInVietnam(), total: 0, offerings: [] });
+    });
+
+    it('map sang camelCase; total đếm cả ngày, không chỉ phần đã cắt', async () => {
+      mockPrisma.memorialIncense.findMany.mockResolvedValue([
+        INCENSE_ROW,
+        { id: 'i_2', member_id: 'm_1', created_at: new Date('2026-09-15T02:00:00.000Z') },
+      ]);
+      mockPrisma.memorialIncense.count.mockResolvedValue(31);
+      const result = await service.getTodayIncense();
+      expect(result.total).toBe(31);
+      expect(result.offerings).toEqual([
+        { id: 'i_1', memberId: null, offeredAt: '2026-09-15T03:00:00.000Z' },
+        { id: 'i_2', memberId: 'm_1', offeredAt: '2026-09-15T02:00:00.000Z' },
+      ]);
+    });
+
+    it('projection KHÔNG kéo user_id — endpoint public, không lộ ai đã thắp', async () => {
+      await service.getTodayIncense();
+      const { select } = mockPrisma.memorialIncense.findMany.mock.calls[0][0];
+      expect(Object.keys(select).sort()).toEqual(['created_at', 'id', 'member_id']);
     });
   });
 

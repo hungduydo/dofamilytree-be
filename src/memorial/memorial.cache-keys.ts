@@ -15,6 +15,14 @@ export const memorialAncestorsKey = (pageSize: number) => `memorial:ancestors:1:
 export const memorialTributesKey = (pageSize: number) => `memorial:tributes:1:${pageSize}`;
 
 /**
+ * Các nén thắp trong MỘT ngày (giờ VN). Ngày nằm TRONG khoá nên qua nửa đêm là
+ * tự sang khoá mới — không cần job xoá, khoá của hôm qua hết TTL là đi. Vì phụ
+ * thuộc ngày nên nó KHÔNG nằm trong MEMORIAL_CACHE_KEYS; invalidateMemorialCaches
+ * tự thêm khoá của hôm nay.
+ */
+export const memorialIncenseTodayKey = (date: string) => `memorial:incense:today:${date}`;
+
+/**
  * Upstash REST không cho SCAN tiện lợi và SafeCache chỉ có `del(...keys)`, nên
  * invalidation phải liệt kê tường minh. Ba giá trị: 5 và 6 là những gì FE gọi
  * (TRIBUTES_SHOWN / ANCESTORS_SHOWN), 20 là pageSize mặc định của API.

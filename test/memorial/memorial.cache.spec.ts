@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { MemorialService } from '../../src/memorial/memorial.service';
+import { MemorialService, todayInVietnam } from '../../src/memorial/memorial.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { SupabaseUsersService } from '../../src/supabase/supabase-users.service';
 import {
@@ -7,6 +7,7 @@ import {
   MEMORIAL_CACHE_KEYS,
   MEMORIAL_CACHE_TTL,
   memorialAncestorsKey,
+  memorialIncenseTodayKey,
   memorialTributesKey,
 } from '../../src/memorial/memorial.cache-keys';
 
@@ -18,7 +19,7 @@ import {
  */
 const mockPrisma = {
   member: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn(), aggregate: jest.fn() },
-  memorialIncense: { create: jest.fn(), groupBy: jest.fn() },
+  memorialIncense: { create: jest.fn(), groupBy: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   memorialTribute: { create: jest.fn(), findMany: jest.fn(), count: jest.fn(), deleteMany: jest.fn() },
   userMetadata: { findUnique: jest.fn() },
   $queryRaw: jest.fn(),
@@ -48,6 +49,8 @@ describe('MemorialService — caching', () => {
     mockPrisma.member.count.mockResolvedValue(0);
     mockPrisma.member.aggregate.mockResolvedValue({ _min: { generation: 1 } });
     mockPrisma.memorialIncense.groupBy.mockResolvedValue([]);
+    mockPrisma.memorialIncense.findMany.mockResolvedValue([]);
+    mockPrisma.memorialIncense.count.mockResolvedValue(0);
     mockPrisma.memorialTribute.findMany.mockResolvedValue([]);
     mockPrisma.memorialTribute.count.mockResolvedValue(0);
     mockPrisma.$queryRaw.mockResolvedValue([
@@ -125,10 +128,32 @@ describe('MemorialService — caching', () => {
     });
   });
 
+  describe('getTodayIncense', () => {
+    it('hit: trả cache của ĐÚNG ngày hôm nay, KHÔNG chạm DB', async () => {
+      const cached = { date: todayInVietnam(), total: 3, offerings: [] };
+      mockRedis.get.mockResolvedValue(cached);
+      await expect(service.getTodayIncense()).resolves.toEqual(cached);
+      expect(mockRedis.get).toHaveBeenCalledWith(memorialIncenseTodayKey(todayInVietnam()));
+      expect(mockPrisma.memorialIncense.findMany).not.toHaveBeenCalled();
+    });
+
+    it('miss: set cache đúng khoá theo ngày + TTL', async () => {
+      mockRedis.get.mockResolvedValue(null);
+      await service.getTodayIncense();
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        memorialIncenseTodayKey(todayInVietnam()), expect.any(String), { ex: MEMORIAL_CACHE_TTL },
+      );
+    });
+
+    it('khoá mang ngày nên qua nửa đêm là khoá khác', () => {
+      expect(memorialIncenseTodayKey('2026-09-15')).not.toBe(memorialIncenseTodayKey('2026-09-16'));
+    });
+  });
+
   describe('invalidation sau mỗi lần ghi', () => {
     beforeEach(() => {
       mockRedis.get.mockResolvedValue(null);
-      mockPrisma.memorialIncense.create.mockResolvedValue({});
+      mockPrisma.memorialIncense.create.mockResolvedValue({ id: 'i_1', member_id: null, created_at: new Date() });
       mockPrisma.memorialTribute.create.mockResolvedValue({
         id: 't', content: 'c', created_at: new Date(), author_name: 'A',
         user_id: 'u', member_id: null, member: null,
@@ -140,9 +165,11 @@ describe('MemorialService — caching', () => {
       ['burnIncense', (s: MemorialService) => s.burnIncense(CALLER)],
       ['createTribute', (s: MemorialService) => s.createTribute(CALLER, 'x'.repeat(20))],
       ['deleteTribute', (s: MemorialService) => s.deleteTribute('t')],
-    ])('%s xoá TOÀN BỘ khoá memorial', async (_name, call) => {
+    ])('%s xoá TOÀN BỘ khoá memorial, kể cả danh sách nén hôm nay', async (_name, call) => {
       await call(service);
-      expect(mockRedis.del).toHaveBeenCalledWith(...MEMORIAL_CACHE_KEYS);
+      expect(mockRedis.del).toHaveBeenCalledWith(
+        ...MEMORIAL_CACHE_KEYS, memorialIncenseTodayKey(todayInVietnam()),
+      );
     });
 
     it('khoá bị xoá phủ mọi pageSize FE dùng (5 lời, 6 tổ tiên) và mặc định 20', async () => {

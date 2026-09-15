@@ -103,12 +103,43 @@ export class MemorialTributeDto {
   memberName: string | null;
 }
 
+/** Trần số nén `GET /memorial/incense/today` trả về. FE chỉ cắm tối đa 7 nén lên lư. */
+export const TODAY_INCENSE_LIMIT = 20;
+
+export class IncenseOfferingDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ nullable: true, format: 'uuid', description: 'null = thắp cho tổ tiên nói chung.' })
+  memberId: string | null;
+
+  @ApiProperty({ format: 'date-time', description: 'Lúc thắp (created_at) — FE tính nén đã cháy tới đâu.' })
+  offeredAt: string;
+}
+
 export class BurnIncenseResponseDto {
   @ApiProperty({ example: 429, description: 'Số mới của cụ đó; 0 với lượt gửi tổ tiên nói chung.' })
   incenseCount: number;
 
   @ApiProperty({ example: 2149 })
   incenseTotal: number;
+
+  @ApiProperty({ type: IncenseOfferingDto, description: 'Nén vừa thắp — FE cắm nó lên lư ngay, không chờ refetch.' })
+  offering: IncenseOfferingDto;
+}
+
+export class TodayIncenseDto {
+  @ApiProperty({ example: '2026-09-15', description: 'Ngày theo giờ VN (Asia/Ho_Chi_Minh) mà danh sách này thuộc về.' })
+  date: string;
+
+  @ApiProperty({ example: 12, description: 'Tổng số nén thắp trong ngày, kể cả những nén không nằm trong `offerings`.' })
+  total: number;
+
+  @ApiProperty({
+    type: [IncenseOfferingDto],
+    description: `Mới nhất trước, tối đa ${TODAY_INCENSE_LIMIT} nén. Gồm cả lượt chung lẫn lượt cho từng cụ.`,
+  })
+  offerings: IncenseOfferingDto[];
 }
 
 /**

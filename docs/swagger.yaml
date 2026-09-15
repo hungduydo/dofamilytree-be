@@ -399,6 +399,38 @@ paths:
               - U
             type: string
         - 
+          name: lifeStatus
+          required: false
+          in: query
+          description: Lọc theo trạng thái sống/mất (UNKNOWN = cần bổ sung)
+          schema:
+            enum:
+              - ALIVE
+              - DECEASED
+              - UNKNOWN
+            type: string
+        - 
+          name: birthYearTo
+          required: false
+          in: query
+          description: Năm sinh đến (gồm cả năm này)
+          schema:
+            type: number
+        - 
+          name: birthYearFrom
+          required: false
+          in: query
+          description: Năm sinh từ (gồm cả năm này)
+          schema:
+            type: number
+        - 
+          name: missing
+          required: false
+          in: query
+          description: "Thiếu dữ liệu, nhiều giá trị cách nhau dấu phẩy (AND): birthDate, avatar, parents, deathDate. `parents` = chưa gắn cha/mẹ; `deathDate` = đã mất nhưng thiếu ngày mất."
+          schema:
+            type: string
+        - 
           name: generation
           required: false
           in: query
@@ -2410,6 +2442,23 @@ paths:
       security:
         - 
           bearer: []
+  /v2/memorial/incense/today:
+    get:
+      operationId: MemorialController_getTodayIncense
+      summary: Các nén hương thắp hôm nay (giờ VN), mới nhất trước — FE dựng lư hương từ đây (public)
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodayIncenseDto"
+      tags:
+        - Memorial (Góc nhớ tổ tiên)
+      security:
+        - 
+          bearer: []
   /v2/memorial/incense:
     post:
       operationId: MemorialController_burnIncense
@@ -2952,6 +3001,12 @@ components:
           type: object
           nullable: true
           example: 2020-12-31
+        lifeStatus:
+          type: string
+          enum:
+            - ALIVE
+            - DECEASED
+            - UNKNOWN
         tree_id:
           type: object
           nullable: true
@@ -2976,6 +3031,7 @@ components:
       required:
         - id
         - name
+        - lifeStatus
         - created_at
     PaginatedMembersTableResponseDto:
       type: object
@@ -3195,6 +3251,13 @@ components:
           type: object
           nullable: true
           example: 2020-12-31
+        lifeStatus:
+          type: string
+          enum:
+            - ALIVE
+            - DECEASED
+            - UNKNOWN
+          description: Nguồn sự thật cho sống/mất — KHÔNG suy từ deathDate
         tree_id:
           type: object
           nullable: true
@@ -3226,6 +3289,7 @@ components:
       required:
         - id
         - name
+        - lifeStatus
         - created_at
     PaginatedMembersResponseDto:
       type: object
@@ -3293,6 +3357,13 @@ components:
         deathDate:
           type: string
           example: 2020-12-31
+        lifeStatus:
+          type: string
+          enum:
+            - ALIVE
+            - DECEASED
+            - UNKNOWN
+          description: Bỏ trống ⇒ suy từ deathDate/birthDate (DECEASED hoặc UNKNOWN). Có deathDate thật ⇒ luôn DECEASED.
         occupation:
           type: string
           example: Kỹ sư phần mềm
@@ -3409,6 +3480,13 @@ components:
           type: object
           nullable: true
           example: 2020-12-31
+        lifeStatus:
+          type: string
+          enum:
+            - ALIVE
+            - DECEASED
+            - UNKNOWN
+          description: Nguồn sự thật cho sống/mất — KHÔNG suy từ deathDate
         tree_id:
           type: object
           nullable: true
@@ -3450,6 +3528,7 @@ components:
       required:
         - id
         - name
+        - lifeStatus
         - created_at
         - parent_relationships
         - child_relationships
@@ -3469,6 +3548,13 @@ components:
           type: string
         deathDate:
           type: string
+        lifeStatus:
+          type: string
+          enum:
+            - ALIVE
+            - DECEASED
+            - UNKNOWN
+          description: Có deathDate thật ⇒ luôn DECEASED; ALIVE kèm deathDate thật ⇒ 400. Xoá deathDate KHÔNG tự đổi trạng thái.
         occupation:
           type: string
         address:
@@ -3631,6 +3717,12 @@ components:
           format: uri
         generation:
           type: number
+        lifeStatus:
+          type: string
+          enum:
+            - ALIVE
+            - DECEASED
+            - UNKNOWN
         desc:
           type: string
       required:
@@ -3681,7 +3773,15 @@ components:
         deceased:
           type: number
           example: 30
-          description: Số thành viên đã mất
+          description: Số thành viên đã mất (lifeStatus = DECEASED)
+        alive:
+          type: number
+          example: 60
+          description: Số thành viên còn sống (lifeStatus = ALIVE)
+        unknownLifeStatus:
+          type: number
+          example: 30
+          description: Số thành viên chưa rõ sống/mất (lifeStatus = UNKNOWN)
         born20th21st:
           type: number
           example: 80
@@ -3704,6 +3804,8 @@ components:
         - generations
         - totalGenerations
         - deceased
+        - alive
+        - unknownLifeStatus
         - born20th21st
         - generatedAt
         - cacheStatus
@@ -4841,6 +4943,45 @@ components:
         - total
         - page
         - pageSize
+    IncenseOfferingDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        memberId:
+          type: object
+          nullable: true
+          format: uuid
+          description: null = thắp cho tổ tiên nói chung.
+        offeredAt:
+          type: string
+          format: date-time
+          description: Lúc thắp (created_at) — FE tính nén đã cháy tới đâu.
+      required:
+        - id
+        - memberId
+        - offeredAt
+    TodayIncenseDto:
+      type: object
+      properties:
+        date:
+          type: string
+          example: 2026-09-15
+          description: Ngày theo giờ VN (Asia/Ho_Chi_Minh) mà danh sách này thuộc về.
+        total:
+          type: number
+          example: 12
+          description: Tổng số nén thắp trong ngày, kể cả những nén không nằm trong `offerings`.
+        offerings:
+          description: Mới nhất trước, tối đa 20 nén. Gồm cả lượt chung lẫn lượt cho từng cụ.
+          type: array
+          items:
+            $ref: "#/components/schemas/IncenseOfferingDto"
+      required:
+        - date
+        - total
+        - offerings
     BurnIncenseDto:
       type: object
       properties:
@@ -4858,9 +4999,15 @@ components:
         incenseTotal:
           type: number
           example: 2149
+        offering:
+          description: Nén vừa thắp — FE cắm nó lên lư ngay, không chờ refetch.
+          allOf:
+            - 
+              $ref: "#/components/schemas/IncenseOfferingDto"
       required:
         - incenseCount
         - incenseTotal
+        - offering
     CreateTributeDto:
       type: object
       properties:

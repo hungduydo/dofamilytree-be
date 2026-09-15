@@ -104,7 +104,7 @@ const TABLE: Array<[string, any, Record<string, Expectation>]> = [
   // api-memorial.md §4 muốn loại editor ra; làm vậy cần một guard theo Set như
   // PII_ROLES. Đã cân nhắc và quyết định không làm — xem chú thích MemorialController.
   ['MemorialController', MemorialController, {
-    getStats: 'public', getAncestors: 'public', getTributes: 'public',
+    getStats: 'public', getAncestors: 'public', getTributes: 'public', getTodayIncense: 'public',
     burnIncense: 'member', createTribute: 'member', deleteTribute: 'admin',
   }],
   // CẢ HAI route đều public, và route GHI không có guard là CHỦ Ý — không phải
