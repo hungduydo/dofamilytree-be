@@ -19,6 +19,7 @@
     "backfill:generations": "ts-node scripts/backfill-generations.ts",
     "backfill:life-status": "ts-node scripts/backfill-life-status.ts",
     "backfill:death-anniversaries": "ts-node scripts/backfill-death-anniversaries.ts",
+    "backfill:graves": "ts-node scripts/backfill-graves.ts",
     "bootstrap:admin": "ts-node scripts/bootstrap-admin.ts",
     "audit:roles": "ts-node scripts/audit-user-roles.ts",
     "backfill:media": "ts-node scripts/backfill-media-metadata.ts",

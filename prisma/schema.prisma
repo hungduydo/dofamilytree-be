@@ -241,6 +241,9 @@ model Cemetery {
   name             String
   latitude         Float?
   longitude        Float?
+  /// EXACT = chấm tại chính ngôi mộ | AREA = toạ độ của khu mộ (cả khu dùng chung).
+  /// null khi chưa có toạ độ. Xem 010_cemetery_gps_precision.sql.
+  gpsPrecision     String?       @map("gps_precision")
   description      String?
   member_id        String?       @db.Uuid
   deathDate        String?

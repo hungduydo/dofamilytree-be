@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGraveDto, UpdateGraveDto } from './dto/create-grave.dto';
 import { profileSelectFor } from '../members/members.select';
+import { resolveGpsPrecision } from './grave-gps';
 
 // Các endpoint dưới đây nhúng profile của member. Chúng KHÔNG bao giờ trả 4 cột
 // liên lạc (phone/contactEmail/address/notes) — kể cả cho admin — vì nhiều route
@@ -57,12 +58,25 @@ export class GravesService {
   }
 
   async createGrave(dto: CreateGraveDto) {
-    return this.prisma.cemetery.create({ data: dto });
+    const gpsPrecision = resolveGpsPrecision({
+      latitude: dto.latitude ?? null,
+      longitude: dto.longitude ?? null,
+      gpsPrecision: dto.gpsPrecision,
+    });
+    return this.prisma.cemetery.create({ data: { ...dto, gpsPrecision } });
   }
 
   async updateGrave(id: string, dto: UpdateGraveDto) {
-    await this.getGraveById(id);
-    return this.prisma.cemetery.update({ where: { id }, data: dto });
+    const existing = await this.getGraveById(id);
+    const gpsPrecision = resolveGpsPrecision(
+      {
+        latitude: dto.latitude === undefined ? existing.latitude : dto.latitude,
+        longitude: dto.longitude === undefined ? existing.longitude : dto.longitude,
+        gpsPrecision: dto.gpsPrecision,
+      },
+      existing,
+    );
+    return this.prisma.cemetery.update({ where: { id }, data: { ...dto, gpsPrecision } });
   }
 
   async deleteGrave(id: string) {

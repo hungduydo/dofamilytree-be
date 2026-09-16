@@ -15,6 +15,13 @@ export class GraveResponseDto {
   @ApiPropertyOptional({ example: 105.804817, nullable: true, description: 'Kinh độ (null = chưa xác định GPS)' })
   longitude: number | null;
 
+  @ApiPropertyOptional({
+    enum: ['EXACT', 'AREA'],
+    nullable: true,
+    description: 'EXACT = chấm tại mộ, AREA = toạ độ chung của khu mộ, null = chưa có toạ độ',
+  })
+  gpsPrecision: 'EXACT' | 'AREA' | null;
+
   @ApiPropertyOptional({ nullable: true })
   description: string | null;
 

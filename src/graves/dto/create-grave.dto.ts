@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, IsUUID, IsIn } from 'class-validator';
+import { GPS_PRECISIONS, GpsPrecision } from '../grave-gps';
 
 export class CreateGraveDto {
   @ApiProperty({ example: 'Mộ Nguyễn Văn A' })
@@ -16,6 +17,15 @@ export class CreateGraveDto {
   @IsOptional()
   @IsNumber()
   longitude?: number;
+
+  @ApiPropertyOptional({
+    enum: GPS_PRECISIONS,
+    nullable: true,
+    description: 'EXACT = chấm tại mộ, AREA = toạ độ khu mộ. Bỏ trống: toạ độ mới/đổi → EXACT, giữ nguyên → giữ như cũ',
+  })
+  @IsOptional()
+  @IsIn(GPS_PRECISIONS)
+  gpsPrecision?: GpsPrecision;
 
   @ApiPropertyOptional({ example: 'Nghĩa trang Bình Hưng Hòa' })
   @IsOptional()
@@ -58,6 +68,15 @@ export class UpdateGraveDto {
   @IsOptional()
   @IsNumber()
   longitude?: number;
+
+  @ApiPropertyOptional({
+    enum: GPS_PRECISIONS,
+    nullable: true,
+    description: 'EXACT = chấm tại mộ, AREA = toạ độ khu mộ. Bỏ trống: toạ độ mới/đổi → EXACT, giữ nguyên → giữ như cũ',
+  })
+  @IsOptional()
+  @IsIn(GPS_PRECISIONS)
+  gpsPrecision?: GpsPrecision;
 
   @ApiPropertyOptional()
   @IsOptional()

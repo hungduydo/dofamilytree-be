@@ -1,0 +1,39 @@
+{
+  "_huong_dan": "Toạ độ [vĩ độ, kinh độ] của từng KHU MỘ — lấy bằng cách nhấn giữ trên Google Maps. Khu để null: mộ vẫn được tạo nhưng chưa có GPS. Điền thêm bất cứ lúc nào rồi chạy lại `pnpm backfill:graves -- --apply --areas scripts/data/grave-areas.json` — script chỉ bổ sung cho mộ chưa có toạ độ, không đè toạ độ đã chấm. Tên khu phải khớp phần sau 'Mộ:' trong tiểu sử (không phân biệt hoa thường). Chưa rõ: 'Khu âm hồn Đùng Lăng' có nằm trong khu Đùng Lăng không; 'Cồn Choi' và 'Lăng tập thể Cồn Choi' có phải một nơi không.",
+  "Đùng Vành": [
+    16.785089207706527,
+    107.18935104372397
+  ],
+  "Đùng Lăng": [
+    16.782336364012078,
+    107.1890720940045
+  ],
+  "Nương Âm": null,
+  "Cồn Choi": null,
+  "Lăng tập thể Cồn Choi": null,
+  "Lăng tập thể của Gia đình Đỗ Xuân bên phải Chùa Thuyền Tôn ở Huế": [
+    16.420776410206518,
+    107.59618655479122
+  ],
+  "Vụng Trạ": null,
+  "Cồn Kéc": null,
+  "Đùng Hậu": null,
+  "làng Tả Hữu": null,
+  "Xuân Hưng, Xuân Lộc, Đồng Nai": null,
+  "Kế Môn": null,
+  "Chùa Cộ": null,
+  "Làng Phương Ngạn, Triệu Phong, Quảng Trị": null,
+  "Đâu Kênh": null,
+  "Khu âm hồn Đùng Lăng": null,
+  "Ấp 3, Xuân Hưng, Xuân Lộc, Đồng Nai": null,
+  "Làng Kinh Môn": null,
+  "Làng Bích La Trung": null,
+  "Vân Tường": null,
+  "Làng Thạch Hãn": null,
+  "Múc Đa Hán, Thái Lan": null,
+  "Nghĩa trang Thánh Mẫu, Thành phố Đà Lạt": null,
+  "Làng Nhan Biều": null,
+  "Nghĩa trang phía Nam Tp. Huế": null,
+  "Làng Kinh Môn, Gio Linh, Quảng Trị": null,
+  "Làng Hậu Kiên": null
+}
