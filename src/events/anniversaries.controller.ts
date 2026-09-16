@@ -3,42 +3,65 @@ import {
 } from '@nestjs/common';
 import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiQuery,
-  ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse,
+  ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse, ApiBadRequestResponse, ApiConflictResponse,
 } from '@nestjs/swagger';
+import { Public } from '../auth/public.decorator';
+import { ParseOptionalIntPipe } from '../utils/parse-optional-int.pipe';
+import { ANNIVERSARY_KINDS, AnniversaryKind, UPCOMING_MAX_DAYS } from './anniversary-occurrence';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { EventsService } from './events.service';
 import { CreateAnniversaryDto, UpdateAnniversaryDto } from './dto/create-event.dto';
-import { AnniversaryResponseDto } from './dto/event-response.dto';
+import { AnniversaryResponseDto, AnniversaryTodayResponseDto } from './dto/event-response.dto';
 
-@ApiTags('Anniversaries (Ngày giỗ)')
+@ApiTags('Anniversaries (Ngày kỵ / giỗ)')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('anniversaries')
 export class AnniversariesController {
   constructor(private readonly eventsService: EventsService) {}
 
+  // Đọc là công khai (cùng mức với ban thờ tưởng niệm): chỉ tên, đời, ngày kỵ —
+  // không có liên lạc.
   @Get()
-  @ApiOperation({ summary: 'Get anniversaries (filter by member_id, month)' })
+  @Public()
+  @ApiOperation({ summary: 'Danh sách ngày kỵ / tưởng niệm, xếp theo tháng-ngày' })
   @ApiQuery({ name: 'member_id', required: false })
-  @ApiQuery({ name: 'month', required: false, type: Number })
+  @ApiQuery({ name: 'kind', required: false, enum: ANNIVERSARY_KINDS })
+  @ApiQuery({ name: 'month', required: false, type: Number, description: 'Tháng của ngày kỵ (tháng âm với kỵ âm lịch)' })
   @ApiOkResponse({ type: [AnniversaryResponseDto] })
   getAnniversaries(
     @Query('member_id') member_id?: string,
-    @Query('month') month?: number,
+    @Query('kind') kind?: string,
+    @Query('month', new ParseOptionalIntPipe()) month?: any,
   ) {
-    return this.eventsService.getAnniversaries({ member_id, month: month ? +month : undefined });
+    return this.eventsService.getAnniversaries({
+      member_id,
+      kind: (ANNIVERSARY_KINDS as readonly string[]).includes(kind ?? '') ? (kind as AnniversaryKind) : undefined,
+      month,
+    });
+  }
+
+  @Get('today')
+  @Public()
+  @ApiOperation({ summary: 'Hôm nay (giờ Việt Nam) là ngày kỵ của ai' })
+  @ApiOkResponse({ type: AnniversaryTodayResponseDto })
+  getToday() {
+    return this.eventsService.getTodayAnniversaries();
   }
 
   @Get('upcoming')
-  @ApiOperation({ summary: 'Get upcoming anniversaries (next 30 days)' })
+  @Public()
+  @ApiOperation({ summary: `Ngày kỵ sắp tới, tính cả hôm nay (tối đa ${UPCOMING_MAX_DAYS} ngày)` })
+  @ApiQuery({ name: 'days', required: false, type: Number, description: 'Mặc định 30' })
   @ApiOkResponse({ type: [AnniversaryResponseDto] })
-  getUpcoming() {
-    return this.eventsService.getUpcomingAnniversaries();
+  getUpcoming(@Query('days', new ParseOptionalIntPipe()) days?: any) {
+    return this.eventsService.getUpcomingAnniversaries(days ?? 30);
   }
 
   @Get(':id')
+  @Public()
   @ApiOperation({ summary: 'Get anniversary by ID' })
   @ApiOkResponse({ type: AnniversaryResponseDto })
   getById(@Param('id') id: string) {
@@ -47,7 +70,9 @@ export class AnniversariesController {
 
   @Post()
   @Roles('editor')
-  @ApiOperation({ summary: 'Create anniversary (optional member link)' })
+  @ApiOperation({ summary: 'Tạo ngày kỵ / tưởng niệm' })
+  @ApiBadRequestResponse({ description: 'Ngày không hợp lệ, hoặc thành viên chưa ở trạng thái đã mất' })
+  @ApiConflictResponse({ description: 'Thành viên đã có ngày kỵ' })
   @ApiCreatedResponse({ type: AnniversaryResponseDto })
   create(@Body() dto: CreateAnniversaryDto) {
     return this.eventsService.createAnniversary(dto);
@@ -55,7 +80,8 @@ export class AnniversariesController {
 
   @Put(':id')
   @Roles('editor')
-  @ApiOperation({ summary: 'Update anniversary' })
+  @ApiOperation({ summary: 'Sửa ngày kỵ / tưởng niệm' })
+  @ApiConflictResponse({ description: 'Thành viên đã có ngày kỵ' })
   @ApiOkResponse({ type: AnniversaryResponseDto })
   update(@Param('id') id: string, @Body() dto: UpdateAnniversaryDto) {
     return this.eventsService.updateAnniversary(id, dto);

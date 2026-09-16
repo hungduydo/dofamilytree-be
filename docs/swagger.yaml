@@ -427,7 +427,7 @@ paths:
           name: missing
           required: false
           in: query
-          description: "Thiếu dữ liệu, nhiều giá trị cách nhau dấu phẩy (AND): birthDate, avatar, parents, deathDate. `parents` = chưa gắn cha/mẹ; `deathDate` = đã mất nhưng thiếu ngày mất."
+          description: "Thiếu dữ liệu, nhiều giá trị cách nhau dấu phẩy (AND): birthDate, avatar, parents, deathDate, deathAnniversary. `parents` = chưa gắn cha/mẹ; `deathDate` = đã mất nhưng thiếu ngày mất."
           schema:
             type: string
         - 
@@ -1292,7 +1292,7 @@ paths:
   /v2/anniversaries:
     get:
       operationId: AnniversariesController_getAnniversaries
-      summary: Get anniversaries (filter by member_id, month)
+      summary: Danh sách ngày kỵ / tưởng niệm, xếp theo tháng-ngày
       parameters:
         - 
           name: member_id
@@ -1301,9 +1301,20 @@ paths:
           schema:
             type: string
         - 
+          name: kind
+          required: false
+          in: query
+          schema:
+            enum:
+              - DEATH
+              - CLAN
+              - OTHER
+            type: string
+        - 
           name: month
           required: false
           in: query
+          description: Tháng của ngày kỵ (tháng âm với kỵ âm lịch)
           schema:
             type: number
       responses:
@@ -1316,13 +1327,13 @@ paths:
                 items:
                   $ref: "#/components/schemas/AnniversaryResponseDto"
       tags:
-        - Anniversaries (Ngày giỗ)
+        - Anniversaries (Ngày kỵ / giỗ)
       security:
         - 
           bearer: []
     post:
       operationId: AnniversariesController_create
-      summary: Create anniversary (optional member link)
+      summary: Tạo ngày kỵ / tưởng niệm
       parameters: []
       requestBody:
         required: true
@@ -1337,16 +1348,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnniversaryResponseDto"
+        400:
+          description: Ngày không hợp lệ, hoặc thành viên chưa ở trạng thái đã mất
+        409:
+          description: Thành viên đã có ngày kỵ
       tags:
-        - Anniversaries (Ngày giỗ)
+        - Anniversaries (Ngày kỵ / giỗ)
+      security:
+        - 
+          bearer: []
+  /v2/anniversaries/today:
+    get:
+      operationId: AnniversariesController_getToday
+      summary: Hôm nay (giờ Việt Nam) là ngày kỵ của ai
+      parameters: []
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnniversaryTodayResponseDto"
+      tags:
+        - Anniversaries (Ngày kỵ / giỗ)
       security:
         - 
           bearer: []
   /v2/anniversaries/upcoming:
     get:
       operationId: AnniversariesController_getUpcoming
-      summary: Get upcoming anniversaries (next 30 days)
-      parameters: []
+      summary: Ngày kỵ sắp tới, tính cả hôm nay (tối đa 90 ngày)
+      parameters:
+        - 
+          name: days
+          required: false
+          in: query
+          description: Mặc định 30
+          schema:
+            type: number
       responses:
         200:
           description: ""
@@ -1357,7 +1396,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/AnniversaryResponseDto"
       tags:
-        - Anniversaries (Ngày giỗ)
+        - Anniversaries (Ngày kỵ / giỗ)
       security:
         - 
           bearer: []
@@ -1380,13 +1419,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/AnniversaryResponseDto"
       tags:
-        - Anniversaries (Ngày giỗ)
+        - Anniversaries (Ngày kỵ / giỗ)
       security:
         - 
           bearer: []
     put:
       operationId: AnniversariesController_update
-      summary: Update anniversary
+      summary: Sửa ngày kỵ / tưởng niệm
       parameters:
         - 
           name: id
@@ -1407,8 +1446,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnniversaryResponseDto"
+        409:
+          description: Thành viên đã có ngày kỵ
       tags:
-        - Anniversaries (Ngày giỗ)
+        - Anniversaries (Ngày kỵ / giỗ)
       security:
         - 
           bearer: []
@@ -1426,7 +1467,7 @@ paths:
         204:
           description: Deleted
       tags:
-        - Anniversaries (Ngày giỗ)
+        - Anniversaries (Ngày kỵ / giỗ)
       security:
         - 
           bearer: []
@@ -2776,7 +2817,7 @@ paths:
           bearer: []
 info:
   title: Family Tree API v2
-  description: "## Vietnamese Family Tree Management API\n\n**Base URL:** `http://localhost:3002/v2`\n\n**Authentication:** Bearer JWT token (same as backend v1)\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ mới (BIOLOGICAL/ADOPTED/SPOUSE) + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày giỗ (filter by member, month, upcoming)\n- **Events** — Sự kiện dòng họ + notification queue\n- **Media** — Thư viện media: upload mọi loại (ảnh nén lossless bằng sharp; video/audio/tài liệu upload thẳng) → Vercel Blob; phân trang/lọc/tìm kiếm + thống kê + album\n- **Graves** — Mộ phần với tọa độ GPS + tìm kiếm gần nhất\n\n### Queue Jobs (QStash + Redis)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → Vercel Blob → cập nhật avatar_url |\n| media-process | Upload media | Ảnh: sharp nén lossless; khác: upload thẳng → Vercel Blob (off-request) |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| notification | New member/relationship/event | Log (Phase 1) |\n"
+  description: "## Vietnamese Family Tree Management API\n\n**Base URL:** `http://localhost:3002/v2`\n\n**Authentication:** Bearer JWT token (same as backend v1)\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ mới (BIOLOGICAL/ADOPTED/SPOUSE) + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày kỵ lặp lại theo âm/dương lịch (hôm nay, sắp tới, theo tháng)\n- **Events** — Sự kiện dòng họ + notification queue\n- **Media** — Thư viện media: upload mọi loại (ảnh nén lossless bằng sharp; video/audio/tài liệu upload thẳng) → Vercel Blob; phân trang/lọc/tìm kiếm + thống kê + album\n- **Graves** — Mộ phần với tọa độ GPS + tìm kiếm gần nhất\n\n### Queue Jobs (QStash + Redis)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → Vercel Blob → cập nhật avatar_url |\n| media-process | Upload media | Ảnh: sharp nén lossless; khác: upload thẳng → Vercel Blob (off-request) |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| notification | New member/relationship/event | Log (Phase 1) |\n"
   version: 2.0.0
   contact:
     name: Family Tree Team
@@ -4025,18 +4066,76 @@ components:
           description: going | maybe | declined
       required:
         - member_id
+    AnniversaryMemberDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Nguyễn Văn A
+        avatar_url:
+          type: object
+          nullable: true
+          format: uri
+        generation:
+          type: number
+          nullable: true
+          example: 5
+        deathDate:
+          type: object
+          nullable: true
+          description: Chuỗi tự do
+      required:
+        - id
+        - name
+    AnniversaryCemeteryDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+        - id
+        - name
     AnniversaryResponseDto:
       type: object
       properties:
         id:
           type: string
           format: uuid
+        kind:
+          type: string
+          enum:
+            - DEATH
+            - CLAN
+            - OTHER
+        calendar:
+          type: string
+          enum:
+            - LUNAR
+            - SOLAR
+        day:
+          type: number
+          example: 23
+        month:
+          type: number
+          example: 12
+        isLeapMonth:
+          type: boolean
+          default: false
+          description: Mất trong tháng nhuận
         title:
+          type: object
+          nullable: true
+          description: Tiêu đề nhập tay
+        displayTitle:
           type: string
-          example: Giỗ cụ Nguyễn Văn A
-        date:
-          type: string
-          format: date-time
+          example: Kỵ Nguyễn Văn A
+          description: title, hoặc "Kỵ <tên>" nếu để trống
         description:
           type: object
           nullable: true
@@ -4048,11 +4147,19 @@ components:
           type: object
           nullable: true
           format: uuid
-          description: Mộ/nghĩa trang liên kết
-        isLunar:
-          type: boolean
-          default: false
-          description: Ngày giỗ theo âm lịch
+        nextOccurrence:
+          type: string
+          example: 2027-01-30
+          description: Lần kế tiếp (tính cả hôm nay), dương lịch
+        daysUntil:
+          type: number
+          example: 12
+          description: 0 = hôm nay
+        yearsSinceDeath:
+          type: number
+          nullable: true
+          example: 30
+          description: Lần giỗ thứ mấy (khi năm mất đọc được từ deathDate)
         created_at:
           type: string
           format: date-time
@@ -4063,59 +4170,130 @@ components:
           nullable: true
           allOf:
             - 
-              $ref: "#/components/schemas/MemberResponseDto"
+              $ref: "#/components/schemas/AnniversaryMemberDto"
         cemetery:
-          type: object
           nullable: true
-          description: Mộ/nghĩa trang liên kết
+          allOf:
+            - 
+              $ref: "#/components/schemas/AnniversaryCemeteryDto"
       required:
         - id
-        - title
-        - date
-        - isLunar
+        - kind
+        - calendar
+        - day
+        - month
+        - isLeapMonth
+        - displayTitle
+        - nextOccurrence
+        - daysUntil
         - created_at
         - updated_at
+    AnniversaryTodayResponseDto:
+      type: object
+      properties:
+        date:
+          type: string
+          example: 2026-09-16
+          description: Hôm nay theo giờ Việt Nam
+        lunar:
+          type: object
+          example:
+            day: 6
+            month: 8
+            year: 2026
+            isLeapMonth: false
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnniversaryResponseDto"
+      required:
+        - date
+        - lunar
+        - items
     CreateAnniversaryDto:
       type: object
       properties:
+        kind:
+          type: string
+          enum:
+            - DEATH
+            - CLAN
+            - OTHER
+          default: DEATH
+          description: DEATH = ngày kỵ của member_id (mỗi người một ngày) | CLAN = giỗ tổ, thanh minh… | OTHER
+        calendar:
+          type: string
+          enum:
+            - LUNAR
+            - SOLAR
+          default: LUNAR
+          description: LUNAR = âm lịch (Việt Nam, UTC+7) | SOLAR = dương lịch
+        day:
+          type: number
+          example: 23
+          minimum: 1
+          maximum: 31
+          description: "Ngày (âm: 1–30)"
+        month:
+          type: number
+          example: 12
+          minimum: 1
+          maximum: 12
+        isLeapMonth:
+          type: boolean
+          default: false
+          description: Mất trong tháng nhuận (chỉ với LUNAR). Vẫn cúng vào tháng thường.
         title:
           type: string
-          example: Giỗ Ông Nội
-        date:
-          format: date-time
-          type: string
-          example: 2024-03-15T00:00:00.000Z
+          example: Giỗ tổ dòng họ
+          description: Bắt buộc khi kind khác DEATH
         description:
           type: string
         member_id:
           type: string
-          description: Link to a member (optional)
+          description: Người được tưởng niệm — bắt buộc khi kind = DEATH
         cemetery_id:
           type: string
-          description: Link to a cemetery/grave (optional)
-        isLunar:
-          type: boolean
-          default: false
-          description: Ngày giỗ theo âm lịch
+          description: Mộ/nghĩa trang liên kết
       required:
-        - title
-        - date
+        - day
+        - month
     UpdateAnniversaryDto:
       type: object
       properties:
-        title:
+        kind:
           type: string
-        date:
-          format: date-time
+          enum:
+            - DEATH
+            - CLAN
+            - OTHER
+        calendar:
           type: string
-        description:
-          type: string
-        member_id:
-          type: string
-        cemetery_id:
-          type: string
-        isLunar:
+          enum:
+            - LUNAR
+            - SOLAR
+        day:
+          type: number
+          minimum: 1
+          maximum: 31
+        month:
+          type: number
+          minimum: 1
+          maximum: 12
+        isLeapMonth:
           type: boolean
+        title:
+          type: object
+          nullable: true
+        description:
+          type: object
+          nullable: true
+        member_id:
+          type: object
+          nullable: true
+        cemetery_id:
+          type: object
+          nullable: true
     UploadMediaDto:
       type: object
       properties:

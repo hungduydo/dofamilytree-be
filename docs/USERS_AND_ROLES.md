@@ -130,7 +130,7 @@ role **tối thiểu** — `editor` bao gồm cả admin.
 | | `GET /events/:id/attendees` | auth |
 | | `POST /events`, `PUT /events/:id`, `POST\|DELETE /events/:id/attendees` | **editor** |
 | | `DELETE /events/:id` | **admin** |
-| **anniversaries** | 3 route `GET` | auth |
+| **anniversaries** | `GET /anniversaries`, `/today`, `/upcoming`, `/:id` (không có liên lạc) | public |
 | | `POST`, `PUT /:id` | **editor** — `DELETE /:id` **admin** |
 | **graves** | `GET /graves`, `/nearby`, `/:id` | public |
 | | `POST`, `PUT /:id` | **editor** — `DELETE /:id` **admin** |

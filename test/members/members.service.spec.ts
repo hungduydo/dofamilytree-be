@@ -258,6 +258,13 @@ describe('MembersService', () => {
       });
     });
 
+    it('missing=deathAnniversary: người đã mất chưa có ngày kỵ', async () => {
+      await call({ missing: ['deathAnniversary'] });
+      expect(whereArg().AND[0]).toEqual({
+        lifeStatus: 'DECEASED', anniversaries: { none: { kind: 'DEATH' } },
+      });
+    });
+
     it('khoảng năm sinh: lấy id từ query phụ rồi lọc id IN', async () => {
       mockPrisma.$queryRaw.mockResolvedValue([{ id: 'a' }, { id: 'b' }]);
       await call({ birthYearFrom: 1900 });

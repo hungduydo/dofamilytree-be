@@ -71,7 +71,8 @@ const TABLE: Array<[string, any, Record<string, Expectation>]> = [
     delete: 'admin',
   }],
   ['AnniversariesController', AnniversariesController, {
-    getAnniversaries: 'auth', getUpcoming: 'auth', getById: 'auth',
+    // Công khai như ban thờ: tên + ngày kỵ, không liên lạc.
+    getAnniversaries: 'public', getToday: 'public', getUpcoming: 'public', getById: 'public',
     create: 'editor', update: 'editor', delete: 'admin',
   }],
   ['GravesController', GravesController, {

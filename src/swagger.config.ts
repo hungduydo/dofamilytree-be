@@ -21,7 +21,7 @@ export function buildSwaggerConfig() {
         `- **Members** — CRUD thành viên + profile + avatar (async upload)\n` +
         `- **Relationships** — Quan hệ mới (BIOLOGICAL/ADOPTED/SPOUSE) + tìm tổ tiên/con cháu\n` +
         `- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n` +
-        `- **Anniversaries** — Ngày giỗ (filter by member, month, upcoming)\n` +
+        `- **Anniversaries** — Ngày kỵ lặp lại theo âm/dương lịch (hôm nay, sắp tới, theo tháng)\n` +
         `- **Events** — Sự kiện dòng họ + notification queue\n` +
         `- **Media** — Thư viện media: upload mọi loại (ảnh nén lossless bằng sharp; video/audio/tài liệu upload thẳng) → Vercel Blob; phân trang/lọc/tìm kiếm + thống kê + album\n` +
         `- **Graves** — Mộ phần với tọa độ GPS + tìm kiếm gần nhất\n\n` +

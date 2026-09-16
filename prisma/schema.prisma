@@ -255,14 +255,25 @@ model Cemetery {
   @@map("cemeteries")
 }
 
+/// Ngày tưởng niệm LẶP LẠI hằng năm (ngày kỵ, giỗ tổ...) — chỉ lưu ngày/tháng,
+/// không có năm. Ngày dương tương ứng được quy đổi lúc đọc
+/// (src/events/anniversary-occurrence.ts). Ràng buộc CHECK và "mỗi người một
+/// ngày kỵ" nằm ở 009_anniversary_recurring.sql.
 model Anniversary {
   id          String    @id @default(uuid()) @db.Uuid
-  title       String
-  date        DateTime
+  /// DEATH (ngày kỵ của member_id) | CLAN (giỗ tổ, thanh minh...) | OTHER
+  kind        String    @default("DEATH")
+  /// LUNAR | SOLAR
+  calendar    String    @default("LUNAR")
+  day         Int
+  month       Int
+  /// Người mất trong tháng nhuận. Ngày kỵ vẫn cúng vào tháng thường cùng số.
+  isLeapMonth Boolean   @default(false) @map("is_leap_month")
+  /// Bắt buộc khi kind <> DEATH; ngày kỵ hiển thị "Kỵ <tên>" nếu để trống.
+  title       String?
   description String?
   member_id   String?   @db.Uuid
   cemetery_id String?   @db.Uuid
-  isLunar     Boolean   @default(false)
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
   cemetery    Cemetery? @relation(fields: [cemetery_id], references: [id])
@@ -270,6 +281,7 @@ model Anniversary {
 
   @@index([member_id])
   @@index([cemetery_id])
+  @@index([calendar, month, day])
   @@map("anniversaries")
 }
 

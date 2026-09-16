@@ -7,7 +7,7 @@ import { LifeStatus, isLifeStatus } from './life-status';
  * bổ sung. Giá trị đến từ query string `?missing=birthDate,avatar`, chỉ những
  * khoá trong allowlist này mới đi tiếp (cùng cơ chế MEMBER_SORT_FIELDS).
  */
-export const MEMBER_MISSING_FIELDS = ['birthDate', 'avatar', 'parents', 'deathDate'] as const;
+export const MEMBER_MISSING_FIELDS = ['birthDate', 'avatar', 'parents', 'deathDate', 'deathAnniversary'] as const;
 export type MemberMissingField = (typeof MEMBER_MISSING_FIELDS)[number];
 
 /** Năm sinh hợp lệ cho bộ lọc khoảng — chặn số vô nghĩa trước khi xuống SQL. */
@@ -78,5 +78,8 @@ export function missingFieldWhere(field: MemberMissingField): Prisma.MemberWhere
     case 'deathDate':
       // Chỉ có nghĩa với người đã mất — người còn sống thiếu ngày mất là đúng.
       return { AND: [{ lifeStatus: 'DECEASED' }, blank('deathDate')] };
+    case 'deathAnniversary':
+      // Người đã mất chưa có ngày kỵ (anniversaries.kind = 'DEATH').
+      return { lifeStatus: 'DECEASED', anniversaries: { none: { kind: 'DEATH' } } };
   }
 }

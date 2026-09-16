@@ -1,6 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsUUID, IsDate, IsArray } from 'class-validator';
+import {
+  IsString, IsNotEmpty, IsOptional, IsBoolean, IsUUID, IsDate, IsArray, IsIn, IsInt, Min, Max, MaxLength,
+} from 'class-validator';
 import { Type, Transform } from 'class-transformer';
+import {
+  ANNIVERSARY_CALENDARS, ANNIVERSARY_KINDS, AnniversaryCalendar, AnniversaryKind,
+} from '../anniversary-occurrence';
 
 /** Coerce multipart/form-data string booleans ("true"/"false"/"1"/"0"/"") into real booleans. */
 const toBoolean = ({ value }: { value: unknown }): unknown => {
@@ -27,69 +32,116 @@ const toStringArray = ({ value }: { value: unknown }): string[] | undefined => {
   return undefined;
 };
 
+const ANNIVERSARY_KIND_DOC = 'DEATH = ngày kỵ của member_id (mỗi người một ngày) | CLAN = giỗ tổ, thanh minh… | OTHER';
+const ANNIVERSARY_CALENDAR_DOC = 'LUNAR = âm lịch (Việt Nam, UTC+7) | SOLAR = dương lịch';
+
 export class CreateAnniversaryDto {
-  @ApiProperty({ example: 'Giỗ Ông Nội' })
-  @IsString()
-  @IsNotEmpty()
-  title: string;
-
-  @ApiProperty({ example: '2024-03-15T00:00:00.000Z' })
-  @IsNotEmpty()
-  @IsDate()
-  @Type(() => Date)
-  date: Date;
-
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: ANNIVERSARY_KINDS, default: 'DEATH', description: ANNIVERSARY_KIND_DOC })
   @IsOptional()
-  @IsString()
-  description?: string;
+  @IsIn(ANNIVERSARY_KINDS)
+  kind?: AnniversaryKind;
 
-  @ApiPropertyOptional({ description: 'Link to a member (optional)' })
+  @ApiPropertyOptional({ enum: ANNIVERSARY_CALENDARS, default: 'LUNAR', description: ANNIVERSARY_CALENDAR_DOC })
   @IsOptional()
-  @IsUUID()
-  member_id?: string;
+  @IsIn(ANNIVERSARY_CALENDARS)
+  calendar?: AnniversaryCalendar;
 
-  @ApiPropertyOptional({ description: 'Link to a cemetery/grave (optional)' })
-  @IsOptional()
-  @IsUUID()
-  cemetery_id?: string;
+  @ApiProperty({ example: 23, minimum: 1, maximum: 31, description: 'Ngày (âm: 1–30)' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  day: number;
 
-  @ApiPropertyOptional({ default: false, description: 'Ngày giỗ theo âm lịch' })
+  @ApiProperty({ example: 12, minimum: 1, maximum: 12 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  month: number;
+
+  @ApiPropertyOptional({ default: false, description: 'Mất trong tháng nhuận (chỉ với LUNAR). Vẫn cúng vào tháng thường.' })
   @IsOptional()
   @IsBoolean()
-  isLunar?: boolean;
-}
+  isLeapMonth?: boolean;
 
-export class UpdateAnniversaryDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'Giỗ tổ dòng họ', description: 'Bắt buộc khi kind khác DEATH' })
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   title?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @Type(() => Date)
-  date?: Date;
-
-  @ApiPropertyOptional()
-  @IsOptional()
   @IsString()
+  @MaxLength(500)
   description?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Người được tưởng niệm — bắt buộc khi kind = DEATH' })
   @IsOptional()
   @IsUUID()
   member_id?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Mộ/nghĩa trang liên kết' })
   @IsOptional()
   @IsUUID()
   cemetery_id?: string;
+}
+
+/** Mọi trường tuỳ chọn; `null` ở member_id/cemetery_id/title/description để xoá. */
+export class UpdateAnniversaryDto {
+  @ApiPropertyOptional({ enum: ANNIVERSARY_KINDS })
+  @IsOptional()
+  @IsIn(ANNIVERSARY_KINDS)
+  kind?: AnniversaryKind;
+
+  @ApiPropertyOptional({ enum: ANNIVERSARY_CALENDARS })
+  @IsOptional()
+  @IsIn(ANNIVERSARY_CALENDARS)
+  calendar?: AnniversaryCalendar;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 31 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  day?: number;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 12 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  month?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  isLunar?: boolean;
+  isLeapMonth?: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsUUID()
+  member_id?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsUUID()
+  cemetery_id?: string | null;
 }
 
 export class AddAttendeeDto {
