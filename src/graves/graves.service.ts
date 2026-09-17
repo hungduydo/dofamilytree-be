@@ -1,14 +1,24 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGraveDto, UpdateGraveDto } from './dto/create-grave.dto';
 import { profileSelectFor } from '../members/members.select';
-import { resolveGpsPrecision } from './grave-gps';
+import { resolveGraveLocation } from './grave-location';
 
 // Các endpoint dưới đây nhúng profile của member. Chúng KHÔNG bao giờ trả 4 cột
 // liên lạc (phone/contactEmail/address/notes) — kể cả cho admin — vì nhiều route
 // trong file này là @Public(). Ai cần số điện thoại thì gọi
 // GET /v2/members/:id/profile, nơi có kiểm tra role thật sự.
 const EMBEDDED_PROFILE = profileSelectFor(false);
+
+const GRAVE_INCLUDE = {
+  member: { include: { profile: EMBEDDED_PROFILE } },
+  area: { select: { id: true, name: true, description: true, polygon: true } },
+} as const;
+
+/** Gắn vị trí hiển thị: toạ độ của mộ, không có thì tâm khu (grave-location.ts). */
+const withLocation = <T extends { latitude: number | null; longitude: number | null; area?: { polygon: unknown } | null }>(
+  grave: T,
+) => ({ ...grave, location: resolveGraveLocation(grave) });
 
 /** Haversine formula — distance between two lat/lng points in km */
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -26,61 +36,57 @@ export class GravesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getAllGraves(filter: { name?: string }) {
-    return this.prisma.cemetery.findMany({
+    const graves = await this.prisma.cemetery.findMany({
       where: filter.name ? { name: { contains: filter.name, mode: 'insensitive' } } : {},
-      include: { member: { include: { profile: EMBEDDED_PROFILE } } },
+      include: GRAVE_INCLUDE,
       orderBy: { created_at: 'desc' },
     });
+    return graves.map(withLocation);
   }
 
   async getGraveById(id: string) {
-    const grave = await this.prisma.cemetery.findUnique({
-      where: { id },
-      include: { member: { include: { profile: EMBEDDED_PROFILE } } },
-    });
+    const grave = await this.prisma.cemetery.findUnique({ where: { id }, include: GRAVE_INCLUDE });
     if (!grave) throw new NotFoundException(`Grave ${id} not found`);
-    return grave;
+    return withLocation(grave);
   }
 
   async getNearbyGraves(params: { lat: number; lng: number; radiusKm?: number }) {
     const radius = params.radiusKm ?? 10;
 
-    // Fetch all cemeteries then filter by Haversine distance.
-    // Graves without confirmed GPS (null lat/lng) are excluded from proximity search.
+    // Fetch then filter by Haversine distance on the resolved location, so graves
+    // known only by their burial area are found too. Graves with no location are skipped.
     // For production: use PostGIS or bounding box pre-filter.
     const all = await this.prisma.cemetery.findMany({
-      where: { latitude: { not: null }, longitude: { not: null } },
-      include: { member: { include: { profile: EMBEDDED_PROFILE } } },
+      where: { OR: [{ latitude: { not: null }, longitude: { not: null } }, { area_id: { not: null } }] },
+      include: GRAVE_INCLUDE,
     });
-    return all.filter(
-      (g) => haversineDistance(params.lat, params.lng, g.latitude as number, g.longitude as number) <= radius,
+    return all.map(withLocation).filter(
+      (g) => g.location && haversineDistance(params.lat, params.lng, g.location.latitude, g.location.longitude) <= radius,
     );
   }
 
   async createGrave(dto: CreateGraveDto) {
-    const gpsPrecision = resolveGpsPrecision({
-      latitude: dto.latitude ?? null,
-      longitude: dto.longitude ?? null,
-      gpsPrecision: dto.gpsPrecision,
-    });
-    return this.prisma.cemetery.create({ data: { ...dto, gpsPrecision } });
+    await this.assertAreaExists(dto.area_id);
+    const grave = await this.prisma.cemetery.create({ data: dto, include: GRAVE_INCLUDE });
+    return withLocation(grave);
   }
 
   async updateGrave(id: string, dto: UpdateGraveDto) {
-    const existing = await this.getGraveById(id);
-    const gpsPrecision = resolveGpsPrecision(
-      {
-        latitude: dto.latitude === undefined ? existing.latitude : dto.latitude,
-        longitude: dto.longitude === undefined ? existing.longitude : dto.longitude,
-        gpsPrecision: dto.gpsPrecision,
-      },
-      existing,
-    );
-    return this.prisma.cemetery.update({ where: { id }, data: { ...dto, gpsPrecision } });
+    await this.getGraveById(id);
+    await this.assertAreaExists(dto.area_id);
+    const grave = await this.prisma.cemetery.update({ where: { id }, data: dto, include: GRAVE_INCLUDE });
+    return withLocation(grave);
   }
 
   async deleteGrave(id: string) {
     await this.getGraveById(id);
     return this.prisma.cemetery.delete({ where: { id } });
+  }
+
+  /** FK sẽ chặn area_id sai, nhưng dưới dạng lỗi 500 khó hiểu — kiểm tra trước để trả 400. */
+  private async assertAreaExists(areaId: string | null | undefined) {
+    if (!areaId) return;
+    const exists = await this.prisma.graveArea.count({ where: { id: areaId } });
+    if (!exists) throw new BadRequestException(`Khu mộ ${areaId} không tồn tại`);
   }
 }

@@ -9,6 +9,7 @@ import { ReportController } from '../../src/tree/report.controller';
 import { EventsController } from '../../src/events/events.controller';
 import { AnniversariesController } from '../../src/events/anniversaries.controller';
 import { GravesController } from '../../src/graves/graves.controller';
+import { GraveAreasController } from '../../src/grave-areas/grave-areas.controller';
 import { ArticlesController } from '../../src/articles/articles.controller';
 import { LifeEventsController } from '../../src/life-events/life-events.controller';
 import { MemoriesController } from '../../src/memories/memories.controller';
@@ -78,6 +79,11 @@ const TABLE: Array<[string, any, Record<string, Expectation>]> = [
   ['GravesController', GravesController, {
     getAllGraves: 'public', getNearbyGraves: 'public', getGraveById: 'public',
     createGrave: 'editor', updateGrave: 'editor', deleteGrave: 'admin',
+  }],
+  ['GraveAreasController', GraveAreasController, {
+    getAllAreas: 'public', getAreaById: 'public',
+    // Khu mộ là dữ liệu dùng chung cho mọi mộ — chỉ admin sửa.
+    createArea: 'admin', updateArea: 'admin', deleteArea: 'admin',
   }],
   ['ArticlesController', ArticlesController, {
     getArticles: 'public', getById: 'public', incrementView: 'public',

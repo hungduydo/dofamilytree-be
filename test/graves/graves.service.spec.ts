@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { GravesService } from '../../src/graves/graves.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
@@ -11,7 +11,17 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
   },
+  graveArea: {
+    count: jest.fn(),
+  },
 };
+
+const AREA_POLYGON = [
+  [16.78, 107.18],
+  [16.78, 107.19],
+  [16.79, 107.19],
+  [16.79, 107.18],
+];
 
 describe('GravesService', () => {
   let service: GravesService;
@@ -38,16 +48,35 @@ describe('GravesService', () => {
         name: 'Mộ Ông Nội', latitude: 10.7769, longitude: 106.7009,
       });
       expect(result).toHaveProperty('id', 'grave-1');
-      expect(mockPrisma.cemetery.create.mock.calls[0][0].data.gpsPrecision).toBe('EXACT');
-      expect(result.latitude).toBe(10.7769);
+      expect(result.location).toEqual({ latitude: 10.7769, longitude: 106.7009, source: 'GRAVE' });
+      expect(mockPrisma.graveArea.count).not.toHaveBeenCalled();
+    });
+
+    it('mộ chỉ có khu → vị trí là tâm khu', async () => {
+      mockPrisma.graveArea.count.mockResolvedValue(1);
+      mockPrisma.cemetery.create.mockResolvedValue({
+        id: 'g', name: 'Mộ A', latitude: null, longitude: null, area_id: 'area-1', area: { polygon: AREA_POLYGON },
+      });
+
+      const result = await service.createGrave({ name: 'Mộ A', area_id: 'area-1' });
+      expect(mockPrisma.cemetery.create.mock.calls[0][0].data).toEqual({ name: 'Mộ A', area_id: 'area-1' });
+      expect(result.location?.source).toBe('AREA');
+      expect(result.location?.latitude).toBeCloseTo(16.785, 9);
+    });
+
+    it('khu không tồn tại → 400, không ghi', async () => {
+      mockPrisma.graveArea.count.mockResolvedValue(0);
+      await expect(service.createGrave({ name: 'Mộ A', area_id: 'missing' })).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.cemetery.create).not.toHaveBeenCalled();
     });
   });
 
   describe('getGraveById', () => {
     it('should return grave when found', async () => {
-      mockPrisma.cemetery.findUnique.mockResolvedValue({ id: 'grave-1', name: 'Test' });
+      mockPrisma.cemetery.findUnique.mockResolvedValue({ id: 'grave-1', name: 'Test', latitude: null, longitude: null });
       const result = await service.getGraveById('grave-1');
       expect(result).toHaveProperty('id', 'grave-1');
+      expect(result.location).toBeNull();
     });
 
     it('should throw NotFoundException when grave not found', async () => {
@@ -59,7 +88,7 @@ describe('GravesService', () => {
   describe('getAllGraves', () => {
     it('should return all graves', async () => {
       mockPrisma.cemetery.findMany.mockResolvedValue([
-        { id: 'g1', name: 'A' }, { id: 'g2', name: 'B' },
+        { id: 'g1', name: 'A', latitude: null, longitude: null }, { id: 'g2', name: 'B', latitude: null, longitude: null },
       ]);
       const result = await service.getAllGraves({});
       expect(result).toHaveLength(2);
@@ -75,16 +104,16 @@ describe('GravesService', () => {
   });
 
   describe('getNearbyGraves', () => {
-    it('should return graves within specified radius (km)', async () => {
-      // Ho Chi Minh City center: 10.7769, 106.7009
+    it('lọc theo vị trí hiển thị — gồm cả mộ chỉ có khu', async () => {
       mockPrisma.cemetery.findMany.mockResolvedValue([
-        { id: 'g1', name: 'Nearby Grave', latitude: 10.78, longitude: 106.70 },
-        { id: 'g2', name: 'Far Grave', latitude: 20.0, longitude: 106.70 }, // should be filtered
+        { id: 'near', latitude: 16.786, longitude: 107.186 },
+        { id: 'far', latitude: 20.0, longitude: 106.7 },
+        { id: 'in-area', latitude: null, longitude: null, area: { polygon: AREA_POLYGON } },
+        { id: 'unmapped-area', latitude: null, longitude: null, area: { polygon: null } },
       ]);
 
-      const result = await service.getNearbyGraves({ lat: 10.7769, lng: 106.7009, radiusKm: 10 });
-      // Only the nearby grave should pass the filter
-      expect(result.every(g => g.id === 'g1' || g.id !== 'g2')).toBe(true);
+      const result = await service.getNearbyGraves({ lat: 16.785, lng: 107.185, radiusKm: 1 });
+      expect(result.map((g) => g.id)).toEqual(['near', 'in-area']);
     });
 
     it('should return empty array when no graves nearby', async () => {
@@ -98,36 +127,33 @@ describe('GravesService', () => {
 
   describe('updateGrave', () => {
     it('should update grave successfully', async () => {
-      mockPrisma.cemetery.findUnique.mockResolvedValue({ id: 'grave-1' });
-      mockPrisma.cemetery.update.mockResolvedValue({ id: 'grave-1', name: 'Updated Name' });
+      mockPrisma.cemetery.findUnique.mockResolvedValue({ id: 'grave-1', latitude: null, longitude: null });
+      mockPrisma.cemetery.update.mockResolvedValue({ id: 'grave-1', name: 'Updated Name', latitude: null, longitude: null });
 
       const result = await service.updateGrave('grave-1', { name: 'Updated Name' });
       expect(result.name).toBe('Updated Name');
+    });
+
+    it('xoá toạ độ, gỡ khu, xoá ảnh bằng null', async () => {
+      mockPrisma.cemetery.findUnique.mockResolvedValue({ id: 'g', latitude: 16.7, longitude: 107.1 });
+      mockPrisma.cemetery.update.mockResolvedValue({ id: 'g', latitude: null, longitude: null });
+      const dto = { latitude: null, longitude: null, area_id: null, photoUrl: null };
+
+      const result = await service.updateGrave('g', dto);
+      expect(mockPrisma.cemetery.update.mock.calls[0][0].data).toEqual(dto);
+      expect(mockPrisma.graveArea.count).not.toHaveBeenCalled();
+      expect(result.location).toBeNull();
     });
 
     it('should throw NotFoundException when grave not found', async () => {
       mockPrisma.cemetery.findUnique.mockResolvedValue(null);
       await expect(service.updateGrave('bad-id', { name: 'X' })).rejects.toThrow(NotFoundException);
     });
-
-    it('lưu lại mộ AREA với toạ độ cũ không biến thành EXACT', async () => {
-      mockPrisma.cemetery.findUnique.mockResolvedValue({ id: 'g', latitude: 16.78, longitude: 107.18, gpsPrecision: 'AREA' });
-      await service.updateGrave('g', { name: 'Mộ A', latitude: 16.78, longitude: 107.18 });
-      expect(mockPrisma.cemetery.update.mock.calls[0][0].data.gpsPrecision).toBe('AREA');
-    });
-
-    it('chấm lại toạ độ → EXACT; xoá toạ độ → null', async () => {
-      mockPrisma.cemetery.findUnique.mockResolvedValue({ id: 'g', latitude: 16.78, longitude: 107.18, gpsPrecision: 'AREA' });
-      await service.updateGrave('g', { latitude: 16.7811 });
-      expect(mockPrisma.cemetery.update.mock.calls[0][0].data.gpsPrecision).toBe('EXACT');
-      await service.updateGrave('g', { latitude: null as unknown as number, longitude: null as unknown as number });
-      expect(mockPrisma.cemetery.update.mock.calls[1][0].data.gpsPrecision).toBeNull();
-    });
   });
 
   describe('deleteGrave', () => {
     it('should delete grave', async () => {
-      mockPrisma.cemetery.findUnique.mockResolvedValue({ id: 'grave-1' });
+      mockPrisma.cemetery.findUnique.mockResolvedValue({ id: 'grave-1', latitude: null, longitude: null });
       mockPrisma.cemetery.delete.mockResolvedValue({ id: 'grave-1' });
 
       await service.deleteGrave('grave-1');

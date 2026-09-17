@@ -1,5 +1,5 @@
 {
-  "_huong_dan": "Toạ độ [vĩ độ, kinh độ] của từng KHU MỘ — lấy bằng cách nhấn giữ trên Google Maps. Khu để null: mộ vẫn được tạo nhưng chưa có GPS. Điền thêm bất cứ lúc nào rồi chạy lại `pnpm backfill:graves -- --apply --areas scripts/data/grave-areas.json` — script chỉ bổ sung cho mộ chưa có toạ độ, không đè toạ độ đã chấm. Tên khu phải khớp phần sau 'Mộ:' trong tiểu sử (không phân biệt hoa thường). Chưa rõ: 'Khu âm hồn Đùng Lăng' có nằm trong khu Đùng Lăng không; 'Cồn Choi' và 'Lăng tập thể Cồn Choi' có phải một nơi không.",
+  "_huong_dan": "Toạ độ [vĩ độ, kinh độ] của từng KHU MỘ — lấy bằng cách nhấn giữ trên Google Maps. Chỉ dùng để tạo ranh giới TẠM (ô vuông ~15 m) cho khu chưa vẽ; ranh giới thật vẽ ở BO → Khu vực mộ. Khu để null: khu vẫn được tạo nhưng chưa có ranh giới. Điền thêm rồi chạy lại `pnpm backfill:graves -- --apply --areas scripts/data/grave-areas.json` — script không đè khu đã có ranh giới. Tên khu phải khớp phần sau 'Mộ:' trong tiểu sử (không phân biệt hoa thường). Chưa rõ: 'Khu âm hồn Đùng Lăng' có nằm trong khu Đùng Lăng không; 'Cồn Choi' và 'Lăng tập thể Cồn Choi' có phải một nơi không.",
   "Đùng Vành": [
     16.785089207706527,
     107.18935104372397

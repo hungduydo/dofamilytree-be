@@ -9,6 +9,7 @@ import { TreeModule } from './tree/tree.module';
 import { EventsModule } from './events/events.module';
 import { MediaModule } from './media/media.module';
 import { GravesModule } from './graves/graves.module';
+import { GraveAreasModule } from './grave-areas/grave-areas.module';
 import { LifeEventsModule } from './life-events/life-events.module';
 import { MemoriesModule } from './memories/memories.module';
 import { ArticlesModule } from './articles/articles.module';
@@ -36,6 +37,7 @@ import { SupabaseModule } from './supabase/supabase.module';
     EventsModule,
     MediaModule,
     GravesModule,
+    GraveAreasModule,
     LifeEventsModule,
     MemoriesModule,
     ArticlesModule,
