@@ -52,6 +52,35 @@ describe('AuthService', () => {
     beforeEach(() => {
       mockSignUp.mockResolvedValue({ data: { user: { id: 'u1', email: 'a@b.com' } }, error: null });
       mockPrisma.userMetadata.create.mockImplementation(({ data }: any) => data);
+      mockPrisma.userMetadata.findUnique.mockResolvedValue(null);
+    });
+
+    it('409 khi Supabase báo email đã tồn tại', async () => {
+      mockSignUp.mockResolvedValue({
+        data: { user: null },
+        error: { code: 'user_already_exists', message: 'User already registered' },
+      });
+      await expect(service.register(REGISTER_DTO as any)).rejects.toThrow(ConflictException);
+      expect(mockPrisma.userMetadata.create).not.toHaveBeenCalled();
+    });
+
+    it('409 khi Supabase trả user giả (identities rỗng) cho email đã tồn tại', async () => {
+      mockSignUp.mockResolvedValue({
+        data: { user: { id: 'fake', email: 'a@b.com', identities: [] } },
+        error: null,
+      });
+      await expect(service.register(REGISTER_DTO as any)).rejects.toThrow(ConflictException);
+      expect(mockPrisma.userMetadata.create).not.toHaveBeenCalled();
+    });
+
+    it('409 khi email đã đăng ký nhưng chưa xác nhận (metadata đã có)', async () => {
+      mockSignUp.mockResolvedValue({
+        data: { user: { id: 'u1', email: 'a@b.com', identities: [{ id: 'i1' }] } },
+        error: null,
+      });
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ user_id: 'u1' });
+      await expect(service.register(REGISTER_DTO as any)).rejects.toThrow(ConflictException);
+      expect(mockPrisma.userMetadata.create).not.toHaveBeenCalled();
     });
 
     it('tạo UserMetadata guest, KHÔNG tạo Member/Profile', async () => {

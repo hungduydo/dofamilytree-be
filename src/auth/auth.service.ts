@@ -26,6 +26,8 @@ import { LinkMemberDto } from './dto/link-member.dto';
 // (`from './auth.service'`) không vỡ.
 export { AVAILABLE_ROLES };
 
+const EMAIL_TAKEN = 'User with this email already exists';
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -77,8 +79,11 @@ export class AuthService {
     });
 
     if (authError) {
-      if (authError.message.toLowerCase().includes('already registered')) {
-        throw new ConflictException('User with this email already exists');
+      if (
+        authError.code === 'user_already_exists' ||
+        authError.message.toLowerCase().includes('already registered')
+      ) {
+        throw new ConflictException(EMAIL_TAKEN);
       }
       throw new BadRequestException(authError.message);
     }
@@ -87,7 +92,22 @@ export class AuthService {
       throw new InternalServerErrorException('User not created in Supabase Auth');
     }
 
+    // Khi bật "Confirm email", Supabase KHÔNG trả lỗi cho email đã tồn tại (chống
+    // dò email): nó trả một user giả với `identities: []` và id ngẫu nhiên. Không
+    // chặn ở đây thì ta ghi một UserMetadata mồ côi và FE báo đăng ký thành công.
+    if (Array.isArray(authData.user.identities) && authData.user.identities.length === 0) {
+      throw new ConflictException(EMAIL_TAKEN);
+    }
+
     const userId = authData.user.id;
+
+    // Email đã đăng ký nhưng chưa xác nhận: Supabase trả lại đúng user cũ —
+    // metadata đã có, tạo lần nữa sẽ vỡ unique(user_id) thành 500.
+    const existing = await this.prisma.userMetadata.findUnique({ where: { user_id: userId } });
+    if (existing) {
+      throw new ConflictException(EMAIL_TAKEN);
+    }
+
     const avatarUrl = await this.storeClaimAvatar(userId, avatarFile);
 
     const meta = await this.prisma.userMetadata.create({
