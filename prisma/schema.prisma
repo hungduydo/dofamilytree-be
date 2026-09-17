@@ -241,11 +241,13 @@ model Cemetery {
   name             String
   latitude         Float?
   longitude        Float?
-  /// EXACT = chấm tại chính ngôi mộ | AREA = toạ độ của khu mộ (cả khu dùng chung).
-  /// null khi chưa có toạ độ. Xem 010_cemetery_gps_precision.sql.
-  gpsPrecision     String?       @map("gps_precision")
+  /// Chỉ có giá trị khi đã chấm tại CHÍNH ngôi mộ. Mộ chỉ biết khu thì để null —
+  /// vị trí hiển thị lấy tâm polygon của khu (src/graves/grave-location.ts).
   description      String?
   member_id        String?       @db.Uuid
+  /// Khu an táng (0 hoặc 1). Xoá khu → null. Xem 010_grave_areas.sql.
+  area_id          String?       @db.Uuid
+  photoUrl         String?       @map("photo_url")
   deathDate        String?
   relocationDate   String?
   constructionDate String?
@@ -253,9 +255,25 @@ model Cemetery {
   updated_at       DateTime      @updatedAt
   anniversaries    Anniversary[]
   member           Member?       @relation(fields: [member_id], references: [id])
+  area             GraveArea?    @relation(fields: [area_id], references: [id], onDelete: SetNull)
 
   @@index([member_id])
+  @@index([area_id])
   @@map("cemeteries")
+}
+
+/// Khu an táng (Đùng Vành, Đùng Lăng...). Nhiều mộ dùng chung một khu.
+model GraveArea {
+  id          String     @id @default(uuid()) @db.Uuid
+  name        String     @unique
+  description String?
+  /// [[vĩ độ, kinh độ], ...] — ít nhất 3 đỉnh, không lặp điểm đầu. null = chưa vẽ.
+  polygon     Json?
+  created_at  DateTime   @default(now())
+  updated_at  DateTime   @updatedAt
+  graves      Cemetery[]
+
+  @@map("grave_areas")
 }
 
 /// Ngày tưởng niệm LẶP LẠI hằng năm (ngày kỵ, giỗ tổ...) — chỉ lưu ngày/tháng,

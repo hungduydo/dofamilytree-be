@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsUUID, IsIn } from 'class-validator';
-import { GPS_PRECISIONS, GpsPrecision } from '../grave-gps';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, IsUUID, IsUrl, Max, Min } from 'class-validator';
 
 export class CreateGraveDto {
   @ApiProperty({ example: 'Mộ Nguyễn Văn A' })
@@ -8,29 +7,34 @@ export class CreateGraveDto {
   @IsNotEmpty()
   name: string;
 
-  @ApiPropertyOptional({ example: 10.7769, nullable: true, description: 'Null = chưa xác định GPS' })
+  @ApiPropertyOptional({ example: 10.7769, nullable: true, description: 'Chấm tại chính ngôi mộ. Null = chưa có — vị trí lấy theo khu' })
   @IsOptional()
   @IsNumber()
-  latitude?: number;
+  @Min(-90)
+  @Max(90)
+  latitude?: number | null;
 
-  @ApiPropertyOptional({ example: 106.7009, nullable: true, description: 'Null = chưa xác định GPS' })
+  @ApiPropertyOptional({ example: 106.7009, nullable: true, description: 'Chấm tại chính ngôi mộ. Null = chưa có — vị trí lấy theo khu' })
   @IsOptional()
   @IsNumber()
-  longitude?: number;
+  @Min(-180)
+  @Max(180)
+  longitude?: number | null;
 
-  @ApiPropertyOptional({
-    enum: GPS_PRECISIONS,
-    nullable: true,
-    description: 'EXACT = chấm tại mộ, AREA = toạ độ khu mộ. Bỏ trống: toạ độ mới/đổi → EXACT, giữ nguyên → giữ như cũ',
-  })
-  @IsOptional()
-  @IsIn(GPS_PRECISIONS)
-  gpsPrecision?: GpsPrecision;
-
-  @ApiPropertyOptional({ example: 'Nghĩa trang Bình Hưng Hòa' })
+  @ApiPropertyOptional({ example: 'Hàng thứ hai, cạnh cây dương', description: 'Ghi chú riêng của ngôi mộ' })
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Khu an táng (GET /grave-areas). Null = không thuộc khu nào' })
+  @IsOptional()
+  @IsUUID()
+  area_id?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'https://….public.blob.vercel-storage.com/grave.jpg', description: 'Ảnh ngôi mộ (tải qua POST /media/upload)' })
+  @IsOptional()
+  @IsUrl({ require_protocol: true })
+  photoUrl?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', description: 'Liên kết mộ ↔ thành viên (suy ra generation/gender/branch...)' })
   @IsOptional()
@@ -59,34 +63,39 @@ export class UpdateGraveDto {
   @IsString()
   name?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ nullable: true, description: 'null = xoá toạ độ của mộ' })
   @IsOptional()
   @IsNumber()
-  latitude?: number;
+  @Min(-90)
+  @Max(90)
+  latitude?: number | null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ nullable: true, description: 'null = xoá toạ độ của mộ' })
   @IsOptional()
   @IsNumber()
-  longitude?: number;
-
-  @ApiPropertyOptional({
-    enum: GPS_PRECISIONS,
-    nullable: true,
-    description: 'EXACT = chấm tại mộ, AREA = toạ độ khu mộ. Bỏ trống: toạ độ mới/đổi → EXACT, giữ nguyên → giữ như cũ',
-  })
-  @IsOptional()
-  @IsIn(GPS_PRECISIONS)
-  gpsPrecision?: GpsPrecision;
+  @Min(-180)
+  @Max(180)
+  longitude?: number | null;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'null = gỡ khỏi khu' })
   @IsOptional()
   @IsUUID()
-  member_id?: string;
+  area_id?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'null = xoá ảnh' })
+  @IsOptional()
+  @IsUrl({ require_protocol: true })
+  photoUrl?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'null = bỏ liên kết thành viên' })
+  @IsOptional()
+  @IsUUID()
+  member_id?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

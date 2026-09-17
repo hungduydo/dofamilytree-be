@@ -134,6 +134,8 @@ role **tối thiểu** — `editor` bao gồm cả admin.
 | | `POST`, `PUT /:id` | **editor** — `DELETE /:id` **admin** |
 | **graves** | `GET /graves`, `/nearby`, `/:id` | public |
 | | `POST`, `PUT /:id` | **editor** — `DELETE /:id` **admin** |
+| **grave-areas** | `GET /grave-areas`, `/:id` | public |
+| | `POST`, `PUT /:id`, `DELETE /:id` | **admin** |
 | **articles** | `GET /articles`, `/:id`, `POST /:id/view` | public |
 | | `POST`, `PUT /:id` | **editor** — `DELETE /:id` **admin** |
 | **life-events** | `GET /members/:memberId/life-events` | public |

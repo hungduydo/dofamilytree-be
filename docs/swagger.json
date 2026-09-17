@@ -3046,6 +3046,184 @@
         ]
       }
     },
+    "/v2/grave-areas": {
+      "get": {
+        "operationId": "GraveAreasController_getAllAreas",
+        "summary": "List burial areas with polygon, center and grave count",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GraveAreaResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Grave areas (Khu mộ)"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "GraveAreasController_createArea",
+        "summary": "Create burial area",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGraveAreaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraveAreaResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already used"
+          }
+        },
+        "tags": [
+          "Grave areas (Khu mộ)"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v2/grave-areas/{id}": {
+      "get": {
+        "operationId": "GraveAreasController_getAreaById",
+        "summary": "Get burial area by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraveAreaResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Grave areas (Khu mộ)"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "operationId": "GraveAreasController_updateArea",
+        "summary": "Update burial area (name, description, polygon)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGraveAreaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraveAreaResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already used"
+          }
+        },
+        "tags": [
+          "Grave areas (Khu mộ)"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "GraveAreasController_deleteArea",
+        "summary": "Delete burial area — its graves stay, with no area",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        },
+        "tags": [
+          "Grave areas (Khu mộ)"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v2/members/{memberId}/life-events": {
       "get": {
         "operationId": "LifeEventsController_getByMember",
@@ -6731,6 +6909,64 @@
           "views"
         ]
       },
+      "GraveAreaSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "example": "Đùng Vành"
+          },
+          "description": {
+            "type": "object",
+            "nullable": true
+          },
+          "polygon": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "nullable": true,
+            "description": "[[vĩ độ, kinh độ], ...] — null = khu chưa vẽ ranh giới"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "GraveLocationDto": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "example": 16.78245
+          },
+          "longitude": {
+            "type": "number",
+            "example": 107.18915
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "GRAVE",
+              "AREA"
+            ],
+            "description": "GRAVE = chấm tại mộ; AREA = tâm khu an táng"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "source"
+        ]
+      },
       "GraveResponseDto": {
         "type": "object",
         "properties": {
@@ -6746,17 +6982,54 @@
             "type": "object",
             "example": 21.028511,
             "nullable": true,
-            "description": "Vĩ độ (null = chưa xác định GPS)"
+            "description": "Vĩ độ chấm tại mộ (null = chưa có, xem `location`)"
           },
           "longitude": {
             "type": "object",
             "example": 105.804817,
             "nullable": true,
-            "description": "Kinh độ (null = chưa xác định GPS)"
+            "description": "Kinh độ chấm tại mộ (null = chưa có, xem `location`)"
+          },
+          "gpsPrecision": {
+            "type": "string",
+            "enum": [
+              "EXACT",
+              "AREA"
+            ],
+            "nullable": true,
+            "description": "EXACT = chấm tại mộ, AREA = toạ độ chung của khu mộ, null = chưa có toạ độ"
           },
           "description": {
             "type": "object",
             "nullable": true
+          },
+          "area_id": {
+            "type": "object",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Khu an táng"
+          },
+          "area": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GraveAreaSummaryDto"
+              }
+            ]
+          },
+          "location": {
+            "nullable": true,
+            "description": "Vị trí hiển thị; null = không lên bản đồ",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GraveLocationDto"
+              }
+            ]
+          },
+          "photoUrl": {
+            "type": "object",
+            "nullable": true,
+            "description": "Ảnh ngôi mộ"
           },
           "member_id": {
             "type": "object",
@@ -6815,20 +7088,33 @@
             "example": "Mộ Nguyễn Văn A"
           },
           "latitude": {
-            "type": "number",
+            "type": "object",
             "example": 10.7769,
             "nullable": true,
-            "description": "Null = chưa xác định GPS"
+            "description": "Chấm tại chính ngôi mộ. Null = chưa có — vị trí lấy theo khu"
           },
           "longitude": {
-            "type": "number",
+            "type": "object",
             "example": 106.7009,
             "nullable": true,
-            "description": "Null = chưa xác định GPS"
+            "description": "Chấm tại chính ngôi mộ. Null = chưa có — vị trí lấy theo khu"
           },
           "description": {
             "type": "string",
-            "example": "Nghĩa trang Bình Hưng Hòa"
+            "example": "Hàng thứ hai, cạnh cây dương",
+            "description": "Ghi chú riêng của ngôi mộ"
+          },
+          "area_id": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Khu an táng (GET /grave-areas). Null = không thuộc khu nào"
+          },
+          "photoUrl": {
+            "type": "object",
+            "nullable": true,
+            "example": "https://….public.blob.vercel-storage.com/grave.jpg",
+            "description": "Ảnh ngôi mộ (tải qua POST /media/upload)"
           },
           "member_id": {
             "type": "string",
@@ -6862,17 +7148,34 @@
             "type": "string"
           },
           "latitude": {
-            "type": "number"
+            "type": "object",
+            "nullable": true,
+            "description": "null = xoá toạ độ của mộ"
           },
           "longitude": {
-            "type": "number"
+            "type": "object",
+            "nullable": true,
+            "description": "null = xoá toạ độ của mộ"
           },
           "description": {
             "type": "string"
           },
+          "area_id": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true,
+            "description": "null = gỡ khỏi khu"
+          },
+          "photoUrl": {
+            "type": "object",
+            "nullable": true,
+            "description": "null = xoá ảnh"
+          },
           "member_id": {
-            "type": "string",
-            "format": "uuid"
+            "type": "object",
+            "format": "uuid",
+            "nullable": true,
+            "description": "null = bỏ liên kết thành viên"
           },
           "deathDate": {
             "type": "string"
@@ -6882,6 +7185,194 @@
           },
           "constructionDate": {
             "type": "string"
+          }
+        }
+      },
+      "GeoPointDto": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "example": 16.78245
+          },
+          "longitude": {
+            "type": "number",
+            "example": 107.18915
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ]
+      },
+      "GraveAreaResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "example": "Đùng Vành"
+          },
+          "description": {
+            "type": "object",
+            "nullable": true
+          },
+          "polygon": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "minItems": 3,
+            "example": [
+              [
+                16.7823,
+                107.189
+              ],
+              [
+                16.7823,
+                107.1893
+              ],
+              [
+                16.7826,
+                107.1893
+              ],
+              [
+                16.7826,
+                107.189
+              ]
+            ],
+            "nullable": true
+          },
+          "center": {
+            "nullable": true,
+            "description": "Tâm polygon (null khi chưa vẽ)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GeoPointDto"
+              }
+            ]
+          },
+          "graveCount": {
+            "type": "number",
+            "example": 27,
+            "description": "Số mộ thuộc khu"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "graveCount",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateGraveAreaDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Đùng Vành"
+          },
+          "description": {
+            "type": "object",
+            "nullable": true,
+            "example": "Khu mộ phía đông làng"
+          },
+          "polygon": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "minItems": 3,
+            "example": [
+              [
+                16.7823,
+                107.189
+              ],
+              [
+                16.7823,
+                107.1893
+              ],
+              [
+                16.7826,
+                107.1893
+              ],
+              [
+                16.7826,
+                107.189
+              ]
+            ],
+            "nullable": true,
+            "description": "Ranh giới khu, [[vĩ độ, kinh độ], ...]. null = chưa vẽ."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateGraveAreaDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Đùng Vành"
+          },
+          "description": {
+            "type": "object",
+            "nullable": true
+          },
+          "polygon": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "minItems": 3,
+            "example": [
+              [
+                16.7823,
+                107.189
+              ],
+              [
+                16.7823,
+                107.1893
+              ],
+              [
+                16.7826,
+                107.1893
+              ],
+              [
+                16.7826,
+                107.189
+              ]
+            ],
+            "nullable": true,
+            "description": "null = xoá ranh giới"
           }
         }
       },

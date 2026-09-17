@@ -4,15 +4,18 @@
  * Gia phả gốc ghi nơi an táng trong ghi chú dạng "Mộ: Đùng Vành.";
  * restore-from-import-json.ts chép nguyên ghi chú vào profiles.biography nhưng
  * không tạo mộ. Script này tạo mỗi người một mộ:
- *   name        = "Mộ <tên>"
- *   description = địa danh ("Đùng Vành")
- *   member_id   = người đó
- * Ngày mất không chép: giao diện tự lấy từ thành viên.
+ *   name      = "Mộ <tên>"
+ *   member_id = người đó
+ *   area_id   = khu "Đùng Vành" trong grave_areas (tạo nếu chưa có)
+ * Ngày mất không chép: giao diện tự lấy từ thành viên. Mộ mới KHÔNG có toạ độ:
+ * vị trí hiển thị lấy tâm khu cho tới khi có người chấm tại mộ.
  *
- * Toạ độ: với `--areas <file>` (mặc định scripts/data/grave-areas.json), mộ ở
- * khu đã có toạ độ nhận toạ độ của KHU (gps_precision = 'AREA'). Chạy lại được:
- * điền thêm khu → mộ chưa có toạ độ được bổ sung; sửa toạ độ một khu → các mộ
- * AREA của khu đó đổi theo. Mộ đã chấm tại mộ (EXACT) không bao giờ bị đè.
+ * Khu mộ (010_grave_areas.sql): mộ đã có mà khu còn nằm trong description
+ * (lần chạy trước, hoặc nhập tay) được chuyển sang area_id, description bị xoá.
+ * Nếu toạ độ của mộ trùng toạ độ khu trong file thì đó là toạ độ chép từ khu —
+ * bị xoá luôn. Với `--areas <file>`, khu mới hoặc khu chưa vẽ nhận một ô vuông
+ * nhỏ quanh toạ độ trong file; admin vẽ ranh giới thật ở BO → Khu vực mộ.
+ * Khu đã có polygon và mộ đã có khu không bao giờ bị đổi.
  *
  * Ngoài ra, ngày kỵ (anniversaries.kind = 'DEATH') chưa gắn mộ sẽ được gắn vào
  * mộ vừa tạo.
@@ -25,9 +28,9 @@
  *   pnpm backfill:graves -- --apply --areas scripts/data/grave-areas.json   # ghi
  */
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { readFileSync } from 'fs';
-import { AreaCoordinates, areaKey, parseAreaCoordinates, planAreaUpdates } from '../src/graves/grave-areas';
+import { AreaCoordinates, areaKey, parseAreaCoordinates, planAreaBackfill } from '../src/graves/grave-areas';
 import { graveNameFor, parseGraveNote } from '../src/graves/grave-note';
 
 const prisma = new PrismaClient();
@@ -59,10 +62,7 @@ async function main() {
     orderBy: { member: { generation: { sort: 'asc', nulls: 'last' } } },
   });
 
-  type NewGrave = {
-    member_id: string; name: string; description: string;
-    latitude: number | null; longitude: number | null; gpsPrecision: 'AREA' | null;
-  };
+  type NewGrave = { member_id: string; name: string; place: string };
   const toCreate: NewGrave[] = [];
   const byPlace = new Map<string, number>();
   const unknown: string[] = [];
@@ -90,27 +90,15 @@ async function main() {
       continue;
     }
     const coords = coordsFor(parsed.place);
-    toCreate.push({
-      member_id: member.id,
-      name: graveNameFor(member.name),
-      description: parsed.place,
-      latitude: coords?.latitude ?? null,
-      longitude: coords?.longitude ?? null,
-      gpsPrecision: coords ? 'AREA' : null,
-    });
+    toCreate.push({ member_id: member.id, name: graveNameFor(member.name), place: parsed.place });
     byPlace.set(parsed.place, (byPlace.get(parsed.place) ?? 0) + 1);
     console.log(`  + ${label} | ${parsed.place}${coords ? ' 📍' : ''}`);
   }
 
   console.log(`\nTiểu sử có chữ "Mộ": ${profiles.length}`);
-  console.log(`  sẽ tạo           : ${toCreate.length} (có toạ độ khu: ${toCreate.filter((g) => g.gpsPrecision).length})`);
+  console.log(`  sẽ tạo           : ${toCreate.length} (khu có toạ độ: ${toCreate.filter((g) => coordsFor(g.place)).length})`);
   for (const [place, count] of [...byPlace].sort((a, b) => b[1] - a[1])) {
     console.log(`    ${String(count).padStart(3)} × ${place}${coordsFor(place) ? '  📍' : ''}`);
-  }
-  const missingAreas = [...byPlace.keys()].filter((place) => !coordsFor(place));
-  if (missingAreas.length) {
-    console.log(`  khu CHƯA có toạ độ (${missingAreas.length}) — mộ vẫn được tạo, điền toạ độ vào file --areas rồi chạy lại:`);
-    for (const place of missingAreas) console.log(`    - ${place}`);
   }
   console.log(`  đã có mộ         : ${alreadyHas}`);
   console.log(`  ghi "không rõ"   : ${unknown.length}`);
@@ -119,41 +107,65 @@ async function main() {
   console.log(`  chưa ở DECEASED  : ${notDeceased.length} (sửa trạng thái rồi chạy lại)`);
   for (const line of notDeceased) console.log(`    - ${line}`);
 
-  // Mộ đã có (lần chạy trước hoặc nhập tay): gắn toạ độ khu cho mộ chưa có toạ độ,
-  // và cập nhật mộ AREA khi toạ độ khu trong file đã đổi. Không đụng mộ EXACT.
-  const areaUpdates = areas.size
-    ? planAreaUpdates(
-        await prisma.cemetery.findMany({
-          where: { description: { not: null }, OR: [{ latitude: null }, { gpsPrecision: 'AREA' }] },
-          select: { id: true, name: true, description: true, latitude: true, longitude: true, gpsPrecision: true },
-        }),
-        areas,
-      )
-    : [];
-  const fills = areaUpdates.filter((u) => u.action === 'fill');
-  const moves = areaUpdates.filter((u) => u.action === 'move');
-  console.log(`  mộ có sẵn được gắn toạ độ khu   : ${fills.length}`);
-  for (const u of fills) console.log(`    📍 ${u.name} | ${u.description}`);
-  console.log(`  mộ có sẵn đổi theo toạ độ khu mới: ${moves.length}`);
-  for (const u of moves) {
-    console.log(`    ↪ ${u.name} | ${u.description} | ${u.latitude}, ${u.longitude} → ${u.next.latitude}, ${u.next.longitude}`);
+  // Mộ sắp tạo được lập kế hoạch như mộ có sẵn mang description = địa danh, để
+  // khu của chúng được tạo cùng một lượt.
+  const existingGraves = await prisma.cemetery.findMany({
+    where: { area_id: null, description: { not: null } },
+    select: { id: true, name: true, description: true, area_id: true, latitude: true, longitude: true },
+  });
+  const pending = toCreate.map((g) => ({
+    id: `new:${g.member_id}`, name: g.name, description: g.place, area_id: null, latitude: null, longitude: null,
+  }));
+  const plan = planAreaBackfill(
+    [...existingGraves, ...pending],
+    await prisma.graveArea.findMany({ select: { id: true, name: true, polygon: true } }),
+    areas,
+  );
+  const existingAssign = plan.assign.filter((a) => !a.grave.id.startsWith('new:'));
+
+  console.log(`\nKhu mộ sẽ tạo: ${plan.create.length}`);
+  for (const a of plan.create) console.log(`    + ${a.name}${a.polygon ? '  📍 (ô vuông tạm)' : '  (chưa có ranh giới)'}`);
+  const missingAreas = plan.create.filter((a) => !a.polygon);
+  if (missingAreas.length) {
+    console.log(`  ${missingAreas.length} khu chưa có toạ độ — vẽ ranh giới ở BO → Khu vực mộ, hoặc điền file --areas rồi chạy lại.`);
+  }
+  console.log(`Khu có sẵn được vẽ ô vuông tạm: ${plan.draw.length}`);
+  for (const a of plan.draw) console.log(`    📍 ${a.name}`);
+  console.log(`Mộ có sẵn được gắn khu (description → area_id): ${existingAssign.length}`);
+  for (const a of existingAssign) {
+    console.log(`    → ${a.grave.name} | ${a.grave.description}${a.clearCoordinates ? ' | xoá toạ độ chép từ khu' : ''}`);
   }
 
   if (!apply) return;
 
-  let filled = 0;
-  let moved = 0;
-  for (const u of areaUpdates) {
-    // Điều kiện trong where chặn việc đè toạ độ ai đó vừa chấm tại mộ trong lúc script chạy.
-    const { count } = await prisma.cemetery.updateMany({
-      where:
-        u.action === 'fill'
-          ? { id: u.id, latitude: null }
-          : { id: u.id, gpsPrecision: 'AREA', latitude: u.latitude, longitude: u.longitude },
-      data: { latitude: u.next.latitude, longitude: u.next.longitude, gpsPrecision: 'AREA' },
+  const areaIds = new Map<string, string>(
+    (await prisma.graveArea.findMany({ select: { id: true, name: true } })).map((a) => [areaKey(a.name), a.id]),
+  );
+  for (const a of plan.create) {
+    const row = await prisma.graveArea.upsert({
+      where: { name: a.name },
+      update: {},
+      create: { name: a.name, polygon: a.polygon ?? Prisma.DbNull },
     });
-    if (u.action === 'fill') filled += count;
-    else moved += count;
+    areaIds.set(a.key, row.id);
+  }
+  // `polygon: DbNull` trong where: không đè ranh giới ai đó vừa vẽ trong lúc script chạy.
+  for (const a of plan.draw) {
+    await prisma.graveArea.updateMany({ where: { id: a.id, polygon: { equals: Prisma.DbNull } }, data: { polygon: a.polygon } });
+  }
+
+  let assigned = 0;
+  for (const a of existingAssign) {
+    // area_id: null trong where chặn việc đè khu admin vừa chọn.
+    const { count } = await prisma.cemetery.updateMany({
+      where: { id: a.grave.id, area_id: null },
+      data: {
+        area_id: areaIds.get(a.key),
+        description: null,
+        ...(a.clearCoordinates ? { latitude: null, longitude: null } : {}),
+      },
+    });
+    assigned += count;
   }
 
   let created = 0;
@@ -164,7 +176,9 @@ async function main() {
     await prisma.$transaction(async (tx) => {
       const exists = await tx.cemetery.count({ where: { member_id: grave.member_id } });
       if (exists) return;
-      const row = await tx.cemetery.create({ data: grave });
+      const row = await tx.cemetery.create({
+        data: { member_id: grave.member_id, name: grave.name, area_id: areaIds.get(areaKey(grave.place)) },
+      });
       created++;
       const { count } = await tx.anniversary.updateMany({
         where: { member_id: grave.member_id, kind: 'DEATH', cemetery_id: null },
@@ -173,7 +187,9 @@ async function main() {
       linked += count;
     });
   }
-  console.log(`\n✅ Đã tạo ${created} mộ, gắn ${linked} ngày kỵ vào mộ, gắn toạ độ khu cho ${filled} mộ có sẵn, cập nhật ${moved} mộ theo toạ độ khu mới.`);
+  console.log(
+    `\n✅ Đã tạo ${plan.create.length} khu, vẽ tạm ${plan.draw.length} khu, tạo ${created} mộ, gắn ${linked} ngày kỵ vào mộ, gắn khu cho ${assigned} mộ có sẵn.`,
+  );
 }
 
 main()
