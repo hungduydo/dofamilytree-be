@@ -44,6 +44,7 @@ const TABLE: Array<[string, any, Record<string, Expectation>]> = [
     forgotPassword: 'open', resetPassword: 'open',
     logout: 'auth', changePassword: 'auth', getMe: 'auth', getRoles: 'auth',
     listUsers: 'admin', assignRoles: 'admin', linkMember: 'admin', unlinkMember: 'admin',
+    setActive: 'admin',
   }],
   ['MembersController', MembersController, {
     getCommitteeMembers: 'public', getNotableMembers: 'public', getMemberStats: 'public',

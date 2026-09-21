@@ -4,16 +4,20 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { StorageService } from '../../src/storage/storage.service';
+import { QStashService } from '../../src/queue/qstash.service';
 
 const mockSignUp = jest.fn();
+const mockSignIn = jest.fn();
 jest.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     auth: {
       signUp: (...args: any[]) => mockSignUp(...args),
+      signInWithPassword: (...args: any[]) => mockSignIn(...args),
       admin: { getUserById: jest.fn().mockResolvedValue({ data: { user: null } }) },
     },
   }),
@@ -23,11 +27,18 @@ jest.mock('@supabase/supabase-js', () => ({
 const { AuthService } = require('../../src/auth/auth.service');
 
 const mockPrisma = {
-  userMetadata: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+  userMetadata: {
+    create: jest.fn(),
+    findUnique: jest.fn(),
+    update: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn(),
+  },
   member: { findUnique: jest.fn(), update: jest.fn() },
   $transaction: jest.fn(),
 };
 const mockStorage = { put: jest.fn() };
+const mockQStash = { publish: jest.fn() };
 
 const REGISTER_DTO = { email: 'a@b.com', password: 'secret123', fullName: 'Nguyễn Văn A' };
 
@@ -41,11 +52,13 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: JwtService, useValue: { sign: jest.fn(() => 'token') } },
         { provide: StorageService, useValue: mockStorage },
+        { provide: QStashService, useValue: mockQStash },
       ],
     }).compile();
     service = module.get(AuthService);
     jest.clearAllMocks();
     mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+    mockQStash.publish.mockResolvedValue(undefined);
   });
 
   describe('register — CHỈ tạo guest', () => {
@@ -132,6 +145,27 @@ describe('AuthService', () => {
       } as any);
       expect(result.id).toBe('u1');
       expect(mockPrisma.userMetadata.create.mock.calls[0][0].data.claim_request.avatarUrl).toBeNull();
+    });
+
+    it('xếp job báo admin, khử trùng theo userId', async () => {
+      await service.register(REGISTER_DTO as any);
+      expect(mockQStash.publish).toHaveBeenCalledWith(
+        'account-pending',
+        { userId: 'u1' },
+        { deduplicationId: 'account-pending-u1' },
+      );
+    });
+
+    it('KHÔNG xếp job khi đăng ký thất bại', async () => {
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ user_id: 'u1' });
+      await expect(service.register(REGISTER_DTO as any)).rejects.toThrow(ConflictException);
+      expect(mockQStash.publish).not.toHaveBeenCalled();
+    });
+
+    it('QStash hỏng KHÔNG làm hỏng việc đăng ký', async () => {
+      mockQStash.publish.mockRejectedValue(new Error('qstash down'));
+      const result = await service.register(REGISTER_DTO as any);
+      expect(result).toMatchObject({ id: 'u1', status: 'pending_link' });
     });
   });
 
@@ -251,6 +285,111 @@ describe('AuthService', () => {
       mockPrisma.userMetadata.update.mockResolvedValue({ roles: ['editor'], profile_member_id: null });
       await service.unlinkMember('admin1', 'u2');
       expect(mockPrisma.userMetadata.update.mock.calls[0][0].data.roles).toEqual(['editor']);
+    });
+  });
+
+  describe('login — tài khoản bị khoá', () => {
+    beforeEach(() => {
+      mockSignIn.mockResolvedValue({ data: { user: { id: 'u1', email: 'a@b.com', user_metadata: {} } }, error: null });
+    });
+
+    it('403 ACCOUNT_DEACTIVATED, KHÔNG phát token', async () => {
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({
+        roles: ['member'], profile_member_id: 'm1', deactivated_at: new Date(),
+      });
+      const error = await service.login({ email: 'a@b.com', password: 'x' }).catch((e: any) => e);
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error.getResponse()).toMatchObject({ code: 'ACCOUNT_DEACTIVATED' });
+    });
+
+    it('sai mật khẩu vẫn là 401 — không lộ tài khoản nào đang bị khoá', async () => {
+      mockSignIn.mockResolvedValue({ data: { user: null }, error: { message: 'Invalid login' } });
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['member'], deactivated_at: new Date() });
+      await expect(service.login({ email: 'a@b.com', password: 'x' })).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('tài khoản đang hoạt động đăng nhập bình thường', async () => {
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({
+        roles: ['member'], profile_member_id: 'm1', deactivated_at: null,
+      });
+      await expect(service.login({ email: 'a@b.com', password: 'x' })).resolves.toMatchObject({ token: 'token' });
+    });
+  });
+
+  describe('setActive', () => {
+    it('không tự khoá chính mình', async () => {
+      await expect(service.setActive('a1', 'a1', { active: false })).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.userMetadata.update).not.toHaveBeenCalled();
+    });
+
+    it('404 khi tài khoản đích không tồn tại', async () => {
+      mockPrisma.userMetadata.findUnique.mockResolvedValue(null);
+      await expect(service.setActive('a1', 'u2', { active: false })).rejects.toThrow(NotFoundException);
+    });
+
+    it('khoá: ghi mốc thời gian và admin đã khoá, KHÔNG đụng role hay link', async () => {
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['member'], deactivated_at: null });
+      mockPrisma.userMetadata.update.mockImplementation(({ data }: any) => data);
+      const result = await service.setActive('a1', 'u2', { active: false });
+
+      const data = mockPrisma.userMetadata.update.mock.calls[0][0].data;
+      expect(data).toEqual({ deactivated_at: expect.any(Date), deactivated_by: 'a1' });
+      expect(result).toMatchObject({ active: false });
+    });
+
+    it('khoá lại tài khoản đã khoá giữ nguyên mốc cũ', async () => {
+      const since = new Date('2026-01-01');
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ deactivated_at: since, deactivated_by: 'a0' });
+      mockPrisma.userMetadata.update.mockImplementation(({ data }: any) => data);
+      await service.setActive('a1', 'u2', { active: false });
+      expect(mockPrisma.userMetadata.update.mock.calls[0][0].data).toEqual({
+        deactivated_at: since, deactivated_by: 'a0',
+      });
+    });
+
+    it('mở khoá: xoá cả mốc lẫn người khoá', async () => {
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ deactivated_at: new Date(), deactivated_by: 'a0' });
+      mockPrisma.userMetadata.update.mockImplementation(({ data }: any) => data);
+      const result = await service.setActive('a1', 'u2', { active: true });
+      expect(mockPrisma.userMetadata.update.mock.calls[0][0].data).toEqual({
+        deactivated_at: null, deactivated_by: null,
+      });
+      expect(result).toMatchObject({ active: true });
+    });
+  });
+
+  describe('listUsers — lọc theo khoá, độc lập với status', () => {
+    beforeEach(() => {
+      mockPrisma.userMetadata.findMany.mockResolvedValue([
+        { user_id: 'u1', roles: ['guest'], profile_member_id: null, deactivated_at: new Date() },
+      ]);
+      mockPrisma.userMetadata.count.mockResolvedValue(1);
+    });
+    const whereFor = () => mockPrisma.userMetadata.findMany.mock.calls[0][0].where;
+
+    it('không truyền active: không lọc theo khoá', async () => {
+      await service.listUsers({ status: 'pending' });
+      expect(whereFor()).toEqual({ profile_member_id: null });
+    });
+
+    it('active=true: hàng đợi pending chỉ gồm tài khoản đang hoạt động', async () => {
+      await service.listUsers({ status: 'pending', active: true });
+      expect(whereFor()).toEqual({ profile_member_id: null, deactivated_at: null });
+    });
+
+    it('active=false: chỉ tài khoản bị khoá', async () => {
+      await service.listUsers({ status: 'all', active: false });
+      expect(whereFor()).toEqual({ NOT: [{ deactivated_at: null }] });
+    });
+
+    it('linked + active=false: gộp hai điều kiện NOT, không cái nào đè cái nào', async () => {
+      await service.listUsers({ status: 'linked', active: false });
+      expect(whereFor()).toEqual({ NOT: [{ profile_member_id: null }, { deactivated_at: null }] });
+    });
+
+    it('trả cờ active cho từng dòng', async () => {
+      const result = await service.listUsers({ status: 'all' });
+      expect(result.data[0]).toMatchObject({ active: false, deactivatedAt: expect.any(Date) });
     });
   });
 });

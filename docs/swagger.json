@@ -240,6 +240,15 @@
             }
           },
           {
+            "name": "active",
+            "required": false,
+            "in": "query",
+            "description": "true = chỉ tài khoản đang hoạt động, false = chỉ tài khoản bị khoá. Bỏ trống = cả hai.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "role",
             "required": false,
             "in": "query",
@@ -305,6 +314,45 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AssignRolesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v2/auth/users/{userId}/active": {
+      "put": {
+        "operationId": "AuthController_setActive",
+        "summary": "Khoá / mở khoá tài khoản (admin). Bị khoá: login trả 403 ACCOUNT_DEACTIVATED, token đang cầm trả 401. Không tự khoá chính mình.",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetActiveDto"
               }
             }
           }
@@ -4618,6 +4666,18 @@
         },
         "required": [
           "roles"
+        ]
+      },
+      "SetActiveDto": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "active"
         ]
       },
       "LinkMemberDto": {

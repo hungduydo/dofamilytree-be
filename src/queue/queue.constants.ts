@@ -3,6 +3,7 @@ export const QUEUE_REPORT_GENERATE = 'report-generate';
 export const QUEUE_NOTIFICATION = 'notification';
 export const QUEUE_IMAGE_PROCESS = 'image-process';
 export const QUEUE_GENERATION_RECOMPUTE = 'generation-recompute';
+export const QUEUE_ACCOUNT_PENDING = 'account-pending';
 
 /**
  * URL callback mà QStash sẽ gọi. Publisher và guard xác thực chữ ký PHẢI dùng

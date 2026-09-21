@@ -59,6 +59,7 @@ cấp PII cho editor. Dùng `canViewContactPii()`.
 POST /v2/auth/register
         ↓  roles:['guest'], profile_member_id: null, claim_request: {...}
      [GUEST]  ← chờ admin duyệt (GET /v2/auth/users?status=pending)
+        │     ↳ job QStash `account-pending` email cho mọi admin (Resend) — xem .env.example
         │
         ├── POST /v2/auth/users/:userId/link-member  { memberId }
         │        ↓  gắn vào Member CÓ SẴN, guest → member
@@ -72,6 +73,16 @@ POST /v2/auth/register
 `DELETE /v2/auth/users/:userId/link-member` gỡ link; chỉ hạ về `guest` nếu đang
 là `member` — editor/admin giữ nguyên role.
 
+**Khoá tài khoản** — `PUT /v2/auth/users/:userId/active { active: false }` áp
+dụng cho mọi trạng thái trên. Ghi `deactivated_at` / `deactivated_by`, KHÔNG đụng
+role, link hay claim, nên mở khoá (`{ active: true }`) khôi phục đúng như cũ.
+Tài khoản bị khoá: `POST /auth/login` trả `403 { code: 'ACCOUNT_DEACTIVATED' }`
+(chỉ sau khi mật khẩu đúng — không lộ tài khoản nào đang bị khoá), và token đang
+cầm bị `JwtStrategy` từ chối với `401` ngay request kế tiếp, không chờ hết TTL.
+Trên route `@Public()` họ thành khách ẩn danh. Lọc danh sách bằng `active`,
+độc lập với `status`: `?status=pending&active=true` là hàng đợi duyệt thật,
+`?active=false` là mọi tài khoản bị khoá.
+
 **Admin đầu tiên** không tạo được qua API (cần admin để cấp admin). Dùng script:
 
 ```bash
@@ -84,16 +95,17 @@ Tất cả yêu cầu `admin`.
 
 | Method | Path | Ghi chú |
 |---|---|---|
-| `GET` | `/v2/auth/users?status=pending\|linked\|all&role=&page=&pageSize=` | `status=pending` là hàng đợi duyệt. Trả kèm `email`, `displayName`, `claimRequest`, `profileMember` |
+| `GET` | `/v2/auth/users?status=pending\|linked\|all&active=true\|false&role=&page=&pageSize=` | `status=pending` là hàng đợi duyệt (gắn member chưa); `active` lọc theo khoá, bỏ trống = cả hai. Trả kèm `email`, `displayName`, `claimRequest`, `profileMember`, `active`, `deactivatedAt` |
 | `PUT` | `/v2/auth/users/:userId/roles` | Body `{ roles: ['editor'] }`. Chuẩn hoá về role cao nhất |
 | `POST` | `/v2/auth/users/:userId/link-member` | Body `{ memberId }`. Gắn vào Member có sẵn |
 | `DELETE` | `/v2/auth/users/:userId/link-member` | Gỡ link |
+| `PUT` | `/v2/auth/users/:userId/active` | Body `{ active: boolean }`. Khoá / mở khoá |
 
 **Guardrail** (FE nên hiển thị lỗi tương ứng, đừng nuốt):
 
 | Tình huống | Mã |
 |---|---|
-| Admin tự đổi role / tự gỡ link của chính mình | `403` |
+| Admin tự đổi role / tự gỡ link / tự khoá chính mình | `403` |
 | Gán `member` cho tài khoản chưa link member nào | `400` |
 | `roles` rỗng, hoặc giá trị ngoài 4 role | `400` |
 | Tài khoản đã link, muốn link sang member khác | `409` — gỡ link trước |

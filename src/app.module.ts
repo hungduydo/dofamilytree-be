@@ -20,6 +20,7 @@ import { GenerationModule } from './generation/generation.module';
 import { RedisModule } from './redis.module';
 import { StorageModule } from './storage/storage.module';
 import { SupabaseModule } from './supabase/supabase.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { SupabaseModule } from './supabase/supabase.module';
     RedisModule,
     StorageModule,
     SupabaseModule,
+    MailModule,
     PrismaModule,
     AuthModule,
     QueueModule,

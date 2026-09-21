@@ -1,7 +1,18 @@
 import {
-  Controller, Post, Get, Put, Delete, Body, Param, Query,
-  UseGuards, HttpCode, HttpStatus,
-  UseInterceptors, UploadedFile,
+  Controller,
+  Post,
+  Get,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  UseInterceptors,
+  UploadedFile,
+  ParseBoolPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes, ApiQuery } from '@nestjs/swagger';
@@ -13,6 +24,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AssignRolesDto } from './dto/assign-roles.dto';
 import { LinkMemberDto } from './dto/link-member.dto';
+import { SetActiveDto } from './dto/set-active.dto';
 import { JwtAuthGuard } from './jwt.guard';
 import { RolesGuard } from './roles.guard';
 import { Roles } from './roles.decorator';
@@ -106,16 +118,23 @@ export class AuthController {
     summary: 'Danh sách tài khoản để duyệt (admin). status=pending là hàng đợi guest chờ gắn member.',
   })
   @ApiQuery({ name: 'status', required: false, enum: ['pending', 'linked', 'all'] })
+  @ApiQuery({
+    name: 'active',
+    required: false,
+    type: Boolean,
+    description: 'true = chỉ tài khoản đang hoạt động, false = chỉ tài khoản bị khoá. Bỏ trống = cả hai.',
+  })
   @ApiQuery({ name: 'role', required: false, enum: ROLE_ORDER })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   listUsers(
     @Query('status') status?: 'pending' | 'linked' | 'all',
+    @Query('active', new ParseBoolPipe({ optional: true })) active?: boolean,
     @Query('role') role?: string,
     @Query('page', new ParseOptionalIntPipe()) page?: number,
     @Query('pageSize', new ParseOptionalIntPipe()) pageSize?: number,
   ) {
-    return this.authService.listUsers({ status, role, page, pageSize });
+    return this.authService.listUsers({ status, active, role, page, pageSize });
   }
 
   @Put('users/:userId/roles')
@@ -129,6 +148,22 @@ export class AuthController {
     @Body() dto: AssignRolesDto,
   ) {
     return this.authService.assignRoles(user.id, userId, dto);
+  }
+
+  @Put('users/:userId/active')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiOperation({
+    summary:
+      'Khoá / mở khoá tài khoản (admin). Bị khoá: login trả 403 ACCOUNT_DEACTIVATED, token đang cầm trả 401. Không tự khoá chính mình.',
+  })
+  setActive(
+    @CurrentUser() user: { id: string },
+    @Param('userId') userId: string,
+    @Body() dto: SetActiveDto,
+  ) {
+    return this.authService.setActive(user.id, userId, dto);
   }
 
   @Post('users/:userId/link-member')

@@ -230,6 +230,11 @@ model UserMetadata {
   created_at        DateTime  @default(now())
   /// Thời điểm admin gắn tài khoản này vào một Member. null = còn là guest.
   linked_at         DateTime?
+  /// Thời điểm admin khoá tài khoản. null = đang hoạt động. Khoá ⇒ không login
+  /// được và token đang cầm bị từ chối ngay (jwt.strategy.ts).
+  deactivated_at    DateTime?
+  /// Admin đã khoá (user_id). Xoá về null khi mở khoá.
+  deactivated_by    String?   @db.Uuid
   profile_member    Member?   @relation(fields: [profile_member_id], references: [id])
 
   @@index([created_at(sort: Desc), id])
