@@ -44,6 +44,21 @@ export class SupabaseUsersService {
       return null;
     }
   }
+  /**
+   * Email đăng nhập của một tài khoản. Email chỉ nằm ở Supabase Auth, không ở
+   * DB của ta. Trả `null` khi không đọc được — chỗ gọi tự quyết đó là lỗi hay không.
+   */
+  async getEmail(userId: string): Promise<string | null> {
+    if (!this.isConfigured()) return null;
+    try {
+      const { data, error } = await this.getClient().auth.admin.getUserById(userId);
+      if (error || !data.user) return null;
+      return data.user.email ?? null;
+    } catch (error) {
+      this.logger.warn(`Không đọc được email của ${userId}: ${(error as Error).message}`);
+      return null;
+    }
+  }
 }
 
 /** Tách hàm thuần để test được thứ tự ưu tiên mà không cần đụng tới Supabase. */

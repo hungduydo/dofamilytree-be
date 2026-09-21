@@ -21,12 +21,19 @@ import { pickDisplayName } from '../supabase/supabase-users.service';
 import { StorageService } from '../storage/storage.service';
 import { highestRole, AVAILABLE_ROLES } from './roles.constants';
 import { LinkMemberDto } from './dto/link-member.dto';
+import { SetActiveDto } from './dto/set-active.dto';
+import { QStashService } from '../queue/qstash.service';
+import { QUEUE_ACCOUNT_PENDING } from '../queue/queue.constants';
+import { runInBackground } from '../utils/run-in-background';
 
 // Nguồn sự thật đã chuyển sang roles.constants.ts. Re-export để import cũ
 // (`from './auth.service'`) không vỡ.
 export { AVAILABLE_ROLES };
 
 const EMAIL_TAKEN = 'User with this email already exists';
+
+/** Mã ổn định cho FE dịch — thông điệp tiếng Anh chỉ dành cho người đọc API. */
+export const ACCOUNT_DEACTIVATED = 'ACCOUNT_DEACTIVATED';
 
 @Injectable()
 export class AuthService {
@@ -48,6 +55,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly storage: StorageService,
+    private readonly qstash: QStashService,
   ) {}
 
   /**
@@ -130,6 +138,8 @@ export class AuthService {
       },
     });
 
+    this.notifyAdminsOfPendingAccount(userId);
+
     return {
       id: userId,
       email: authData.user.email,
@@ -139,6 +149,24 @@ export class AuthService {
       // Cờ tường minh cho FE: đăng ký xong KHÔNG có member để điều hướng tới.
       status: 'pending_link' as const,
     };
+  }
+
+  /**
+   * Email cho admin chạy trong job QStash, không chạy trong request: Resend chậm
+   * hay hỏng không được làm người đăng ký phải chờ hay thấy lỗi, và QStash tự
+   * retry khi gửi thất bại. Lỗi publish được log — tài khoản vẫn nằm trong hàng
+   * đợi `/bo/users`, chỉ là admin không được báo.
+   */
+  private notifyAdminsOfPendingAccount(userId: string): void {
+    runInBackground(
+      this.qstash
+        .publish(QUEUE_ACCOUNT_PENDING, { userId }, { deduplicationId: `account-pending-${userId}` })
+        .catch((error) => {
+          this.logger.error(
+            `Không xếp được job báo admin về tài khoản ${userId}: ${(error as Error).message}`,
+          );
+        }),
+    );
   }
 
   /**
@@ -176,6 +204,16 @@ export class AuthService {
 
     if (!userMetadata) {
       throw new UnauthorizedException('User profile data missing');
+    }
+
+    // Kiểm tra SAU khi mật khẩu đúng: người không có mật khẩu không được biết
+    // tài khoản nào đang bị khoá.
+    if (userMetadata.deactivated_at) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: ACCOUNT_DEACTIVATED,
+        message: 'Account is deactivated',
+      });
     }
 
     const payload = {
@@ -450,11 +488,49 @@ export class AuthService {
   }
 
   /**
+   * Khoá / mở khoá một tài khoản. Khoá không xoá gì: role, link member và
+   * claim_request giữ nguyên, để mở khoá là trở lại đúng như cũ.
+   *
+   * Chống tự khoá như assignRoles — và vì người gọi luôn là một admin đang hoạt
+   * động, hệ thống không bao giờ rơi vào cảnh không còn admin nào dùng được.
+   */
+  async setActive(requesterId: string, targetUserId: string, dto: SetActiveDto) {
+    if (requesterId === targetUserId) {
+      throw new ForbiddenException('Không thể tự khoá / mở khoá tài khoản của chính mình');
+    }
+
+    const targetMeta = await this.prisma.userMetadata.findUnique({
+      where: { user_id: targetUserId },
+    });
+    if (!targetMeta) throw new NotFoundException(`User ${targetUserId} not found`);
+
+    const updated = await this.prisma.userMetadata.update({
+      where: { user_id: targetUserId },
+      data: dto.active
+        ? { deactivated_at: null, deactivated_by: null }
+        : {
+            // Khoá lại tài khoản đã khoá giữ nguyên mốc cũ — "bị khoá từ khi nào"
+            // không được trôi theo mỗi lần bấm.
+            deactivated_at: targetMeta.deactivated_at ?? new Date(),
+            deactivated_by: targetMeta.deactivated_by ?? requesterId,
+          },
+    });
+
+    return {
+      message: `User ${targetUserId} ${dto.active ? 'activated' : 'deactivated'}`,
+      active: updated.deactivated_at === null,
+      deactivatedAt: updated.deactivated_at,
+    };
+  }
+
+  /**
    * Danh sách tài khoản cho màn duyệt của admin. `status=pending` là hàng đợi
    * chính: những guest đã đăng ký và đang chờ được gắn vào một member.
    */
   async listUsers(params: {
     status?: 'pending' | 'linked' | 'all';
+    /** Lọc theo khoá — độc lập với `status`. Bỏ trống = cả hai. */
+    active?: boolean;
     role?: string;
     page?: number;
     pageSize?: number;
@@ -462,9 +538,17 @@ export class AuthService {
     const take = Math.min(Math.max(params.pageSize ?? 20, 1), 100);
     const skip = (Math.max(params.page ?? 1, 1) - 1) * take;
 
+    // Hai trục độc lập: `status` là đã gắn member hay chưa, `active` là có bị
+    // khoá không. `NOT` của hai trục phải gộp vào một mảng — hai key `NOT`
+    // trong cùng object thì key sau đè key trước.
+    const not: Prisma.UserMetadataWhereInput[] = [];
+    if (params.status === 'linked') not.push({ profile_member_id: null });
+    if (params.active === false) not.push({ deactivated_at: null });
+
     const where: Prisma.UserMetadataWhereInput = {
       ...(params.status === 'pending' ? { profile_member_id: null } : {}),
-      ...(params.status === 'linked' ? { NOT: { profile_member_id: null } } : {}),
+      ...(params.active === true ? { deactivated_at: null } : {}),
+      ...(not.length ? { NOT: not } : {}),
       ...(params.role ? { roles: { has: params.role } } : {}),
     };
 
@@ -495,6 +579,8 @@ export class AuthService {
           claimRequest: row.claim_request,
           createdAt: row.created_at,
           linkedAt: row.linked_at,
+          active: row.deactivated_at === null,
+          deactivatedAt: row.deactivated_at,
         };
       }),
     );

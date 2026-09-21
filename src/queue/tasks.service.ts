@@ -8,6 +8,9 @@ import { mediaProgressKey, MEDIA_PROGRESS_TTL, MEDIA_CACHE_KEYS } from '../media
 import { storageKeyFor } from '../media/media.constants';
 import { computeTreeStats } from '../tree/tree-stats';
 import { CACHE_KEY_STATS, CACHE_TTL } from '../tree/tree.cache-keys';
+import { MailService } from '../mail/mail.service';
+import { SupabaseUsersService } from '../supabase/supabase-users.service';
+import { buildPendingAccountEmail, type ClaimRequest } from '../auth/pending-account-email';
 
 export type MediaUploadProgress = {
   status: 'pending' | 'processing' | 'ready' | 'failed';
@@ -25,6 +28,8 @@ export class TasksService {
     @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
     private readonly generationService: GenerationService,
     private readonly storage: StorageService,
+    private readonly mail: MailService,
+    private readonly supabaseUsers: SupabaseUsersService,
   ) {}
 
   /**
@@ -83,6 +88,63 @@ export class TasksService {
    */
   async handleGenerationRecompute() {
     return this.generationService.recomputeAll();
+  }
+
+  /**
+   * Báo cho mọi admin rằng có một tài khoản mới đang chờ duyệt.
+   *
+   * Lỗi gửi mail thì NÉM để QStash retry. Hai trường hợp KHÔNG ném, vì retry
+   * không bao giờ sửa được: tài khoản đã được duyệt/xoá trước khi job chạy, và
+   * mail chưa cấu hình (thiếu env — phải deploy lại mới hết).
+   */
+  async handleAccountPending(data: { userId: string }) {
+    const meta = await this.prisma.userMetadata.findUnique({ where: { user_id: data.userId } });
+    if (!meta || meta.profile_member_id || meta.deactivated_at) {
+      this.logger.log(`Tài khoản ${data.userId} không còn chờ duyệt — bỏ qua email báo admin`);
+      return;
+    }
+
+    if (!this.mail.isConfigured()) {
+      this.logger.error(
+        `Không báo được admin về tài khoản chờ duyệt ${data.userId}: thiếu RESEND_API_KEY/MAIL_FROM`,
+      );
+      return;
+    }
+
+    const [admins, pendingCount, registrantEmail] = await Promise.all([
+      this.prisma.userMetadata.findMany({
+        where: { roles: { has: 'admin' }, deactivated_at: null },
+        select: { user_id: true },
+      }),
+      this.prisma.userMetadata.count({ where: { profile_member_id: null, deactivated_at: null } }),
+      this.supabaseUsers.getEmail(data.userId),
+    ]);
+
+    const recipients = (
+      await Promise.all(admins.map((admin) => this.supabaseUsers.getEmail(admin.user_id)))
+    ).filter((email): email is string => Boolean(email));
+
+    if (recipients.length === 0) {
+      // Có admin mà không đọc được email nào → Supabase đang hỏng, retry có ích.
+      // Không có admin nào → hệ thống chưa bootstrap:admin, xem docs/DEPLOY.md.
+      throw new Error(
+        admins.length === 0
+          ? 'Không có tài khoản admin nào để báo — chạy pnpm bootstrap:admin'
+          : `Không đọc được email của ${admins.length} admin từ Supabase`,
+      );
+    }
+
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3001').replace(/\/$/, '');
+
+    await this.mail.send(
+      buildPendingAccountEmail({
+        to: recipients,
+        registrantEmail,
+        claim: (meta.claim_request ?? {}) as ClaimRequest,
+        pendingCount,
+        reviewUrl: `${frontendUrl}/bo/users`,
+      }),
+    );
   }
 
   async handleNotification(data: { type: string; message: string; payload?: any }) {

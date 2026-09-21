@@ -2,7 +2,7 @@ import { Controller, Post, Body, Param, Logger, UseGuards } from '@nestjs/common
 import { Public } from '../auth/public.decorator';
 import { QStashSignatureGuard } from './qstash-signature.guard';
 import { TasksService } from './tasks.service';
-import { QUEUE_AVATAR_UPLOAD, QUEUE_REPORT_GENERATE, QUEUE_NOTIFICATION, QUEUE_IMAGE_PROCESS, QUEUE_GENERATION_RECOMPUTE } from './queue.constants';
+import { QUEUE_AVATAR_UPLOAD, QUEUE_REPORT_GENERATE, QUEUE_NOTIFICATION, QUEUE_IMAGE_PROCESS, QUEUE_GENERATION_RECOMPUTE, QUEUE_ACCOUNT_PENDING } from './queue.constants';
 
 @Controller('queue')
 export class QueueController {
@@ -33,6 +33,9 @@ export class QueueController {
         break;
       case QUEUE_GENERATION_RECOMPUTE:
         await this.tasksService.handleGenerationRecompute();
+        break;
+      case QUEUE_ACCOUNT_PENDING:
+        await this.tasksService.handleAccountPending(data);
         break;
       default:
         this.logger.warn(`Unknown task received: ${task}`);

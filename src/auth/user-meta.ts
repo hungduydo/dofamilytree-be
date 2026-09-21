@@ -22,6 +22,20 @@ const META_KEY = '__callerMeta';
  * "chính chủ" trong MembersService đều cần đúng một row này. Không memo thì mỗi
  * request tốn 3 lần findUnique giống hệt nhau.
  */
+/**
+ * Ghi sẵn memo từ một row đã đọc — JwtStrategy đọc đúng row này để kiểm tra
+ * tài khoản bị khoá, nên các guard sau khỏi phải đọc lại.
+ */
+export function seedCallerMeta(
+  req: any,
+  row: { roles: string[]; profile_member_id: string | null } | null,
+): void {
+  req[META_KEY] = {
+    roles: row?.roles ?? [],
+    profileMemberId: row?.profile_member_id ?? null,
+  };
+}
+
 export async function resolveCallerMeta(req: any, prisma: PrismaService): Promise<CallerMeta> {
   if (req[META_KEY]) return req[META_KEY];
 
