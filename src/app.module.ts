@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER } from '@nestjs/core';
+import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -21,9 +23,13 @@ import { RedisModule } from './redis.module';
 import { StorageModule } from './storage/storage.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { MailModule } from './mail/mail.module';
+import { AuditModule } from './audit/audit.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { ExportModule } from './export/export.module';
 
 @Module({
   imports: [
+    SentryModule.forRoot(),
     ConfigModule.forRoot({ isGlobal: true }),
     RedisModule,
     StorageModule,
@@ -45,7 +51,13 @@ import { MailModule } from './mail/mail.module';
     ArticlesModule,
     MemorialModule,
     ContactModule,
+    AuditModule,
+    NotificationsModule,
+    ExportModule,
   ],
   controllers: [AppController],
+  // Báo lỗi bất ngờ (không phải HttpException) lên Sentry; không có DSN thì
+  // hành xử y như filter mặc định của Nest.
+  providers: [{ provide: APP_FILTER, useClass: SentryGlobalFilter }],
 })
 export class AppModule {}

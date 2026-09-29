@@ -1,3 +1,5 @@
+// Sentry PHẢI được nạp trước mọi module khác — xem instrument.ts.
+import './instrument';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';

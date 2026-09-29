@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './jwt.strategy';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { AuthRateLimiter, AuthThrottleGuard, AuthThrottleInterceptor } from './auth-rate-limit';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -16,7 +17,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     PrismaModule,
   ],
   controllers: [AuthController],
-  providers: [JwtStrategy, AuthService],
+  providers: [JwtStrategy, AuthService, AuthRateLimiter, AuthThrottleGuard, AuthThrottleInterceptor],
   exports: [JwtModule],
 })
 export class AuthModule {}

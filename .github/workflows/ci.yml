@@ -1,0 +1,47 @@
+# Chặn PR đỏ trước khi merge: type-check (src + test + scripts), test, build.
+#
+# Trước đây không workflow nào chạy test — hook pre-commit đã gỡ ở 8eaf9bb3 —
+# nên hàng trăm test chỉ có tác dụng khi ai đó nhớ chạy tay.
+#
+# Không cần secret nào: test/jest.setup.ts cấp env giả và Prisma/Supabase/Redis
+# đều được mock. Đừng thêm DATABASE_URL thật vào đây.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          # pnpm 11 (pin ở package.json) yêu cầu Node >= 22.13.
+          node-version: 22
+          cache: pnpm
+      # postinstall chạy `prisma generate` — type-check cần Prisma client.
+      - run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        run: pnpm type-check
+
+      - name: Test
+        run: pnpm test --ci
+
+      # nest build dùng tsconfig.build.json (chỉ src/) — bắt lỗi mà type-check
+      # toàn repo không bắt, ví dụ import từ test/ lọt vào code chạy thật.
+      - name: Build
+        run: pnpm exec nest build

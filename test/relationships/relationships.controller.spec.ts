@@ -78,13 +78,13 @@ describe('RelationshipsController', () => {
   it('POST /members/:id/relationships should call addRelationship', async () => {
     mockRelationshipsService.addRelationship.mockResolvedValue({ id: 'rel-1' });
     const dto = { parentId: 'parent-1', childId: 'child-1', type: 'BIOLOGICAL' as const };
-    await controller.addRelationship(dto as any);
-    expect(mockRelationshipsService.addRelationship).toHaveBeenCalledWith(dto);
+    await controller.addRelationship(dto as any, { id: 'actor-1' });
+    expect(mockRelationshipsService.addRelationship).toHaveBeenCalledWith(dto, 'actor-1');
   });
 
   it('DELETE /relationships/:id should call deleteRelationship', async () => {
     mockRelationshipsService.deleteRelationship.mockResolvedValue(undefined);
-    await controller.deleteRelationship('rel-1');
-    expect(mockRelationshipsService.deleteRelationship).toHaveBeenCalledWith('rel-1');
+    await controller.deleteRelationship('rel-1', { id: 'actor-1' });
+    expect(mockRelationshipsService.deleteRelationship).toHaveBeenCalledWith('rel-1', 'actor-1');
   });
 });

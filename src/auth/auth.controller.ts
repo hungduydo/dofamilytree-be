@@ -31,6 +31,7 @@ import { Roles } from './roles.decorator';
 import { CurrentUser } from './current-user.decorator';
 import { ROLE_ORDER } from './roles.constants';
 import { ParseOptionalIntPipe } from '../utils/parse-optional-int.pipe';
+import { AUTH_RATE_LIMITS, AuthRateLimit } from './auth-rate-limit';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -38,6 +39,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @AuthRateLimit(AUTH_RATE_LIMITS.register)
   @ApiOperation({ summary: 'Register a new user (multipart: optional profilePicture)' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('profilePicture'))
@@ -49,6 +51,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @AuthRateLimit(AUTH_RATE_LIMITS.login)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login and receive JWT token' })
   login(@Body() dto: LoginDto) {
@@ -65,6 +68,7 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @AuthRateLimit(AUTH_RATE_LIMITS.forgotPassword)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Gửi email đặt lại mật khẩu (không cần đăng nhập). Luôn trả về thông điệp trung lập.',
@@ -74,6 +78,7 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @AuthRateLimit(AUTH_RATE_LIMITS.resetPassword)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Đặt lại mật khẩu bằng access token recovery từ email (không cần đăng nhập).',

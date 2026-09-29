@@ -17,13 +17,16 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# Số bảng mong đợi trong schema public (23 model trong prisma/schema.prisma).
-# Đổi schema ⇒ nhớ sửa số này, nếu không verify sẽ báo đỏ.
+# Số bảng TỐI THIỂU trong schema public = số model trong prisma/schema.prisma
+# (23: thêm audit_log ở 014, bỏ relationships + comments của v1 ở 016).
+# Đổi schema ⇒ nhớ sửa số này. Là SÀN chứ không phải số chính xác: trong lúc
+# 016 chưa áp, DB có 25 bảng — vẫn qua.
+# 014 PHẢI áp trước 016, không thì DB chỉ còn 22 bảng và verify báo đỏ.
 EXPECTED_TABLES="${EXPECTED_TABLES:-23}"
 
 # Các bảng KHÔNG được phép rỗng. Rỗng = dump hỏng hoặc production đã mất dữ liệu.
-# Lưu ý: bảng `relationships` là di sản của backend v1 và ĐANG RỖNG — quan hệ
-# thật nằm ở `member_relationships`. Đừng thêm `relationships` vào đây.
+# Quan hệ nằm ở `member_relationships`; bảng `relationships` của v1 (luôn rỗng)
+# bị xoá ở 016_drop_v1_tables.sql.
 CRITICAL_TABLES=(members member_relationships profiles user_metadata)
 
 # Ngưỡng cảnh báo sụt số dòng so với lần chạy trước (%).

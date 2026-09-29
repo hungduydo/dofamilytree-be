@@ -1,4 +1,5 @@
 import type { MailMessage } from '../mail/mail.service';
+import { escapeHtml } from '../mail/escape-html';
 
 /** Những gì người đăng ký tự khai — cùng shape với `user_metadata.claim_request`. */
 export type ClaimRequest = {
@@ -25,19 +26,6 @@ export type PendingAccountEmailInput = {
 
 const GENDER_LABEL: Record<string, string> = { male: 'Nam', female: 'Nữ', other: 'Khác' };
 const BIOGRAPHY_LIMIT = 300;
-
-/**
- * Mọi field trong claim là người lạ tự gõ vào form đăng ký. Không escape thì
- * một cái tên chứa `<a href=…>` thành link giả trong hộp thư của trưởng tộc.
- */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 function formatSubmittedAt(iso: string | null | undefined): string | null {
   if (!iso) return null;

@@ -15,6 +15,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { CallerMetaGuard } from '../auth/caller-meta.guard';
 import { CanSeePii, CurrentMeta } from '../auth/caller-meta.decorator';
 import { CallerMeta } from '../auth/user-meta';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { MembersService, MEMBER_SORT_FIELDS, MEMBER_GENDERS, MemberSortField, SortOrder } from './members.service';
 import { MEMBER_VIEWS, resolveView } from './members.view';
 import { LIFE_STATUSES } from './life-status';
@@ -165,8 +166,8 @@ export class MembersController {
   @Roles('editor')
   @ApiOperation({ summary: 'Create new member + profile (editor trở lên)' })
   @ApiCreatedResponse({ type: MemberResponseDto })
-  createMember(@Body() dto: CreateMemberDto) {
-    return this.membersService.createMember(dto);
+  createMember(@Body() dto: CreateMemberDto, @CurrentUser() user?: { id: string }) {
+    return this.membersService.createMember(dto, user?.id ?? null);
   }
 
   @Get(':id/profile')
@@ -193,16 +194,19 @@ export class MembersController {
     @Body() dto: UpdateMemberDto,
     @CurrentMeta() caller: CallerMeta,
     @UploadedFile() avatarFile?: Express.Multer.File,
+    @CurrentUser() user?: { id: string },
   ) {
-    return this.membersService.updateMemberProfile(id, dto, avatarFile, caller);
+    return this.membersService.updateMemberProfile(id, dto, avatarFile, caller, user?.id ?? null);
   }
 
   @Delete(':id')
   @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete member (cascade: profile, userMetadata)' })
+  @ApiOperation({
+    summary: 'Delete member (cascade: profile, userMetadata). Vào thùng rác — admin khôi phục được trong 30 ngày qua /v2/audit/trash',
+  })
   @ApiNoContentResponse({ description: 'Deleted' })
-  deleteMember(@Param('id') id: string) {
-    return this.membersService.deleteMember(id);
+  deleteMember(@Param('id') id: string, @CurrentUser() user?: { id: string }) {
+    return this.membersService.deleteMember(id, user?.id ?? null);
   }
 }

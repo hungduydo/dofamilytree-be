@@ -2,13 +2,17 @@ import { Controller, Post, Body, Param, Logger, UseGuards } from '@nestjs/common
 import { Public } from '../auth/public.decorator';
 import { QStashSignatureGuard } from './qstash-signature.guard';
 import { TasksService } from './tasks.service';
-import { QUEUE_AVATAR_UPLOAD, QUEUE_REPORT_GENERATE, QUEUE_NOTIFICATION, QUEUE_IMAGE_PROCESS, QUEUE_GENERATION_RECOMPUTE, QUEUE_ACCOUNT_PENDING } from './queue.constants';
+import { QUEUE_AVATAR_UPLOAD, QUEUE_REPORT_GENERATE, QUEUE_NOTIFICATION, QUEUE_IMAGE_PROCESS, QUEUE_GENERATION_RECOMPUTE, QUEUE_ACCOUNT_PENDING, QUEUE_ANNIVERSARY_REMINDER } from './queue.constants';
+import { AnniversaryReminderService } from '../notifications/anniversary-reminder.service';
 
 @Controller('queue')
 export class QueueController {
   private readonly logger = new Logger(QueueController.name);
 
-  constructor(private readonly tasksService: TasksService) {}
+  constructor(
+    private readonly tasksService: TasksService,
+    private readonly anniversaryReminders: AnniversaryReminderService,
+  ) {}
 
   // KHÔNG dùng JWT: người gọi là QStash chứ không phải người dùng. Danh tính
   // được chứng minh bằng chữ ký (QStashSignatureGuard), không phải bằng token.
@@ -36,6 +40,9 @@ export class QueueController {
         break;
       case QUEUE_ACCOUNT_PENDING:
         await this.tasksService.handleAccountPending(data);
+        break;
+      case QUEUE_ANNIVERSARY_REMINDER:
+        await this.anniversaryReminders.sendDailyReminders();
         break;
       default:
         this.logger.warn(`Unknown task received: ${task}`);

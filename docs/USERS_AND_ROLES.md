@@ -122,7 +122,7 @@ role **tối thiểu** — `editor` bao gồm cả admin.
 
 | Nhóm | Route | Role |
 |---|---|---|
-| **auth** | `POST /auth/register`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password` | public |
+| **auth** | `POST /auth/register`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password` | public — có rate limit (`src/auth/auth-rate-limit.ts`), vượt ⇒ 429 |
 | | `POST /auth/logout`, `/auth/change-password`, `GET /auth/me`, `/auth/roles` | auth |
 | | `GET /auth/users`, `PUT .../roles`, `POST\|DELETE .../link-member` | **admin** |
 | **members** | `GET /members/committee`, `/notable`, `/stats` | public |
@@ -160,6 +160,20 @@ role **tối thiểu** — `editor` bao gồm cả admin.
 | | `POST /media/albums` | **editor** |
 | | `GET /media/blob-storage-usage`, `DELETE /media/:id`, `DELETE /media/albums/:id` | **admin** |
 | **queue** | `POST /queue/callback/:task` | Chữ ký QStash, không phải JWT |
+| **audit** | `GET /audit`, `GET /audit/trash`, `POST /audit/trash/:id/restore` | **admin** (dòng audit chứa PII) |
+| **notifications** | `GET\|PUT /notifications/preferences` | auth (tài khoản của chính mình) |
+| | `GET\|POST /notifications/unsubscribe?token=` | public — token HMAC trong link email |
+| **export** | `GET /export/gedcom`, `GET /export/book` | **member** (không có cột liên lạc trong file) |
+
+### Lịch sử thay đổi & thùng rác
+
+Mọi lần tạo / sửa / xoá **member** và **quan hệ** ghi một dòng `audit_log` trong
+CÙNG transaction (`src/audit/audit-record.ts`) — kèm người thực hiện, và với
+UPDATE chỉ các field đổi. Xoá member / quan hệ vẫn là xoá thật, nhưng dòng DELETE
+mang snapshot đủ để dựng lại (member, profile, liên kết tài khoản, quan hệ, mốc
+đời, nén hương, ngày giỗ / mộ / ảnh bị gỡ liên kết). Admin khôi phục trong
+**30 ngày** qua `POST /audit/trash/:id/restore`; phần không dựng lại được (người
+bên kia quan hệ cũng đã bị xoá…) trả về trong `warnings`.
 
 ## 6. FE cần làm gì
 

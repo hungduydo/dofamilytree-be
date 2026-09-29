@@ -9,9 +9,9 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+/// Bảng neo cho FK memories.author_id — user thật nằm ở Supabase Auth.
 model User {
-  id       String    @id @db.Uuid
-  comments Comment[]
+  id       String   @id @db.Uuid
   memories Memory[]
 }
 
@@ -38,7 +38,6 @@ model Member {
   generation_updated_at DateTime?
   anniversaries         Anniversary[]
   cemeteries            Cemetery[]
-  comments              Comment[]
   event_attendances     EventAttendee[]
   life_events           LifeEvent[]
   media                 Media[]
@@ -49,8 +48,6 @@ model Member {
   memorial_tributes     MemorialTribute[]
   memories              Memory[]
   profile               Profile?
-  from_relationships    Relationship[]       @relation("FromMember")
-  to_relationships      Relationship[]       @relation("ToMember")
   user_metadata         UserMetadata?
 
   @@index([normalized_name])
@@ -90,20 +87,6 @@ model Profile {
   @@map("profiles")
 }
 
-model Relationship {
-  id             String           @id @default(uuid()) @db.Uuid
-  from_member_id String           @db.Uuid
-  to_member_id   String           @db.Uuid
-  type           RelationshipType
-  created_at     DateTime         @default(now())
-  from_member    Member           @relation("FromMember", fields: [from_member_id], references: [id])
-  to_member      Member           @relation("ToMember", fields: [to_member_id], references: [id])
-
-  @@index([from_member_id])
-  @@index([to_member_id])
-  @@map("relationships")
-}
-
 model MemberRelationship {
   id         String                 @id @default(uuid()) @db.Uuid
   parent_id  String                 @db.Uuid
@@ -133,19 +116,6 @@ model Tree {
   @@map("trees")
 }
 
-model Comment {
-  id               String   @id @default(uuid()) @db.Uuid
-  content          String
-  author_id        String   @db.Uuid
-  target_member_id String?  @db.Uuid
-  created_at       DateTime @default(now())
-  author           User     @relation(fields: [author_id], references: [id])
-  target_member    Member?  @relation(fields: [target_member_id], references: [id])
-
-  @@index([target_member_id])
-  @@index([author_id])
-  @@map("comments")
-}
 
 model Media {
   id               String      @id @default(uuid()) @db.Uuid
@@ -235,6 +205,9 @@ model UserMetadata {
   deactivated_at    DateTime?
   /// Admin đã khoá (user_id). Xoá về null khi mở khoá.
   deactivated_by    String?   @db.Uuid
+  /// Nhận email nhắc ngày giỗ (src/notifications/). Tắt bằng link trong email
+  /// hoặc PUT /v2/notifications/preferences. Xem 015_user_notification_prefs.sql.
+  anniversary_reminders Boolean @default(true)
   profile_member    Member?   @relation(fields: [profile_member_id], references: [id])
 
   @@index([created_at(sort: Desc), id])
@@ -425,6 +398,31 @@ model MemorialTribute {
   @@map("memorial_tribute")
 }
 
+/// Lịch sử thay đổi + thùng rác. Ghi TRONG CÙNG transaction với thay đổi nó mô
+/// tả (src/audit/audit-record.ts). Xem 014_audit_log.sql. Chứa PII — chỉ admin.
+model AuditLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  /// 'member' | 'relationship' — AUDIT_ENTITY ở audit-record.ts.
+  entity_type String
+  entity_id   String    @db.Uuid
+  /// CREATE | UPDATE | DELETE | RESTORE
+  action      String
+  /// User Supabase đã thực hiện. null = hệ thống / script.
+  actor_id    String?   @db.Uuid
+  summary     String?
+  /// UPDATE: chỉ field đổi. DELETE: snapshot đủ để khôi phục.
+  before      Json?
+  after       Json?
+  created_at  DateTime  @default(now())
+  restored_at DateTime?
+  restored_by String?   @db.Uuid
+
+  @@index([entity_type, entity_id, created_at(sort: Desc)], map: "audit_log_entity_idx")
+  @@index([created_at(sort: Desc), id(sort: Desc)], map: "audit_log_created_idx")
+  @@index([actor_id, created_at(sort: Desc)], map: "audit_log_actor_idx")
+  @@map("audit_log")
+}
+
 /// Dòng DUY NHẤT chứa thông tin liên hệ của dòng họ. Singleton ép bằng
 /// `@default("default")` trên khoá chính: mọi upsert đều nhắm id="default" nên
 /// không bao giờ đẻ ra dòng thứ hai.
@@ -530,12 +528,6 @@ model ContactMessage {
   @@index([full_name(ops: raw("gin_trgm_ops"))], map: "contact_message_full_name_trgm_idx", type: Gin)
   @@index([phone(ops: raw("gin_trgm_ops"))], map: "contact_message_phone_trgm_idx", type: Gin)
   @@map("contact_message")
-}
-
-enum RelationshipType {
-  PARENT
-  CHILD
-  SPOUSE
 }
 
 enum RelationshipNatureType {

@@ -5,6 +5,8 @@ export type MailMessage = {
   subject: string;
   text: string;
   html: string;
+  /** Header thêm, vd. List-Unsubscribe cho email định kỳ (Gmail/Yahoo bắt buộc). */
+  headers?: Record<string, string>;
 };
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
@@ -43,6 +45,7 @@ export class MailService {
         subject: message.subject,
         text: message.text,
         html: message.html,
+        ...(message.headers && { headers: message.headers }),
       }),
     });
 
