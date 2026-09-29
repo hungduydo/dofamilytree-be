@@ -86,7 +86,7 @@ Swagger UI: **http://localhost:3002/docs**
 ```
 family-be-v2/
 ├── src/
-│   ├── auth/                 # Đăng ký/đăng nhập, JWT guard, phân quyền, quên mật khẩu
+│   ├── auth/                 # Đăng ký/đăng nhập, JWT guard, phân quyền, quên mật khẩu, rate limit
 │   ├── members/              # Member + Profile CRUD
 │   ├── relationships/        # MemberRelationship CRUD + search
 │   ├── tree/                 # Cây gia phả (Redis cache + BFS subtree)
@@ -97,14 +97,20 @@ family-be-v2/
 │   ├── memorial/             # Thắp hương, lời tưởng niệm
 │   ├── articles/             # Bài viết
 │   ├── graves/               # Cemetery + GPS nearby search
+│   ├── grave-areas/          # Khu an táng (polygon)
 │   ├── contact/              # Form liên hệ (public, chặn bằng rate limit)
 │   ├── media/                # Upload ảnh: multipart hoặc presigned PUT
 │   ├── storage/              # Facade R2 / Vercel Blob (STORAGE_PROVIDER)
 │   ├── supabase/             # Client service-role + resolver secret key
 │   ├── queue/                # QStash: service, signature guard, callback controller
+│   ├── audit/                # Lịch sử thay đổi + thùng rác (admin)
+│   ├── notifications/        # Email nhắc ngày giỗ, tuỳ chọn + link tắt nhắc
+│   ├── export/               # GEDCOM + sách gia phả HTML
+│   ├── mail/                 # Gửi email qua Resend
 │   ├── prisma/               # PrismaService (global singleton)
 │   ├── redis.provider.ts     # Upstash Redis REST client
-│   ├── swagger.config.ts     # Nguồn spec duy nhất cho /docs và swagger:export
+│   ├── swagger.config.ts     # Nguồn spec duy nhất cho /docs (local + Vercel) và swagger:export
+│   ├── instrument.ts         # Sentry — nạp đầu tiên; no-op khi thiếu SENTRY_DSN
 │   ├── main.ts               # Port 3002, prefix /v2
 │   └── vercel.ts             # Entry cho Vercel (Express adapter)
 ├── prisma/
@@ -112,8 +118,8 @@ family-be-v2/
 │   └── manual-migrations/    # DDL áp tay — KHÔNG có runner tự chạy
 ├── scripts/
 │   ├── backup/               # db-backup, auth-export, storage-manifest, seal, upload, verify
-│   └── *.ts                  # backfill, bootstrap-admin, audit-roles, restore…
-├── .github/workflows/        # db-backup (hằng ngày + verify), storage-sync (hằng tuần)
+│   └── *.ts                  # backfill, bootstrap-admin, audit-roles, restore, qstash schedules, blob-inventory…
+├── .github/workflows/        # ci (mỗi PR), db-backup (hằng ngày + verify), storage-sync (hằng tuần)
 ├── test/                     # Jest + @nestjs/testing
 └── docs/                     # BACKUP_RESTORE, USERS_AND_ROLES, swagger.{json,yaml}
 ```
@@ -208,9 +214,11 @@ khai và một số route ghi yêu cầu role tối thiểu — xem bảng trong
 
 | Method | Path | Mô tả |
 |--------|------|--------|
-| `POST` | `/v2/media/upload` | Upload ảnh → queue image-process (sharp + Vercel Blob) |
-| `GET` | `/v2/media` | Danh sách (filter: uploader_id) |
-| `DELETE` | `/v2/media/:id` | Xóa record + Vercel Blob file |
+| `POST` | `/v2/media/upload-url` | Xin presigned PUT (R2) để client upload thẳng file lớn |
+| `POST` | `/v2/media/:id/complete` | Báo đã upload xong → job `media-process` (nén lossless, metadata) |
+| `POST` | `/v2/media/upload` | Upload multipart (file nhỏ / provider không presign được) |
+| `GET` | `/v2/media` | Danh sách (phân trang, lọc, tìm kiếm) · `/stats` · `/albums` |
+| `DELETE` | `/v2/media/:id` | Xoá record + file trên kho (R2 hoặc Vercel Blob, theo URL) |
 
 ### Graves (Mộ phần) `/v2/graves`
 
@@ -310,10 +318,10 @@ pnpm test:watch     # Watch mode
 pnpm test:cov       # Coverage report
 ```
 
-Hiện có **647 test / 32 suite**, phủ các vùng: `auth` (đăng ký, đăng nhập, đổi &
-đặt lại mật khẩu, phân quyền theo route), `members`, `relationships`, `tree`,
-`generation`, `events`, `media`, `graves`, `memorial`, `contact`, `queue`,
-`supabase`.
+**CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) chạy type-check,
+toàn bộ test và `nest build` trên mỗi PR và mỗi push lên `main` — PR đỏ thì đừng
+merge. Không cần secret: mọi thứ bên ngoài (Prisma, Supabase, Redis, QStash,
+Resend) đều được mock.
 
 `test/jest.setup.ts` cấp sẵn env giả (`SUPABASE_URL`, `SUPABASE_SECRET_KEY`) nên
 test **không đọc `.env` của máy dev** — chạy được trên máy trắng và trên CI.
@@ -321,6 +329,9 @@ test **không đọc `.env` của máy dev** — chạy được trên máy tr�
 `test/auth/route-roles.spec.ts` đáng chú ý: nó đối chiếu TỪNG handler của mọi
 controller với bảng phân quyền kỳ vọng, và **fail khi có handler mới chưa được
 khai**. Thêm route mà quên khai quyền là test đỏ ngay, không lọt im lặng.
+
+`test/app.module.spec.ts` dựng toàn bộ đồ thị DI của app — quên export provider
+hay import vòng giữa module nổ trên CI thay vì lúc cold start trên production.
 
 ---
 

@@ -3,9 +3,10 @@ import './instrument';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { buildSwaggerConfig } from './swagger.config';
 import express, { Express } from 'express';
 import * as Sentry from '@sentry/nestjs';
 import { runInBackground } from './utils/run-in-background';
@@ -35,13 +36,9 @@ async function bootstrap(): Promise<Express> {
     credentials: true,
   });
 
-  const config = new DocumentBuilder()
-    .setTitle('Family Tree API v2')
-    .setDescription('NestJS + Upstash Redis + QStash')
-    .setVersion('2.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
+  // Cùng config với main.ts / swagger:export — trước đây production dựng một
+  // DocumentBuilder riêng nên /docs trên Vercel lệch với bản local.
+  const document = SwaggerModule.createDocument(app, buildSwaggerConfig());
   SwaggerModule.setup('docs', app, document);
 
   await app.init();

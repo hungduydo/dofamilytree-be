@@ -458,6 +458,114 @@
         }
       }
     },
+    "/v2/notifications/preferences": {
+      "get": {
+        "operationId": "NotificationsController_getPreferences",
+        "summary": "Tuỳ chọn thông báo của tài khoản đang đăng nhập",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "operationId": "NotificationsController_updatePreferences",
+        "summary": "Bật / tắt email nhắc ngày giỗ",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPreferencesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v2/notifications/unsubscribe": {
+      "get": {
+        "operationId": "NotificationsController_unsubscribePage",
+        "summary": "Trang xác nhận tắt email nhắc ngày giỗ (link trong email, không cần đăng nhập)",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Notifications"
+        ]
+      },
+      "post": {
+        "operationId": "NotificationsController_unsubscribe",
+        "summary": "Tắt email nhắc ngày giỗ bằng token trong email (one-click, RFC 8058)",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
     "/v2/members/committee": {
       "get": {
         "operationId": "MembersController_getCommitteeMembers",
@@ -849,7 +957,7 @@
       },
       "delete": {
         "operationId": "MembersController_deleteMember",
-        "summary": "Delete member (cascade: profile, userMetadata)",
+        "summary": "Delete member (cascade: profile, userMetadata). Vào thùng rác — admin khôi phục được trong 30 ngày qua /v2/audit/trash",
         "parameters": [
           {
             "name": "id",
@@ -4503,11 +4611,267 @@
           }
         ]
       }
+    },
+    "/v2/audit": {
+      "get": {
+        "operationId": "AuditController_list",
+        "summary": "Lịch sử thay đổi member / quan hệ (admin)",
+        "parameters": [
+          {
+            "name": "entityType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "member",
+                "relationship"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "entityId",
+            "required": false,
+            "in": "query",
+            "description": "Lịch sử của MỘT bản ghi (vd. trang chi tiết member)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actorId",
+            "required": false,
+            "in": "query",
+            "description": "Lọc theo người sửa (user id Supabase)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "CREATE",
+                "UPDATE",
+                "DELETE",
+                "RESTORE"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedAuditDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Audit"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v2/audit/trash": {
+      "get": {
+        "operationId": "AuditController_listTrash",
+        "summary": "Thùng rác: bản ghi đã xoá trong 30 ngày, chưa khôi phục (admin)",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedTrashDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Audit"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v2/audit/trash/{id}/restore": {
+      "post": {
+        "operationId": "AuditController_restore",
+        "summary": "Khôi phục từ thùng rác (admin). 404 không có, 409 đã khôi phục / xung đột, 410 quá hạn",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreResultDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Audit"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v2/export/gedcom": {
+      "get": {
+        "operationId": "ExportController_gedcom",
+        "summary": "Tải gia phả dạng GEDCOM 5.5.1 (Gramps, MyHeritage, FamilySearch…)",
+        "parameters": [
+          {
+            "name": "rootId",
+            "required": false,
+            "in": "query",
+            "description": "Chỉ xuất một nhánh: người này + mọi hậu duệ + vợ/chồng của họ",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "title",
+            "required": false,
+            "in": "query",
+            "description": "Tiêu đề trang bìa / HEAD của GEDCOM",
+            "schema": {
+              "maxLength": 120,
+              "default": "Gia phả dòng họ",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Export"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v2/export/book": {
+      "get": {
+        "operationId": "ExportController_book",
+        "summary": "Sách gia phả HTML khổ A4, chia theo đời — in hoặc \"Lưu thành PDF\" từ trình duyệt",
+        "parameters": [
+          {
+            "name": "rootId",
+            "required": false,
+            "in": "query",
+            "description": "Chỉ xuất một nhánh: người này + mọi hậu duệ + vợ/chồng của họ",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "title",
+            "required": false,
+            "in": "query",
+            "description": "Tiêu đề trang bìa / HEAD của GEDCOM",
+            "schema": {
+              "maxLength": 120,
+              "default": "Gia phả dòng họ",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Export"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
     }
   },
   "info": {
     "title": "Family Tree API v2",
-    "description": "## Vietnamese Family Tree Management API\n\n**Base URL:** `http://localhost:3002/v2`\n\n**Authentication:** Bearer JWT token (same as backend v1)\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ mới (BIOLOGICAL/ADOPTED/SPOUSE) + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày kỵ lặp lại theo âm/dương lịch (hôm nay, sắp tới, theo tháng)\n- **Events** — Sự kiện dòng họ + notification queue\n- **Media** — Thư viện media: upload mọi loại (ảnh nén lossless bằng sharp; video/audio/tài liệu upload thẳng) → Vercel Blob; phân trang/lọc/tìm kiếm + thống kê + album\n- **Graves** — Mộ phần với tọa độ GPS + tìm kiếm gần nhất\n\n### Queue Jobs (QStash + Redis)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → Vercel Blob → cập nhật avatar_url |\n| media-process | Upload media | Ảnh: sharp nén lossless; khác: upload thẳng → Vercel Blob (off-request) |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| notification | New member/relationship/event | Log (Phase 1) |\n",
+    "description": "## Vietnamese Family Tree Management API\n\n**Base URL:** `/v2` (local: `http://localhost:3002/v2`)\n\n**Authentication:** Bearer JWT (POST /v2/auth/login). Phân quyền theo route: docs/USERS_AND_ROLES.md\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ BIOLOGICAL/ADOPTED/SPOUSE + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày kỵ lặp lại theo âm/dương lịch (hôm nay, sắp tới, theo tháng)\n- **Events** — Sự kiện dòng họ\n- **Media** — Thư viện media (ảnh nén lossless bằng sharp) → Cloudflare R2; phân trang/lọc/tìm kiếm + album\n- **Graves / Grave areas** — Mộ phần với tọa độ GPS, khu an táng\n- **Audit** — Lịch sử thay đổi member/quan hệ + thùng rác 30 ngày (admin)\n- **Notifications** — Tuỳ chọn email nhắc ngày giỗ, link tắt nhắc\n- **Export** — GEDCOM 5.5.1 + sách gia phả HTML để in\n\n### Queue Jobs (QStash)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → storage → cập nhật avatar_url |\n| media-process | Hoàn tất upload | Ảnh: nén lossless; sinh metadata |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| generation-recompute | Đổi quan hệ cha/con | Tính lại đời cho toàn cây |\n| account-pending | Đăng ký mới | Email báo admin |\n| anniversary-reminder | Lịch 07:00 VN hằng ngày | Email nhắc giỗ còn 7 / 1 ngày |\n",
     "version": "2.0.0",
     "contact": {
       "name": "Family Tree Team",
@@ -4690,6 +5054,18 @@
         },
         "required": [
           "memberId"
+        ]
+      },
+      "NotificationPreferencesDto": {
+        "type": "object",
+        "properties": {
+          "anniversaryReminders": {
+            "type": "boolean",
+            "description": "Nhận email nhắc ngày giỗ của tổ tiên trực hệ, vợ/chồng và các ngày chung của dòng họ"
+          }
+        },
+        "required": [
+          "anniversaryReminders"
         ]
       },
       "MemberLiteDto": {
@@ -8540,6 +8916,189 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "AuditEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string",
+            "enum": [
+              "member",
+              "relationship"
+            ]
+          },
+          "entityId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "CREATE",
+              "UPDATE",
+              "DELETE",
+              "RESTORE"
+            ]
+          },
+          "actorId": {
+            "type": "object",
+            "nullable": true
+          },
+          "actorName": {
+            "type": "object",
+            "nullable": true,
+            "description": "Tên member đã link của người sửa, hoặc tên tự khai lúc đăng ký"
+          },
+          "summary": {
+            "type": "object",
+            "nullable": true
+          },
+          "before": {
+            "type": "object",
+            "nullable": true,
+            "description": "UPDATE: chỉ field đổi. DELETE: snapshot khôi phục."
+          },
+          "after": {
+            "type": "object",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "restoredAt": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "entityType",
+          "entityId",
+          "action",
+          "createdAt"
+        ]
+      },
+      "PaginatedAuditDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEntryDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "TrashItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id dòng audit — dùng cho POST /audit/trash/:id/restore"
+          },
+          "entityType": {
+            "type": "string",
+            "enum": [
+              "member",
+              "relationship"
+            ]
+          },
+          "entityId": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "object",
+            "nullable": true
+          },
+          "actorId": {
+            "type": "object",
+            "nullable": true
+          },
+          "actorName": {
+            "type": "object",
+            "nullable": true
+          },
+          "deletedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Sau thời điểm này không khôi phục được nữa"
+          }
+        },
+        "required": [
+          "id",
+          "entityType",
+          "entityId",
+          "deletedAt",
+          "expiresAt"
+        ]
+      },
+      "PaginatedTrashDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrashItemDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "RestoreResultDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id bản ghi đã khôi phục (giữ nguyên id cũ)"
+          },
+          "warnings": {
+            "description": "Phần không dựng lại được (vd. người bên kia quan hệ đã bị xoá)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "warnings"
         ]
       }
     }

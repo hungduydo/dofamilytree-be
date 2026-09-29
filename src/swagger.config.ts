@@ -4,7 +4,8 @@ import { DocumentBuilder } from '@nestjs/swagger';
  * Single source of truth for the Swagger/OpenAPI document config.
  *
  * Shared by:
- *   - src/main.ts            → live `/docs` UI + `/docs-json` the FE fetches
+ *   - src/main.ts            → `/docs` khi chạy local
+ *   - src/vercel.ts          → `/docs` + `/docs-json` trên production (FE fetch)
  *   - scripts/export-swagger.ts → docs/swagger.{json,yaml} snapshot
  *
  * Keeping one builder here means the served spec and the exported file can
@@ -15,23 +16,28 @@ export function buildSwaggerConfig() {
     .setTitle('Family Tree API v2')
     .setDescription(
       `## Vietnamese Family Tree Management API\n\n` +
-        `**Base URL:** \`http://localhost:3002/v2\`\n\n` +
-        `**Authentication:** Bearer JWT token (same as backend v1)\n\n` +
+        `**Base URL:** \`/v2\` (local: \`http://localhost:3002/v2\`)\n\n` +
+        `**Authentication:** Bearer JWT (POST /v2/auth/login). Phân quyền theo route: docs/USERS_AND_ROLES.md\n\n` +
         `### Modules\n` +
         `- **Members** — CRUD thành viên + profile + avatar (async upload)\n` +
-        `- **Relationships** — Quan hệ mới (BIOLOGICAL/ADOPTED/SPOUSE) + tìm tổ tiên/con cháu\n` +
+        `- **Relationships** — Quan hệ BIOLOGICAL/ADOPTED/SPOUSE + tìm tổ tiên/con cháu\n` +
         `- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n` +
         `- **Anniversaries** — Ngày kỵ lặp lại theo âm/dương lịch (hôm nay, sắp tới, theo tháng)\n` +
-        `- **Events** — Sự kiện dòng họ + notification queue\n` +
-        `- **Media** — Thư viện media: upload mọi loại (ảnh nén lossless bằng sharp; video/audio/tài liệu upload thẳng) → Vercel Blob; phân trang/lọc/tìm kiếm + thống kê + album\n` +
-        `- **Graves** — Mộ phần với tọa độ GPS + tìm kiếm gần nhất\n\n` +
-        `### Queue Jobs (QStash + Redis)\n` +
+        `- **Events** — Sự kiện dòng họ\n` +
+        `- **Media** — Thư viện media (ảnh nén lossless bằng sharp) → Cloudflare R2; phân trang/lọc/tìm kiếm + album\n` +
+        `- **Graves / Grave areas** — Mộ phần với tọa độ GPS, khu an táng\n` +
+        `- **Audit** — Lịch sử thay đổi member/quan hệ + thùng rác 30 ngày (admin)\n` +
+        `- **Notifications** — Tuỳ chọn email nhắc ngày giỗ, link tắt nhắc\n` +
+        `- **Export** — GEDCOM 5.5.1 + sách gia phả HTML để in\n\n` +
+        `### Queue Jobs (QStash)\n` +
         `| Queue | Trigger | Action |\n` +
         `|-------|---------|--------|\n` +
-        `| avatar-upload | Create/Update member với file | Upload → Vercel Blob → cập nhật avatar_url |\n` +
-        `| media-process | Upload media | Ảnh: sharp nén lossless; khác: upload thẳng → Vercel Blob (off-request) |\n` +
+        `| avatar-upload | Create/Update member với file | Upload → storage → cập nhật avatar_url |\n` +
+        `| media-process | Hoàn tất upload | Ảnh: nén lossless; sinh metadata |\n` +
         `| report-generate | Create/Delete member | Tính stats → lưu Redis |\n` +
-        `| notification | New member/relationship/event | Log (Phase 1) |\n`,
+        `| generation-recompute | Đổi quan hệ cha/con | Tính lại đời cho toàn cây |\n` +
+        `| account-pending | Đăng ký mới | Email báo admin |\n` +
+        `| anniversary-reminder | Lịch 07:00 VN hằng ngày | Email nhắc giỗ còn 7 / 1 ngày |\n`,
     )
     .setVersion('2.0.0')
     // KHÔNG đặt tên riêng cho scheme. Tên ở đây phải khớp CHÍNH XÁC với tên
