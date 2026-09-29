@@ -14,18 +14,19 @@ import {
 import { CONTACT_INFO_CACHE_KEYS } from '../../src/contact/contact.cache-keys';
 import { CACHE_KEY_FULL, CACHE_KEY_STATS } from '../../src/tree/tree.cache-keys';
 import { MEMORIAL_CACHE_KEYS } from '../../src/memorial/memorial.cache-keys';
+import { withAuditTx } from '../helpers/audit-tx';
 
 /**
  * Cache ba endpoint public: hit (bỏ qua DB) / miss (ghi cache) / Redis chết
  * (không 500) / invalidation sau khi ghi member. Mirror test/tree/tree.service.spec.ts.
  */
-const mockPrisma = {
+const mockPrisma = withAuditTx({
   member: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn(), count: jest.fn() },
   profile: { create: jest.fn(), update: jest.fn(), delete: jest.fn() },
   userMetadata: { deleteMany: jest.fn() },
   $transaction: jest.fn(),
   $queryRaw: jest.fn(),
-};
+});
 const mockRedis = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
 const mockGeneration = { enqueueRecompute: jest.fn() };
 const mockQStash = { publish: jest.fn().mockResolvedValue({}) };

@@ -5,8 +5,9 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 import { QStashService } from '../../src/queue/qstash.service';
 import { GenerationService } from '../../src/generation/generation.service';
 import { QUEUE_NOTIFICATION } from '../../src/queue/queue.constants';
+import { withAuditTx } from '../helpers/audit-tx';
 
-const mockPrisma = {
+const mockPrisma = withAuditTx({
   member: {
     findUnique: jest.fn(),
   },
@@ -18,10 +19,19 @@ const mockPrisma = {
     findUnique: jest.fn(),
   },
   $queryRaw: jest.fn(),
-};
+  // Transaction chạy callback trên chính mock — đủ để kiểm tra dòng audit.
+  $transaction: jest.fn(async (fn: any) => fn(mockPrisma)),
+});
 
 const mockQStashService = { publish: jest.fn() };
 const mockGenerationService = { enqueueRecompute: jest.fn(), recomputeAll: jest.fn() };
+
+/** Dòng đọc được khi xoá — service include tên hai bên để ghi tóm tắt audit. */
+const REL_ROW = {
+  id: 'rel-1', parent_id: 'parent-1', child_id: 'child-1', type: 'BIOLOGICAL', note: null,
+  created_at: new Date('2026-01-01T00:00:00Z'),
+  parent: { name: 'Đỗ Văn Cha' }, child: { name: 'Đỗ Văn Con' },
+};
 
 describe('RelationshipsService', () => {
   let service: RelationshipsService;
@@ -262,7 +272,7 @@ describe('RelationshipsService', () => {
 
   describe('deleteRelationship', () => {
     it('should delete relationship by id', async () => {
-      mockPrisma.memberRelationship.findUnique.mockResolvedValue({ id: 'rel-1' });
+      mockPrisma.memberRelationship.findUnique.mockResolvedValue(REL_ROW);
       mockPrisma.memberRelationship.delete.mockResolvedValue({ id: 'rel-1' });
 
       await service.deleteRelationship('rel-1');
@@ -275,7 +285,7 @@ describe('RelationshipsService', () => {
     });
 
     it('xếp hàng tính lại thế hệ — gỡ cạnh có thể biến cả nhánh thành gốc mới', async () => {
-      mockPrisma.memberRelationship.findUnique.mockResolvedValue({ id: 'rel-1' });
+      mockPrisma.memberRelationship.findUnique.mockResolvedValue(REL_ROW);
       mockPrisma.memberRelationship.delete.mockResolvedValue({ id: 'rel-1' });
 
       await service.deleteRelationship('rel-1');
@@ -286,6 +296,65 @@ describe('RelationshipsService', () => {
       mockPrisma.memberRelationship.findUnique.mockResolvedValue(null);
       await expect(service.deleteRelationship('bad-id')).rejects.toThrow(NotFoundException);
       expect(mockGenerationService.enqueueRecompute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('audit + thùng rác', () => {
+    it('thêm quan hệ ghi dòng CREATE trong CÙNG transaction, kèm người thêm', async () => {
+      mockPrisma.member.findUnique
+        .mockResolvedValueOnce({ id: 'parent-1', gender: 'M', name: 'Cha' })
+        .mockResolvedValueOnce({ id: 'child-1', gender: 'M', name: 'Con' });
+      mockPrisma.memberRelationship.findFirst.mockResolvedValue(null);
+      mockPrisma.memberRelationship.create.mockResolvedValue({ ...REL_ROW, id: 'rel-new' });
+
+      await service.addRelationship({ parentId: 'parent-1', childId: 'child-1', type: 'BIOLOGICAL' }, 'actor-1');
+
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+      const audit = mockPrisma.auditLog.create.mock.calls[0][0].data;
+      expect(audit).toMatchObject({ entity_type: 'relationship', entity_id: 'rel-new', action: 'CREATE', actor_id: 'actor-1' });
+      expect(audit.summary).toContain('Đỗ Văn Cha → Đỗ Văn Con');
+      // Không nhúng member lồng (kèm profile) vào dòng audit.
+      expect(audit.after).not.toHaveProperty('parent');
+    });
+
+    it('xoá quan hệ ghi dòng DELETE với snapshot đủ để khôi phục', async () => {
+      mockPrisma.memberRelationship.findUnique.mockResolvedValue(REL_ROW);
+      mockPrisma.memberRelationship.delete.mockResolvedValue({ id: 'rel-1' });
+
+      await service.deleteRelationship('rel-1', 'admin-1');
+
+      const audit = mockPrisma.auditLog.create.mock.calls[0][0].data;
+      expect(audit).toMatchObject({ action: 'DELETE', actor_id: 'admin-1', entity_id: 'rel-1' });
+      expect(audit.before).toMatchObject({ parent_id: 'parent-1', child_id: 'child-1', type: 'BIOLOGICAL' });
+    });
+
+    it('khôi phục giữ nguyên id và chạy lại luật "một cha" — không cho đứa trẻ hai người cha', async () => {
+      mockPrisma.member.findUnique
+        .mockResolvedValueOnce({ id: 'parent-1', gender: 'M', name: 'Cha' })
+        .mockResolvedValueOnce({ id: 'child-1', gender: 'M', name: 'Con' });
+      // Trong lúc cạnh nằm thùng rác, đã có người cha khác được thêm.
+      mockPrisma.memberRelationship.findFirst.mockResolvedValueOnce({ id: 'rel-other' });
+
+      await expect(service.restoreRelationship('audit-1', REL_ROW, 'admin-1')).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.memberRelationship.create).not.toHaveBeenCalled();
+    });
+
+    it('khôi phục thành công: đánh dấu dòng DELETE, tạo lại cạnh cùng id, ghi RESTORE', async () => {
+      mockPrisma.member.findUnique
+        .mockResolvedValueOnce({ id: 'parent-1', gender: 'M', name: 'Cha' })
+        .mockResolvedValueOnce({ id: 'child-1', gender: 'M', name: 'Con' });
+      mockPrisma.memberRelationship.findFirst.mockResolvedValue(null);
+      mockPrisma.memberRelationship.create.mockResolvedValue({ id: 'rel-1', type: 'BIOLOGICAL' });
+
+      const res = await service.restoreRelationship('audit-1', REL_ROW, 'admin-1');
+
+      expect(res.id).toBe('rel-1');
+      expect(mockPrisma.auditLog.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'audit-1', action: 'DELETE', restored_at: null } }),
+      );
+      expect(mockPrisma.memberRelationship.create.mock.calls[0][0].data.id).toBe('rel-1');
+      expect(mockPrisma.auditLog.create.mock.calls[0][0].data.action).toBe('RESTORE');
+      expect(mockGenerationService.enqueueRecompute).toHaveBeenCalled();
     });
   });
 });

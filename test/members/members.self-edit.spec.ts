@@ -5,17 +5,18 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 import { QStashService } from '../../src/queue/qstash.service';
 import { TasksService } from '../../src/queue/tasks.service';
 import { GenerationService } from '../../src/generation/generation.service';
+import { withAuditTx } from '../helpers/audit-tx';
 
 /**
  * "Member sửa được hồ sơ của chính mình" là ràng buộc theo BẢN GHI, thứ
  * RolesGuard (gác theo route) không diễn đạt được — nên nó nằm trong service và
  * được khoá ở đây.
  */
-const mockPrisma = {
+const mockPrisma = withAuditTx({
   member: { findUnique: jest.fn(), update: jest.fn() },
   profile: { update: jest.fn() },
   $transaction: jest.fn(),
-};
+});
 const mockRedis = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
 const mockGeneration = { enqueueRecompute: jest.fn() };
 

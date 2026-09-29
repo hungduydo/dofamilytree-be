@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { AUDIT_ENTITY, markRestored, recordAudit } from '../audit/audit-record';
 import { QStashService } from '../queue/qstash.service';
 import { runInBackground } from '../utils/run-in-background';
 import { PrismaService } from '../prisma/prisma.service';
@@ -21,7 +22,12 @@ export class RelationshipsService {
     private readonly generationService: GenerationService,
   ) {}
 
-  async addRelationship(dto: CreateRelationshipDto) {
+  /**
+   * Các luật một cạnh cha/con/vợ chồng phải thoả. Dùng chung cho thêm mới và
+   * khôi phục từ thùng rác — trong lúc cạnh nằm thùng rác, người ta có thể đã
+   * thêm một người cha khác, và khôi phục mù sẽ cho đứa trẻ hai người cha.
+   */
+  private async assertCanLink(dto: { parentId: string; childId: string; type: CreateRelationshipDto['type'] }) {
     if (dto.parentId === dto.childId) {
       throw new BadRequestException('Cannot create a relationship with oneself');
     }
@@ -62,17 +68,34 @@ export class RelationshipsService {
       throw new BadRequestException('This relationship already exists');
     }
 
-    const relationship = await this.prisma.memberRelationship.create({
-      data: {
-        parent_id: dto.parentId,
-        child_id: dto.childId,
-        type: dto.type,
-        note: dto.note,
-      },
-      include: {
-        parent: { include: { profile: EMBEDDED_PROFILE } },
-        child: { include: { profile: EMBEDDED_PROFILE } },
-      },
+    return { parent, child };
+  }
+
+  async addRelationship(dto: CreateRelationshipDto, actorId: string | null = null) {
+    await this.assertCanLink(dto);
+
+    const relationship = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.memberRelationship.create({
+        data: {
+          parent_id: dto.parentId,
+          child_id: dto.childId,
+          type: dto.type,
+          note: dto.note,
+        },
+        include: {
+          parent: { include: { profile: EMBEDDED_PROFILE } },
+          child: { include: { profile: EMBEDDED_PROFILE } },
+        },
+      });
+      await recordAudit(tx, {
+        entityType: AUDIT_ENTITY.relationship,
+        entityId: created.id,
+        action: 'CREATE',
+        actorId,
+        summary: describe(created.type, created.parent.name, created.child.name),
+        after: stripRelations(created),
+      });
+      return created;
     });
 
     runInBackground(
@@ -209,14 +232,77 @@ export class RelationshipsService {
     });
   }
 
-  async deleteRelationship(id: string) {
-    const rel = await this.prisma.memberRelationship.findUnique({ where: { id } });
+  async deleteRelationship(id: string, actorId: string | null = null) {
+    const rel = await this.prisma.memberRelationship.findUnique({
+      where: { id },
+      include: { parent: { select: { name: true } }, child: { select: { name: true } } },
+    });
     if (!rel) throw new NotFoundException(`Relationship ${id} not found`);
-    const deleted = await this.prisma.memberRelationship.delete({ where: { id } });
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.memberRelationship.delete({ where: { id } });
+      await recordAudit(tx, {
+        entityType: AUDIT_ENTITY.relationship,
+        entityId: id,
+        action: 'DELETE',
+        actorId,
+        summary: `Xoá quan hệ: ${describe(rel.type, rel.parent.name, rel.child.name)}`,
+        before: stripRelations(rel),
+      });
+      return deleted;
+    });
 
     // Gỡ một cạnh có thể biến cả một nhánh thành gốc mới.
     this.generationService.enqueueRecompute();
 
     return deleted;
   }
+
+  /** Khôi phục một cạnh từ thùng rác, giữ nguyên id. Chạy lại đủ luật của thêm mới. */
+  async restoreRelationship(auditId: string, snapshot: Record<string, any>, actorId: string | null) {
+    const { parent, child } = await this.assertCanLink({
+      parentId: snapshot.parent_id,
+      childId: snapshot.child_id,
+      type: snapshot.type,
+    });
+
+    const restored = await this.prisma.$transaction(async (tx) => {
+      await markRestored(tx, auditId, actorId);
+      const restored = await tx.memberRelationship.create({
+        data: {
+          id: snapshot.id,
+          parent_id: snapshot.parent_id,
+          child_id: snapshot.child_id,
+          type: snapshot.type,
+          note: snapshot.note ?? null,
+          created_at: snapshot.created_at,
+        },
+      });
+      await recordAudit(tx, {
+        entityType: AUDIT_ENTITY.relationship,
+        entityId: restored.id,
+        action: 'RESTORE',
+        actorId,
+        summary: `Khôi phục quan hệ: ${describe(restored.type, parent.name, child.name)}`,
+        after: { fromAuditId: auditId },
+      });
+      return restored;
+    });
+
+    this.generationService.enqueueRecompute();
+    return { id: restored.id, warnings: [] as string[] };
+  }
+}
+
+const TYPE_LABEL: Record<string, string> = { BIOLOGICAL: 'cha/mẹ ruột', ADOPTED: 'cha/mẹ nuôi', SPOUSE: 'vợ/chồng' };
+
+function describe(type: string, parentName: string, childName: string): string {
+  return type === 'SPOUSE'
+    ? `${parentName} ⇄ ${childName} (vợ/chồng)`
+    : `${parentName} → ${childName} (${TYPE_LABEL[type] ?? type})`;
+}
+
+/** Chỉ giữ cột của bảng — bỏ member lồng vào (kèm profile) khỏi dòng audit. */
+function stripRelations<T extends Record<string, any>>(row: T) {
+  const { parent: _p, child: _c, ...rest } = row;
+  return rest;
 }

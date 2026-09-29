@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, Logger } from '@nestjs/common';
+import { AUDIT_ENTITY, diffFields, markRestored, recordAudit } from '../audit/audit-record';
+import { MemberSnapshot, captureMemberSnapshot, restoreMemberSnapshot } from './member-snapshot';
 import { Prisma } from '@prisma/client';
 import { Redis as UpstashRedis } from '@upstash/redis';
 import { QStashService } from '../queue/qstash.service';
@@ -339,7 +341,7 @@ export class MembersService {
     return member;
   }
 
-  async createMember(dto: CreateMemberDto) {
+  async createMember(dto: CreateMemberDto, actorId: string | null = null) {
     if (!dto.fullName?.trim()) {
       throw new BadRequestException('fullName is required');
     }
@@ -363,7 +365,7 @@ export class MembersService {
         },
       });
 
-      await tx.profile.create({
+      const newProfile = await tx.profile.create({
         data: {
           member_id: newMember.id,
           fullName: dto.fullName,
@@ -377,6 +379,15 @@ export class MembersService {
           roleTags: dto.roleTags ?? [],
           ...(committee ?? {}),
         },
+      });
+
+      await recordAudit(tx, {
+        entityType: AUDIT_ENTITY.member,
+        entityId: newMember.id,
+        action: 'CREATE',
+        actorId,
+        summary: `Thêm ${newMember.name}`,
+        after: { member: newMember, profile: newProfile },
       });
 
       return newMember;
@@ -486,6 +497,7 @@ export class MembersService {
     dto: UpdateMemberDto,
     avatarFile?: Express.Multer.File,
     caller: CallerMeta = ANONYMOUS_META,
+    actorId: string | null = null,
   ) {
     this.assertCanEditMember(id, dto, caller);
 
@@ -540,6 +552,24 @@ export class MembersService {
 
       if (Object.keys(profileData).length > 0 && existing.profile) {
         await tx.profile.update({ where: { member_id: id }, data: profileData });
+      }
+
+      // Chỉ ghi field THẬT SỰ đổi. Form BO gửi lại cả hồ sơ mỗi lần lưu — ghi
+      // nguyên dto thì lịch sử toàn dòng "sửa" mà không đổi gì.
+      const memberDiff = diffFields(existing as any, memberData, Object.keys(memberData));
+      const profileDiff = existing.profile
+        ? diffFields(existing.profile as any, profileData, Object.keys(profileData))
+        : null;
+      if (memberDiff || profileDiff) {
+        await recordAudit(tx, {
+          entityType: AUDIT_ENTITY.member,
+          entityId: id,
+          action: 'UPDATE',
+          actorId,
+          summary: `Sửa ${updatedMember.name}`,
+          before: { member: memberDiff?.before ?? {}, profile: profileDiff?.before ?? {} },
+          after: { member: memberDiff?.after ?? {}, profile: profileDiff?.after ?? {} },
+        });
       }
 
       return updatedMember;
@@ -617,11 +647,22 @@ export class MembersService {
     return this.generationService.recomputeAll();
   }
 
-  async deleteMember(id: string) {
+  async deleteMember(id: string, actorId: string | null = null) {
     const member = await this.prisma.member.findUnique({ where: { id } });
     if (!member) throw new NotFoundException(`Member ${id} not found`);
 
     await this.prisma.$transaction(async (tx) => {
+      // Snapshot TRƯỚC khi xoá, trong cùng transaction — xoá fail thì dòng
+      // thùng rác rollback theo, không có "đã xoá" ma.
+      const snapshot = await captureMemberSnapshot(tx, id);
+      await recordAudit(tx, {
+        entityType: AUDIT_ENTITY.member,
+        entityId: id,
+        action: 'DELETE',
+        actorId,
+        summary: `Xoá ${member.name}`,
+        before: snapshot,
+      });
       await tx.profile.delete({ where: { member_id: id } }).catch(() => {}); // profile may not exist
       await tx.userMetadata.deleteMany({ where: { profile_member_id: id } });
       await tx.member.delete({ where: { id } });
@@ -634,5 +675,31 @@ export class MembersService {
     this.qstashService.publish(QUEUE_REPORT_GENERATE, {}).catch(() => {});
     // Xoá một member có thể cắt rời cả một nhánh khỏi gốc.
     this.generationService.enqueueRecompute();
+  }
+
+  /**
+   * Khôi phục member từ thùng rác (AuditService gọi, sau khi đã kiểm tra dòng
+   * audit còn hạn). Trả danh sách cảnh báo — phần không dựng lại được.
+   */
+  async restoreMember(auditId: string, snapshot: MemberSnapshot, actorId: string | null) {
+    const warnings = await this.prisma.$transaction(async (tx) => {
+      await markRestored(tx, auditId, actorId);
+      const warnings = await restoreMemberSnapshot(tx, snapshot);
+      await recordAudit(tx, {
+        entityType: AUDIT_ENTITY.member,
+        entityId: snapshot.member.id,
+        action: 'RESTORE',
+        actorId,
+        summary: `Khôi phục ${snapshot.member.name}`,
+        after: { fromAuditId: auditId, warnings },
+      });
+      return warnings;
+    });
+
+    await this.invalidateMemberCaches();
+    this.qstashService.publish(QUEUE_REPORT_GENERATE, {}).catch(() => {});
+    this.generationService.enqueueRecompute();
+
+    return { id: snapshot.member.id, warnings };
   }
 }

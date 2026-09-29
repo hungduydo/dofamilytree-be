@@ -21,6 +21,7 @@ import { RedisModule } from './redis.module';
 import { StorageModule } from './storage/storage.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { MailModule } from './mail/mail.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { MailModule } from './mail/mail.module';
     ArticlesModule,
     MemorialModule,
     ContactModule,
+    AuditModule,
   ],
   controllers: [AppController],
 })

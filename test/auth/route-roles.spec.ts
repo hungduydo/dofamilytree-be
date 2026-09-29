@@ -17,6 +17,7 @@ import { MediaController } from '../../src/media/media.controller';
 import { MemorialController } from '../../src/memorial/memorial.controller';
 import { ContactController } from '../../src/contact/contact.controller';
 import { QueueController } from '../../src/queue/queue.controller';
+import { AuditController } from '../../src/audit/audit.controller';
 
 /**
  * Lưới an toàn CƠ HỌC cho bảng phân quyền.
@@ -127,6 +128,8 @@ const TABLE: Array<[string, any, Record<string, Expectation>]> = [
     getMessageById: 'admin', updateMessageStatus: 'admin', deleteMessage: 'admin',
   }],
   ['QueueController', QueueController, { handleCallback: 'public' }],
+  // Dòng audit chứa PII (snapshot profile) và cho thấy ai làm gì — chỉ admin.
+  ['AuditController', AuditController, { list: 'admin', listTrash: 'admin', restore: 'admin' }],
 ];
 
 describe('Bảng phân quyền theo route', () => {

@@ -7,8 +7,9 @@ import { TasksService } from '../../src/queue/tasks.service';
 import { GenerationService } from '../../src/generation/generation.service';
 import { QUEUE_REPORT_GENERATE, QUEUE_NOTIFICATION } from '../../src/queue/queue.constants';
 import { MEMBER_LITE_SELECT } from '../../src/members/members.select';
+import { withAuditTx } from '../helpers/audit-tx';
 
-const mockPrisma = {
+const mockPrisma = withAuditTx({
   member: {
     findUnique: jest.fn(),
     findMany: jest.fn(),
@@ -31,7 +32,7 @@ const mockPrisma = {
   $transaction: jest.fn(),
   $executeRaw: jest.fn(),
   $queryRaw: jest.fn(),
-};
+});
 
 const mockQStashService = { publish: jest.fn().mockResolvedValue({}) };
 const mockTasksService = { handleAvatarUpload: jest.fn().mockResolvedValue(undefined) };

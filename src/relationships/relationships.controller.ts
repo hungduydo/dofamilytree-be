@@ -8,6 +8,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { RelationshipsService } from './relationships.service';
 import { CreateRelationshipDto, SearchRelationshipDto } from './dto/create-relationship.dto';
 import {
@@ -75,8 +76,8 @@ export class RelationshipsController {
   @Roles('editor')
   @ApiOperation({ summary: 'Add relationship between two members' })
   @ApiCreatedResponse({ type: MemberRelationshipResponseDto })
-  addRelationship(@Body() dto: CreateRelationshipDto) {
-    return this.relationshipsService.addRelationship(dto);
+  addRelationship(@Body() dto: CreateRelationshipDto, @CurrentUser() user?: { id: string }) {
+    return this.relationshipsService.addRelationship(dto, user?.id ?? null);
   }
 
   @Delete('relationships/:id')
@@ -84,7 +85,7 @@ export class RelationshipsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a relationship' })
   @ApiNoContentResponse({ description: 'Deleted' })
-  deleteRelationship(@Param('id') id: string) {
-    return this.relationshipsService.deleteRelationship(id);
+  deleteRelationship(@Param('id') id: string, @CurrentUser() user?: { id: string }) {
+    return this.relationshipsService.deleteRelationship(id, user?.id ?? null);
   }
 }

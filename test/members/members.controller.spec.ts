@@ -77,25 +77,25 @@ describe('MembersController', () => {
     expect(mockMembersService.getMemberById).toHaveBeenCalledWith('uuid-1', false);
   });
 
-  it('POST /members should call createMember with DTO', async () => {
+  it('POST /members should call createMember with DTO + người tạo (audit)', async () => {
     mockMembersService.createMember.mockResolvedValue({ id: 'uuid-new' });
     const dto = { fullName: 'Test', gender: 'M' };
-    await controller.createMember(dto as any);
-    expect(mockMembersService.createMember).toHaveBeenCalledWith(dto);
+    await controller.createMember(dto as any, { id: 'actor-1' });
+    expect(mockMembersService.createMember).toHaveBeenCalledWith(dto, 'actor-1');
   });
 
   it('PUT /members/:id/profile should call updateMemberProfile', async () => {
     mockMembersService.updateMemberProfile.mockResolvedValue({ id: 'uuid-1' });
     const caller = { roles: ['editor'], profileMemberId: null };
-    await controller.updateMemberProfile('uuid-1', { fullName: 'Updated', gender: 'M' } as any, caller, undefined);
+    await controller.updateMemberProfile('uuid-1', { fullName: 'Updated', gender: 'M' } as any, caller, undefined, { id: 'actor-1' });
     expect(mockMembersService.updateMemberProfile).toHaveBeenCalledWith(
-      'uuid-1', expect.any(Object), undefined, caller,
+      'uuid-1', expect.any(Object), undefined, caller, 'actor-1',
     );
   });
 
   it('DELETE /members/:id should call deleteMember', async () => {
     mockMembersService.deleteMember.mockResolvedValue(undefined);
-    await controller.deleteMember('uuid-1');
-    expect(mockMembersService.deleteMember).toHaveBeenCalledWith('uuid-1');
+    await controller.deleteMember('uuid-1', { id: 'actor-1' });
+    expect(mockMembersService.deleteMember).toHaveBeenCalledWith('uuid-1', 'actor-1');
   });
 });
