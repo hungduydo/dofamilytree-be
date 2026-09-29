@@ -1,17 +1,20 @@
 # Family Tree API v2
 
-NestJS REST API — phiên bản mới song song với Express backend v1.
+NestJS REST API cho gia phả dòng họ — backend duy nhất đang chạy (v1 Express đã
+tắt; bảng `relationships` / `comments` của v1 bị xoá ở
+[`016_drop_v1_tables.sql`](prisma/manual-migrations/016_drop_v1_tables.sql)).
 
-| | Backend v1 | Backend v2 |
-|---|---|---|
-| Framework | Express.js | **NestJS 10** |
-| Port | (default) | **3002** |
-| Relationship table | `relationships` | **`member_relationships`** |
-| Relationship types | PARENT / CHILD / SPOUSE | **BIOLOGICAL / ADOPTED / SPOUSE** |
-| Cache | Vercel Blob | **Upstash Redis (REST)** |
-| Queue | — | **Upstash QStash (HTTP callback)** |
-| Image processing | — | **sharp (compress + resize)** |
-| Docs | Swagger | **Swagger `/docs`** |
+| | |
+|---|---|
+| Framework | **NestJS 10**, chạy serverless trên Vercel (`src/vercel.ts`) |
+| Port (local) | **3002**, prefix `/v2` |
+| DB | Supabase Postgres qua Prisma — đổi schema bằng **SQL tay** (xem dưới) |
+| Quan hệ | bảng `member_relationships`: `BIOLOGICAL` / `ADOPTED` / `SPOUSE` |
+| Cache | Upstash Redis (REST) |
+| Queue / lịch | Upstash QStash (HTTP callback) |
+| Kho ảnh | Cloudflare R2 (`STORAGE_PROVIDER=r2`); provider Vercel Blob còn giữ để xoá file cũ — kiểm kê bằng `pnpm storage:blob-inventory` |
+| Email | Resend |
+| Docs | Swagger `/docs` |
 
 ---
 
@@ -41,9 +44,6 @@ pnpm prisma:generate
 
 # 4. Áp schema — xem "Migration thủ công" bên dưới.
 #    ⛔ KHÔNG dùng `prisma migrate dev` với DB production.
-
-# 5. (Optional) Migrate dữ liệu cũ sang bảng mới
-pnpm migrate:relationships
 ```
 
 ### Migration thủ công
@@ -278,43 +278,6 @@ pnpm qstash:schedules
 
 ---
 
-## Prisma Schema thay đổi
-
-Thêm vào `backend/prisma/schema.prisma` (không ảnh hưởng bảng cũ):
-
-```prisma
-enum RelationshipNatureType {
-  BIOLOGICAL
-  ADOPTED
-  SPOUSE
-}
-
-model MemberRelationship {
-  id         String                 @id @default(uuid()) @db.Uuid
-  parent_id  String                 @db.Uuid
-  child_id   String                 @db.Uuid
-  type       RelationshipNatureType
-  note       String?
-  created_at DateTime               @default(now())
-
-  parent Member @relation("RelParent", fields: [parent_id], references: [id])
-  child  Member @relation("RelChild", fields: [child_id], references: [id])
-
-  @@map("member_relationships")
-}
-```
-
-Áp schema bằng SQL tay (⛔ **không** `prisma migrate dev` với DB production —
-xem [Migration thủ công](#migration-thủ-công) và
-[docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md)):
-```bash
-pnpm db:backup                                       # backup trước đã
-psql "$DIRECT_URL" -f prisma/manual-migrations/00X_*.sql
-pnpm exec prisma db pull && pnpm prisma:generate
-```
-
----
-
 ## Backup & khôi phục
 
 Supabase gói free **không có auto-backup lẫn PITR**. Hệ thống backup tự dựng chạy
@@ -389,21 +352,3 @@ Hai nguyên tắc:
 2. **Supabase dùng hệ API key mới.** `SUPABASE_SECRET_KEY` (`sb_secret_…`) thay cho
    `service_role` legacy đã bị tắt. Backend không dùng anon/publishable key ở đâu —
    đó là việc của frontend.
-
----
-
-## Migration dữ liệu cũ
-
-Script `scripts/migrate-relationships.ts` chuyển dữ liệu từ bảng `relationships` cũ sang `member_relationships` mới:
-
-| Dữ liệu cũ | Chuyển thành |
-|------------|-------------|
-| `PARENT` (from=A, to=B) | `{ parent_id: A, child_id: B, type: BIOLOGICAL }` |
-| `CHILD` (from=A, to=B) | `{ parent_id: B, child_id: A, type: BIOLOGICAL }` |
-| `SPOUSE` (from=A, to=B) | `{ parent_id: A, child_id: B, type: SPOUSE }` |
-
-```bash
-pnpm migrate:relationships
-```
-
-Script dùng `upsert` (idempotent — chạy lại nhiều lần vẫn an toàn). Bảng cũ `relationships` giữ nguyên cho backend v1.
