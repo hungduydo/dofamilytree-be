@@ -26,6 +26,7 @@ import { MailModule } from './mail/mail.module';
 import { AuditModule } from './audit/audit.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ExportModule } from './export/export.module';
+import { MulterErrorFilter } from './utils/multer-error.filter';
 
 @Module({
   imports: [
@@ -56,8 +57,14 @@ import { ExportModule } from './export/export.module';
     ExportModule,
   ],
   controllers: [AppController],
-  // Báo lỗi bất ngờ (không phải HttpException) lên Sentry; không có DSN thì
-  // hành xử y như filter mặc định của Nest.
-  providers: [{ provide: APP_FILTER, useClass: SentryGlobalFilter }],
+  // Đăng ký qua DI (không phải useGlobalFilters) để cả main.ts lẫn vercel.ts đều có.
+  // THỨ TỰ QUAN TRỌNG: filter khai báo SAU được ưu tiên. Sentry bắt-tất-cả phải
+  // đứng trước, nếu không MulterError sẽ rơi vào nó → 500 + báo nhầm lên Sentry.
+  providers: [
+    // Báo lỗi bất ngờ (không phải HttpException) lên Sentry; không có DSN thì
+    // hành xử y như filter mặc định của Nest.
+    { provide: APP_FILTER, useClass: SentryGlobalFilter },
+    { provide: APP_FILTER, useClass: MulterErrorFilter },
+  ],
 })
 export class AppModule {}

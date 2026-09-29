@@ -4,3 +4,9 @@ allowBuilds:
   '@prisma/engines': true
   prisma: true
   sharp: true
+
+# @nestjs/platform-express@10.4.22 (latest v10) pins multer@2.0.2 exactly, which
+# is affected by GHSA-xf7r-hgr6-v32p / GHSA-v52c-386h-88mc (<2.1.0) and a
+# recursion DoS (<2.1.1). Force every multer in the tree onto the patched 2.x.
+overrides:
+  multer: ^2.4.0
