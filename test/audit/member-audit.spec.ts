@@ -6,6 +6,7 @@ import { QStashService } from '../../src/queue/qstash.service';
 import { TasksService } from '../../src/queue/tasks.service';
 import { GenerationService } from '../../src/generation/generation.service';
 import { MemberSnapshot, captureMemberSnapshot, restoreMemberSnapshot } from '../../src/members/member-snapshot';
+import { Prisma } from '@prisma/client';
 import { withAuditTx } from '../helpers/audit-tx';
 import { removeVietnameseTones } from '../../src/utils/vietnamese-helper';
 
@@ -176,5 +177,18 @@ describe('member-snapshot', () => {
       expect.objectContaining({ id: 'r1' }),
     ]);
     expect(warnings).toHaveLength(3);
+  });
+
+  it('gắn lại tài khoản; claim_request null thành DbNull (Prisma từ chối null thô cho cột Json)', async () => {
+    const prisma = makePrisma();
+    prisma.member.findUnique.mockResolvedValue(null);
+    prisma.userMetadata.findUnique.mockResolvedValue(null);
+    await restoreMemberSnapshot(
+      prisma,
+      snap({ userMetadata: [{ id: 'um1', user_id: 'u1', profile_member_id: 'm1', roles: ['member'], claim_request: null }] }),
+    );
+    const data = prisma.userMetadata.create.mock.calls[0][0].data;
+    expect(data.claim_request).toBe(Prisma.DbNull);
+    expect(data.profile_member_id).toBe('m1');
   });
 });

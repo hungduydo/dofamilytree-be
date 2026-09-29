@@ -114,7 +114,14 @@ export async function restoreMemberSnapshot(tx: Tx, snap: MemberSnapshot): Promi
       warnings.push(`Tài khoản ${meta.user_id} đã có liên kết mới — không gắn lại`);
       continue;
     }
-    await tx.userMetadata.create({ data: meta as Prisma.UserMetadataUncheckedCreateInput });
+    await tx.userMetadata.create({
+      data: {
+        ...meta,
+        // Snapshot đi qua JSON nên cột Json rỗng là `null` thô — Prisma từ chối
+        // null thô cho cột Json, phải là DbNull.
+        claim_request: meta.claim_request ?? Prisma.DbNull,
+      } as Prisma.UserMetadataUncheckedCreateInput,
+    });
   }
 
   if (snap.relationships.length) {
