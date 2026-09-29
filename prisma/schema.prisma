@@ -50,15 +50,11 @@ model Member {
   profile               Profile?
   user_metadata         UserMetadata?
 
-  @@index([normalized_name])
   @@index([name])
   @@index([tree_id])
   @@index([generation])
-  @@index([lifeStatus], map: "members_life_status_idx")
   @@index([created_at(sort: Desc), id])
   @@index([generation, created_at(sort: Desc), id], map: "members_generation_created_at_idx")
-  @@index([tree_id, created_at(sort: Desc), id], map: "members_tree_created_at_idx")
-  @@index([gender, created_at(sort: Desc), id], map: "members_gender_created_at_idx")
   @@index([normalized_name(ops: raw("gin_trgm_ops"))], map: "members_normalized_name_trgm_idx", type: Gin)
   @@index([name(ops: raw("gin_trgm_ops"))], map: "members_name_trgm_idx", type: Gin)
   @@map("members")
