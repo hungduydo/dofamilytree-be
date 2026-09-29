@@ -163,6 +163,7 @@ role **tối thiểu** — `editor` bao gồm cả admin.
 | **audit** | `GET /audit`, `GET /audit/trash`, `POST /audit/trash/:id/restore` | **admin** (dòng audit chứa PII) |
 | **notifications** | `GET\|PUT /notifications/preferences` | auth (tài khoản của chính mình) |
 | | `GET\|POST /notifications/unsubscribe?token=` | public — token HMAC trong link email |
+| **export** | `GET /export/gedcom`, `GET /export/book` | **member** (không có cột liên lạc trong file) |
 
 ### Lịch sử thay đổi & thùng rác
 

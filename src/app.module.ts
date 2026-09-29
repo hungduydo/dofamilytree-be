@@ -23,6 +23,7 @@ import { SupabaseModule } from './supabase/supabase.module';
 import { MailModule } from './mail/mail.module';
 import { AuditModule } from './audit/audit.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ExportModule } from './export/export.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ContactModule,
     AuditModule,
     NotificationsModule,
+    ExportModule,
   ],
   controllers: [AppController],
 })

@@ -19,6 +19,7 @@ import { ContactController } from '../../src/contact/contact.controller';
 import { QueueController } from '../../src/queue/queue.controller';
 import { AuditController } from '../../src/audit/audit.controller';
 import { NotificationsController } from '../../src/notifications/notifications.controller';
+import { ExportController } from '../../src/export/export.controller';
 
 /**
  * Lưới an toàn CƠ HỌC cho bảng phân quyền.
@@ -137,6 +138,8 @@ const TABLE: Array<[string, any, Record<string, Expectation>]> = [
     getPreferences: 'auth', updatePreferences: 'auth',
     unsubscribePage: 'public', unsubscribe: 'public',
   }],
+  // File xuất chứa ngày sinh của mọi người còn sống — chỉ người trong nhà.
+  ['ExportController', ExportController, { gedcom: 'member', book: 'member' }],
 ];
 
 describe('Bảng phân quyền theo route', () => {

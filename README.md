@@ -223,6 +223,17 @@ khai và một số route ghi yêu cầu role tối thiểu — xem bảng trong
 | `PUT` | `/v2/graves/:id` | Cập nhật |
 | `DELETE` | `/v2/graves/:id` | Xóa |
 
+### Export `/v2/export` (member trở lên)
+
+| Method | Path | Mô tả |
+|--------|------|--------|
+| `GET` | `/v2/export/gedcom?rootId=&title=` | File `.ged` (GEDCOM 5.5.1) — mở bằng Gramps, MyHeritage, FamilySearch… |
+| `GET` | `/v2/export/book?rootId=&title=` | Sách gia phả HTML khổ A4, chia theo đời — in / "Lưu thành PDF" từ trình duyệt |
+
+`rootId` chỉ xuất một nhánh (người đó + hậu duệ + vợ/chồng). File xuất **không có**
+phone / email / địa chỉ / ghi chú. FE gọi bằng `fetch` (cần header Authorization)
+rồi tạo blob để tải / mở tab.
+
 ---
 
 ## Tác vụ nền (Upstash QStash)
