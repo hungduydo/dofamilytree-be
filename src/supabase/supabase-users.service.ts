@@ -59,6 +59,31 @@ export class SupabaseUsersService {
       return null;
     }
   }
+
+  /**
+   * Email của nhiều tài khoản trong MỘT lượt: duyệt danh sách user theo trang
+   * thay vì gọi getUserById N lần (job nhắc ngày giỗ gửi cho cả dòng họ).
+   * Tài khoản không có email / không tìm thấy thì vắng mặt trong Map.
+   *
+   * KHÁC getEmail: lỗi thì NÉM — job gọi hàm này cần thất bại để QStash retry,
+   * không phải lặng lẽ gửi cho 0 người.
+   */
+  async getEmails(userIds: string[]): Promise<Map<string, string>> {
+    const wanted = new Set(userIds);
+    const out = new Map<string, string>();
+    if (!wanted.size) return out;
+
+    const perPage = 1000;
+    for (let page = 1; ; page++) {
+      const { data, error } = await this.getClient().auth.admin.listUsers({ page, perPage });
+      if (error) throw new Error(`Supabase listUsers lỗi: ${error.message}`);
+      for (const user of data.users) {
+        if (wanted.has(user.id) && user.email) out.set(user.id, user.email);
+      }
+      if (data.users.length < perPage || out.size === wanted.size) break;
+    }
+    return out;
+  }
 }
 
 /** Tách hàm thuần để test được thứ tự ưu tiên mà không cần đụng tới Supabase. */

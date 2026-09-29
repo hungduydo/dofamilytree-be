@@ -235,6 +235,9 @@ model UserMetadata {
   deactivated_at    DateTime?
   /// Admin đã khoá (user_id). Xoá về null khi mở khoá.
   deactivated_by    String?   @db.Uuid
+  /// Nhận email nhắc ngày giỗ (src/notifications/). Tắt bằng link trong email
+  /// hoặc PUT /v2/notifications/preferences. Xem 015_user_notification_prefs.sql.
+  anniversary_reminders Boolean @default(true)
   profile_member    Member?   @relation(fields: [profile_member_id], references: [id])
 
   @@index([created_at(sort: Desc), id])

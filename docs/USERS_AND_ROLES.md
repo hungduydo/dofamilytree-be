@@ -161,6 +161,8 @@ role **tối thiểu** — `editor` bao gồm cả admin.
 | | `GET /media/blob-storage-usage`, `DELETE /media/:id`, `DELETE /media/albums/:id` | **admin** |
 | **queue** | `POST /queue/callback/:task` | Chữ ký QStash, không phải JWT |
 | **audit** | `GET /audit`, `GET /audit/trash`, `POST /audit/trash/:id/restore` | **admin** (dòng audit chứa PII) |
+| **notifications** | `GET\|PUT /notifications/preferences` | auth (tài khoản của chính mình) |
+| | `GET\|POST /notifications/unsubscribe?token=` | public — token HMAC trong link email |
 
 ### Lịch sử thay đổi & thùng rác
 

@@ -240,9 +240,30 @@ chứ không phải token người dùng.
 | `report-generate` | Create/Delete member | Tính stats (total, generations, deceased) → Redis |
 | `generation-recompute` | Đổi quan hệ cha/con | Tính lại đời cho toàn cây |
 | `notification` | Member/quan hệ/sự kiện mới | Log (Phase 1); mở rộng email/push sau |
+| `account-pending` | Đăng ký tài khoản mới | Email báo admin có tài khoản chờ duyệt |
+| `anniversary-reminder` | **Lịch QStash** 07:00 VN hằng ngày | Email nhắc giỗ còn 7 / 1 ngày — xem dưới |
 
 Tên task khai ở [`queue.constants.ts`](src/queue/queue.constants.ts), xử lý ở
 [`tasks.service.ts`](src/queue/tasks.service.ts).
+
+### Nhắc ngày giỗ qua email
+
+Mỗi thành viên đã được duyệt (`member`/`admin`, đang hoạt động, chưa tắt nhắc)
+nhận email khi ngày giỗ còn **7 ngày** và **1 ngày** — chỉ ngày kỵ của **tổ tiên
+trực hệ và vợ/chồng**, cộng các ngày chung của dòng họ (giỗ tổ…). Nhắc mọi ngày
+kỵ cho mọi người là gần như ngày nào cũng có thư. Quy tắc:
+[`anniversary-reminder.ts`](src/notifications/anniversary-reminder.ts).
+
+- Tắt / bật: link một-cú-bấm trong email (kèm header `List-Unsubscribe`), hoặc
+  `PUT /v2/notifications/preferences`.
+- QStash retry không gửi trùng (khoá Redis theo ngày + tài khoản).
+- Cần `RESEND_API_KEY`, `MAIL_FROM`, `JWT_SECRET` (ký link tắt), `FRONTEND_URL`.
+- Đăng ký lịch **một lần** sau khi deploy (idempotent, chạy lại để cập nhật):
+
+```bash
+pnpm qstash:schedules -- --dry-run
+pnpm qstash:schedules
+```
 
 ---
 

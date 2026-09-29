@@ -26,7 +26,7 @@ import {
 const EMBEDDED_PROFILE = profileSelectFor(false);
 
 // Người được tưởng niệm: chỉ những gì một dòng danh sách cần, không liên lạc.
-const ANNIVERSARY_INCLUDE = {
+export const ANNIVERSARY_INCLUDE = {
   member: { select: { id: true, name: true, avatar_url: true, generation: true, deathDate: true } },
   cemetery: { select: { id: true, name: true } },
 } satisfies Prisma.AnniversaryInclude;
