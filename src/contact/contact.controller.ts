@@ -114,7 +114,8 @@ export class ContactController {
   @UseFilters(ContactUploadPayloadTooLargeFilter)
   @UseInterceptors(
     // maxCount CỐ Ý nới hơn CONTACT_ATTACHMENTS_MAX một bậc. Khi multer tự chặn
-    // số tệp, nó ném "Unexpected field" — một câu vô nghĩa với người gửi. Nới
+    // số tệp, nó ném "Unexpected file field" (400 qua MulterErrorFilter) — một
+    // câu vô nghĩa với người gửi. Nới
     // một bậc để trường hợp THƯỜNG GẶP (chọn 4 tệp thay vì 3) rơi vào
     // ContactService và nhận đúng câu "tối đa 3 tệp". Từ tệp thứ 5 trở đi mới
     // gặp lỗi thô của multer — đánh đổi chấp nhận được cho một ca hiếm.
