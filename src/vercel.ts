@@ -1,4 +1,5 @@
-// Sentry PHẢI được nạp trước mọi module khác — xem instrument.ts.
+// OTel rồi Sentry PHẢI được nạp trước mọi module khác — xem telemetry.ts, instrument.ts.
+import './telemetry';
 import './instrument';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
@@ -10,8 +11,10 @@ import { buildSwaggerConfig } from './swagger.config';
 import express, { Express } from 'express';
 import * as Sentry from '@sentry/nestjs';
 import { runInBackground } from './utils/run-in-background';
+import { flushTelemetry } from './telemetry';
 
 let cachedServer: Express | null = null;
+const sentryTracing = (Sentry.getClient()?.getOptions().tracesSampleRate ?? 0) > 0;
 
 async function bootstrap(): Promise<Express> {
   if (cachedServer) return cachedServer;
@@ -49,9 +52,14 @@ async function bootstrap(): Promise<Express> {
 export default async (req: any, res: any) => {
   const server = await bootstrap();
   // Function có thể bị đóng băng ngay khi response ghi xong — sự kiện Sentry
-  // đang chờ gửi sẽ mất. Giữ function sống tới khi flush xong, chỉ khi có lỗi.
+  // đang chờ gửi sẽ mất. Giữ function sống tới khi flush xong: luôn flush khi
+  // bật tracing (span của request vừa xong), còn không thì chỉ khi có lỗi.
   res.on('finish', () => {
-    if (res.statusCode >= 500) runInBackground(Sentry.flush(2000));
+    if (Sentry.isEnabled() && (sentryTracing || res.statusCode >= 500)) {
+      runInBackground(Sentry.flush(2000));
+    }
+    // Trace thì đẩy cho mọi request (no-op khi OTel tắt).
+    runInBackground(flushTelemetry());
   });
   server(req, res);
 };
