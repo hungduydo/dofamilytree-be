@@ -3,6 +3,7 @@ allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
   prisma: true
+  protobufjs: false
   sharp: true
 
 # @nestjs/platform-express@10.4.22 (latest v10) pins multer@2.0.2 exactly, which

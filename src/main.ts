@@ -1,4 +1,5 @@
-// Sentry PHẢI được nạp trước mọi module khác — xem instrument.ts.
+// OTel rồi Sentry PHẢI được nạp trước mọi module khác — xem telemetry.ts, instrument.ts.
+import './telemetry';
 import './instrument';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
