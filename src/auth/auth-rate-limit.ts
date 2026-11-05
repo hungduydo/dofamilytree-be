@@ -19,6 +19,7 @@ import type { Redis as UpstashRedis } from '@upstash/redis';
 import { createHash } from 'crypto';
 import { Observable, catchError, concatMap } from 'rxjs';
 import { clientIpOf } from '../utils/client-ip';
+import { errorAttributes, logEvent, logEventThrottled } from '../observability/log-event';
 
 /**
  * Rate limit cho các route auth KHÔNG cần token (register, login, quên / đặt lại
@@ -142,9 +143,21 @@ export class AuthRateLimiter {
         used = Number((await this.redis.get<string | number>(key)) ?? 0);
       } catch (err) {
         this.logger.warn(`Redis rate limit lỗi, cho qua: ${(err as Error).message}`);
+        logEventThrottled('cache.degraded', 'warn', 'Rate limit store unavailable, request allowed', {
+          'cache.component': 'auth-rate-limit',
+          'cache.operation': 'get',
+          ...errorAttributes(err),
+        }, 'auth-rate-limit:get');
         return;
       }
       if (used >= rule.max) {
+        // Chỉ ghi LOẠI khoá (ip/email), không bao giờ giá trị.
+        logEvent('auth.rate_limited', 'warn', 'Auth request rate limited', {
+          'rate_limit.policy': policy.name,
+          'rate_limit.scope': rule.by,
+          'rate_limit.window_s': rule.windowSeconds,
+          'rate_limit.max': rule.max,
+        });
         throw new HttpException(
           { statusCode: HttpStatus.TOO_MANY_REQUESTS, error: 'Too Many Requests', message: policy.message },
           HttpStatus.TOO_MANY_REQUESTS,
@@ -162,6 +175,11 @@ export class AuthRateLimiter {
         if (count === 1) await this.redis.expire(key, rule.windowSeconds);
       } catch (err) {
         this.logger.warn(`Không ghi được bộ đếm tần suất (non-fatal): ${(err as Error).message}`);
+        logEventThrottled('cache.degraded', 'warn', 'Rate limit counter not recorded', {
+          'cache.component': 'auth-rate-limit',
+          'cache.operation': 'incr',
+          ...errorAttributes(err),
+        }, 'auth-rate-limit:incr');
       }
     }
   }

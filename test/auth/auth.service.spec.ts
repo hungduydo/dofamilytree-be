@@ -25,6 +25,7 @@ jest.mock('@supabase/supabase-js', () => ({
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { AuthService } = require('../../src/auth/auth.service');
+const logEvents = require('../../src/observability/log-event');
 
 const mockPrisma = {
   userMetadata: {
@@ -285,6 +286,56 @@ describe('AuthService', () => {
       mockPrisma.userMetadata.update.mockResolvedValue({ roles: ['editor'], profile_member_id: null });
       await service.unlinkMember('admin1', 'u2');
       expect(mockPrisma.userMetadata.update.mock.calls[0][0].data.roles).toEqual(['editor']);
+    });
+  });
+
+  describe('Sentry log events — bảo mật & quản trị', () => {
+    let logEvent: jest.SpyInstance;
+    beforeEach(() => {
+      logEvent = jest.spyOn(logEvents, 'logEvent').mockImplementation(() => undefined);
+    });
+    afterEach(() => logEvent.mockRestore());
+
+    it('sai mật khẩu ⇒ auth.login.failed, KHÔNG mang email', async () => {
+      mockSignIn.mockResolvedValue({ data: { user: null }, error: { message: 'Invalid login', code: 'invalid_credentials' } });
+      await service.login({ email: 'a@b.com', password: 'x' }).catch(() => undefined);
+      expect(logEvent).toHaveBeenCalledWith('auth.login.failed', 'warn', 'Login failed', {
+        'auth.reason': 'invalid_credentials',
+        'auth.provider_code': 'invalid_credentials',
+      });
+      expect(JSON.stringify(logEvent.mock.calls)).not.toContain('a@b.com');
+    });
+
+    it('tài khoản bị khoá ⇒ auth.login.failed reason=deactivated', async () => {
+      mockSignIn.mockResolvedValue({ data: { user: { id: 'u1', email: 'a@b.com', user_metadata: {} } }, error: null });
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['member'], deactivated_at: new Date() });
+      await service.login({ email: 'a@b.com', password: 'x' }).catch(() => undefined);
+      expect(logEvent).toHaveBeenCalledWith('auth.login.failed', 'warn', 'Login failed', {
+        'auth.reason': 'deactivated',
+        'user.id': 'u1',
+      });
+    });
+
+    it('đổi role ⇒ admin.user.roles_changed với trước/sau', async () => {
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['guest'], profile_member_id: null });
+      mockPrisma.userMetadata.update.mockResolvedValue({ roles: ['editor'] });
+      await service.assignRoles('admin1', 'u2', { roles: ['editor'] });
+      expect(logEvent).toHaveBeenCalledWith('admin.user.roles_changed', 'info', 'User roles changed', {
+        'target.user.id': 'u2',
+        'roles.before': 'guest',
+        'roles.after': 'editor',
+      });
+    });
+
+    it('khoá tài khoản ⇒ admin.user.activation_changed (warn)', async () => {
+      mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['member'], deactivated_at: null, deactivated_by: null });
+      mockPrisma.userMetadata.update.mockResolvedValue({ deactivated_at: new Date() });
+      await service.setActive('admin1', 'u2', { active: false });
+      expect(logEvent).toHaveBeenCalledWith('admin.user.activation_changed', 'warn', 'User activation changed', {
+        'target.user.id': 'u2',
+        'user.active.before': true,
+        'user.active.after': false,
+      });
     });
   });
 

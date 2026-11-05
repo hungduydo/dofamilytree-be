@@ -1,5 +1,6 @@
 import { Controller, Post, Body, Param, Logger, UseGuards } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
+import { logEvent } from '../observability/log-event';
 import { Public } from '../auth/public.decorator';
 import { QStashSignatureGuard } from './qstash-signature.guard';
 import { TasksService } from './tasks.service';
@@ -49,7 +50,7 @@ export class QueueController {
         this.logger.warn(`Unknown task received: ${task}`);
         // Request đã qua kiểm chữ ký nên đây là lệch phiên bản publisher/consumer
         // (vd. schedule QStash cũ), không phải tấn công — warn, kèm tên task.
-        Sentry.logger.warn(Sentry.logger.fmt`Unknown QStash task ${task}`, {
+        logEvent('queue.task.unknown', 'warn', Sentry.logger.fmt`Unknown QStash task ${task}`, {
           'messaging.system': 'qstash',
           'messaging.destination.name': task,
         });

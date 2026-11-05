@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { Redis as UpstashRedis } from '@upstash/redis';
+import { errorAttributes, logEventThrottled } from '../observability/log-event';
 
 /**
  * Bọc Redis theo kiểu best-effort. Cache là tối ưu hoá, KHÔNG BAO GIỜ là hard
@@ -17,6 +18,18 @@ export class SafeCache {
     private readonly defaultTtl: number,
   ) {}
 
+  /** Redis hỏng ⇒ mọi request đều vào đây; throttle để một sự cố = vài log. */
+  private degraded(operation: 'get' | 'set' | 'del', err: unknown): void {
+    const component = (this.logger as unknown as { context?: string }).context ?? 'unknown';
+    logEventThrottled(
+      'cache.degraded',
+      'warn',
+      'Cache degraded, falling back',
+      { 'cache.component': component, 'cache.operation': operation, ...errorAttributes(err) },
+      `${component}:${operation}`,
+    );
+  }
+
   async get<T>(key: string): Promise<T | null> {
     try {
       const v = await this.redis.get<any>(key);
@@ -25,6 +38,7 @@ export class SafeCache {
       return (typeof v === 'string' ? JSON.parse(v) : v) as T;
     } catch (err) {
       this.logger.warn(`Redis GET ${key} failed, falling back to DB: ${(err as Error).message}`);
+      this.degraded('get', err);
       return null;
     }
   }
@@ -34,6 +48,7 @@ export class SafeCache {
       await this.redis.set(key, JSON.stringify(value), { ex: ttl });
     } catch (err) {
       this.logger.warn(`Redis SET ${key} failed (non-fatal): ${(err as Error).message}`);
+      this.degraded('set', err);
     }
   }
 
@@ -43,6 +58,7 @@ export class SafeCache {
       await this.redis.del(...keys);
     } catch (err) {
       this.logger.warn(`Redis DEL ${keys.join(',')} failed (non-fatal): ${(err as Error).message}`);
+      this.degraded('del', err);
     }
   }
 }

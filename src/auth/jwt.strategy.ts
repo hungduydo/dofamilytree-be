@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { seedCallerMeta } from './user-meta';
+import { setRequestUser } from '../observability/log-event';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -38,6 +39,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Account is deactivated');
     }
     seedCallerMeta(req, row);
+    // Mọi Sentry log trong request này tự mang user.id / user.roles. Lấy roles
+    // từ DB (row) chứ không từ token — token có thể mang role cũ.
+    setRequestUser(userId, row?.roles ?? payload.roles);
 
     // `profileMemberId` được auth.service ký vào token (xem login) — phải trả ra
     // đây, nếu không mọi chỗ dùng `req.user` đều mất liên kết user → thành viên
