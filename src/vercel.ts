@@ -11,16 +11,11 @@ import { buildSwaggerConfig } from './swagger.config';
 import express, { Express } from 'express';
 import * as Sentry from '@sentry/nestjs';
 import { runInBackground } from './utils/run-in-background';
+import { takePendingSentryLogs } from './utils/sentry-log-flush';
 import { flushTelemetry } from './telemetry';
 
 let cachedServer: Express | null = null;
 const sentryTracing = (Sentry.getClient()?.getOptions().tracesSampleRate ?? 0) > 0;
-// Sentry Logs nằm trong buffer tới khi đủ lô hoặc hết hẹn giờ — function đóng
-// băng giữa chừng là mất. Đánh dấu khi có log để request đó flush luôn.
-let sentryLogsPending = false;
-Sentry.getClient()?.on('afterCaptureLog', () => {
-  sentryLogsPending = true;
-});
 
 async function bootstrap(): Promise<Express> {
   if (cachedServer) return cachedServer;
@@ -62,8 +57,9 @@ export default async (req: any, res: any) => {
   // bật tracing (span của request vừa xong), còn không thì chỉ khi có lỗi
   // hoặc có Sentry Logs đang chờ.
   res.on('finish', () => {
-    if (Sentry.isEnabled() && (sentryTracing || sentryLogsPending || res.statusCode >= 500)) {
-      sentryLogsPending = false;
+    // Log ghi trong việc nền (runInBackground) được flush ở đó, khi việc xong.
+    const logsPending = takePendingSentryLogs();
+    if (Sentry.isEnabled() && (sentryTracing || logsPending || res.statusCode >= 500)) {
       runInBackground(Sentry.flush(2000));
     }
     // Trace thì đẩy cho mọi request (no-op khi OTel tắt).
