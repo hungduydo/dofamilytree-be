@@ -1,4 +1,5 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { Redis as UpstashRedis } from '@upstash/redis';
 import sharp from 'sharp';
@@ -186,6 +187,7 @@ export class TasksService {
   }) {
     const { mediaId, buffer, filename, mimetype } = data;
     this.logger.log(`Processing media ${mediaId} (${mimetype})`);
+    const startedAt = Date.now();
 
     const bufferObj =
       typeof buffer === 'string' ? Buffer.from(buffer, 'base64') : Buffer.from(buffer.data);
@@ -216,8 +218,23 @@ export class TasksService {
       // đứng im.
       await this.invalidateMediaStatsCache();
       this.logger.log(`Media ${mediaId} processed and uploaded: ${url}`);
+      // Không đưa `url` vào: chỉ cần id để tra ngược; số đo giúp theo dõi tỉ lệ nén.
+      Sentry.logger.info('Media processed', {
+        'media.id': mediaId,
+        'media.mime_type': mimetype,
+        'media.input_bytes': bufferObj.length,
+        'media.output_bytes': outBuffer.length,
+        'media.duration_ms': Date.now() - startedAt,
+      });
     } catch (error) {
       this.logger.error(`Failed to process media ${mediaId}`, error);
+      Sentry.logger.error('Media processing failed', {
+        'media.id': mediaId,
+        'media.mime_type': mimetype,
+        'media.input_bytes': bufferObj.length,
+        'error.type': (error as Error).name,
+        'error.message': (error as Error).message,
+      });
       // Đánh dấu failed để record không kẹt ở pending; nuốt lỗi update để không
       // che mất lỗi gốc.
       await this.prisma.media

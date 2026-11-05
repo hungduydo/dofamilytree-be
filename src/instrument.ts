@@ -12,6 +12,13 @@ import * as Sentry from '@sentry/nestjs';
  *
  * Tracing (Performance): lấy mẫu theo SENTRY_TRACES_SAMPLE_RATE (0..1, mặc định
  * 0.2 — gói free có hạn mức span). Đặt 0 để tắt hẳn trace, chỉ giữ báo lỗi.
+ *
+ * Logs (Sentry Logs): SDK v11 luôn bật — mọi `Sentry.logger.*` đều được gửi,
+ * tự gắn trace_id của request đang chạy. Ngưỡng theo SENTRY_LOG_LEVEL
+ * (trace|debug|info|warn|error|fatal|off, mặc định info); log dưới ngưỡng bị
+ * bỏ trong `scrubLog`. Logger của Nest KHÔNG được nối sang Sentry: nhiều dòng
+ * cũ nội suy email / URL có token vào message — chỉ gửi những log viết riêng
+ * cho Sentry, với thuộc tính có cấu trúc (xem docs/SENTRY_LOGS.md).
  */
 const dsn = process.env.SENTRY_DSN;
 
@@ -49,6 +56,7 @@ if (dsn) {
     beforeSend: scrubEvent,
     beforeSendTransaction: scrubEvent,
     beforeSendSpan: scrubSpan,
+    beforeSendLog: scrubLog,
   });
 }
 
@@ -96,4 +104,64 @@ export function scrubSpan<T extends { name: string; attributes?: Record<string, 
     }
   }
   return span;
+}
+
+export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const;
+export type LogLevel = (typeof LOG_LEVELS)[number];
+
+/** Chỉ số ngưỡng; `off` ⇒ vượt mọi mức (bỏ hết). Giá trị lạ ⇒ fallback. */
+export function parseLogLevel(raw: string | undefined, fallback: LogLevel = 'info'): number {
+  const v = raw?.trim().toLowerCase();
+  if (v === 'off') return LOG_LEVELS.length;
+  const i = LOG_LEVELS.indexOf(v as LogLevel);
+  return i >= 0 ? i : LOG_LEVELS.indexOf(fallback);
+}
+
+const minLogLevel = parseLogLevel(process.env.SENTRY_LOG_LEVEL);
+
+/**
+ * Khoá thuộc tính log không bao giờ được rời server. So theo từng đoạn tên
+ * (tách bởi `.`/`_`) để `user.email`, `reset_token`, `user.ip_address` dính,
+ * còn `recipients`, `description` thì không.
+ */
+const SENSITIVE_LOG_ATTR = /(^|[._])(email|password|passwd|secret|token|authorization|cookie|ip|phone)($|[._])/i;
+const SENSITIVE_LOG_ATTR_EXACT = new Set(['client.address', 'http.request.header.authorization']);
+
+/**
+ * Lớp chặn cuối cho Sentry Logs: bỏ log dưới ngưỡng SENTRY_LOG_LEVEL, che
+ * thuộc tính nhạy cảm, cắt query string khỏi giá trị URL và che email trong chuỗi.
+ * Message KHÔNG được scrub — đừng nội suy PII vào message, hãy dùng
+ * `Sentry.logger.fmt` với tham số không nhạy cảm.
+ */
+export function scrubLog<T extends { level: string; attributes?: Record<string, unknown> }>(
+  log: T,
+  minLevel = minLogLevel,
+): T | null {
+  const idx = LOG_LEVELS.indexOf(log.level as LogLevel);
+  if (idx >= 0 && idx < minLevel) return null;
+  const attrs = log.attributes;
+  if (attrs) {
+    for (const key of Object.keys(attrs)) {
+      if (SENSITIVE_LOG_ATTR.test(key) || SENSITIVE_LOG_ATTR_EXACT.has(key)) {
+        attrs[key] = '[Filtered]';
+        continue;
+      }
+      const a = attrs[key] as any;
+      if (a && typeof a === 'object' && 'value' in a) a.value = scrubLogValue(a.value);
+      else attrs[key] = scrubLogValue(a);
+    }
+  }
+  return log;
+}
+
+const EMAIL_IN_TEXT = /[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi;
+
+/**
+ * Giá trị chuỗi: cắt query string của URL (token tắt nhắc, chữ ký presign) và
+ * che email lọt vào (vd. `error.message` của Resend nhắc lại địa chỉ người nhận).
+ */
+function scrubLogValue(v: unknown): unknown {
+  if (typeof v !== 'string') return v;
+  const noQuery = v.includes('?') && /^(https?:\/\/|\/)/.test(v) ? v.split('?')[0] : v;
+  return noQuery.replace(EMAIL_IN_TEXT, '[email]');
 }
