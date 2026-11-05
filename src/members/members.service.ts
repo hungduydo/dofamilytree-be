@@ -9,10 +9,12 @@ import { runInBackground } from '../utils/run-in-background';
 import { SafeCache } from '../utils/safe-cache';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  CACHE_KEY_MEMBERS_CLAN,
   CACHE_KEY_MEMBERS_COMMITTEE,
   CACHE_KEY_MEMBERS_NOTABLE,
   CACHE_KEY_MEMBERS_STATS,
   MEMBERS_CACHE_KEYS,
+  MEMBERS_CACHE_TTL_CLAN,
   MEMBERS_CACHE_TTL_LIST,
   MEMBERS_CACHE_TTL_STATS,
 } from './members.cache-keys';
@@ -32,7 +34,8 @@ import { hasAtLeast } from '../auth/roles.constants';
 import { CACHE_KEY_FULL, CACHE_KEY_STATS } from '../tree/tree.cache-keys';
 import { MEMORIAL_CACHE_KEYS } from '../memorial/memorial.cache-keys';
 import { LifeStatus, deriveLifeStatus, hasRealDeathDate, isLifeStatus } from './life-status';
-import { BIRTH_YEAR_MAX, BIRTH_YEAR_MIN, MemberListFilters, missingFieldWhere } from './member-filters';
+import { computeClanMembers } from './clan-lineage';
+import { BIRTH_YEAR_MAX, BIRTH_YEAR_MIN, MemberClanFilter, MemberListFilters, missingFieldWhere } from './member-filters';
 import {
   MEMBER_LITE_SELECT,
   MEMBER_TABLE_SELECT,
@@ -219,6 +222,7 @@ export class MembersService {
       isLifeStatus(filters.lifeStatus) ? { lifeStatus: filters.lifeStatus } : {},
       ...(filters.missing ?? []).map(missingFieldWhere),
       await this.birthYearWhere(filters.birthYearFrom, filters.birthYearTo),
+      await this.clanWhere(filters.clan),
     ].filter((c) => Object.keys(c).length > 0);
     const where: Prisma.MemberWhereInput = conditions.length ? { AND: conditions } : {};
 
@@ -277,6 +281,35 @@ export class MembersService {
         AND m.year <= ${to ?? BIRTH_YEAR_MAX}
     `;
     return { id: { in: rows.map((r) => r.id) } };
+  }
+
+  /**
+   * "Trong họ" là thuộc tính của cả đồ thị (truyền từ cụ tổ xuống), Prisma không
+   * diễn đạt được bằng `where`: tính tập id trong họ rồi đưa vào `id IN / NOT IN`.
+   */
+  private async clanWhere(clan?: MemberClanFilter): Promise<Prisma.MemberWhereInput> {
+    if (!clan) return {};
+    const ids = await this.clanMemberIds();
+    return clan === 'in' ? { id: { in: ids } } : { id: { notIn: ids } };
+  }
+
+  /**
+   * Tập id trong họ, cache Redis. Dữ liệu này hiếm khi đổi, nên không nạp lại cả
+   * bảng members + member_relationships mỗi lần đổi bộ lọc / sang trang.
+   * Invalidate: invalidateMemberCaches (thêm/sửa/xoá member — gender đổi thì dòng
+   * họ đổi) và RelationshipsService (thêm/xoá quan hệ).
+   */
+  private async clanMemberIds(): Promise<string[]> {
+    const cached = await this.cache.get<string[]>(CACHE_KEY_MEMBERS_CLAN);
+    if (Array.isArray(cached)) return cached;
+
+    const [members, edges] = await Promise.all([
+      this.prisma.member.findMany({ select: { id: true, gender: true } }),
+      this.prisma.memberRelationship.findMany({ select: { parent_id: true, child_id: true, type: true } }),
+    ]);
+    const ids = [...computeClanMembers(members, edges)];
+    await this.cache.set(CACHE_KEY_MEMBERS_CLAN, ids, MEMBERS_CACHE_TTL_CLAN);
+    return ids;
   }
 
   private nameSearchWhere(query?: string) {

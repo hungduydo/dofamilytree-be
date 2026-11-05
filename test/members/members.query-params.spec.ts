@@ -136,6 +136,15 @@ describe('GET /members query params (HTTP thật)', () => {
       expect(lastFilters().lifeStatus).toBeUndefined();
     });
 
+    it('clan: in/out được truyền, all hay giá trị lạ = không lọc', async () => {
+      await get('?clan=in');
+      expect(lastFilters().clan).toBe('in');
+      await get('?clan=out');
+      expect(lastFilters().clan).toBe('out');
+      await get('?clan=all');
+      expect(lastFilters().clan).toBeUndefined();
+    });
+
     it('missing: danh sách cách dấu phẩy, lọc theo allowlist, bỏ trùng', async () => {
       const res = await get('?missing=birthDate,avatar,xyz,avatar');
       expect(res.status).toBe(200);
