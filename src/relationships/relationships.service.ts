@@ -1,5 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import type { Redis as UpstashRedis } from '@upstash/redis';
 import { AUDIT_ENTITY, markRestored, recordAudit } from '../audit/audit-record';
+import { CACHE_KEY_MEMBERS_CLAN, MEMBERS_CACHE_TTL_CLAN } from '../members/members.cache-keys';
+import { SafeCache } from '../utils/safe-cache';
 import { QStashService } from '../queue/qstash.service';
 import { runInBackground } from '../utils/run-in-background';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,11 +19,17 @@ const EMBEDDED_PROFILE = profileSelectFor(false);
 
 @Injectable()
 export class RelationshipsService {
+  private readonly logger = new Logger(RelationshipsService.name);
+  private readonly cache: SafeCache;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly qstashService: QStashService,
     private readonly generationService: GenerationService,
-  ) {}
+    @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
+  ) {
+    this.cache = new SafeCache(this.redis, this.logger, MEMBERS_CACHE_TTL_CLAN);
+  }
 
   /**
    * Các luật một cạnh cha/con/vợ chồng phải thoả. Dùng chung cho thêm mới và
@@ -108,6 +117,9 @@ export class RelationshipsService {
 
     // Trigger chính: thêm một cạnh đổi thế hệ của cả nhánh bên dưới.
     this.generationService.enqueueRecompute();
+    // Await: trên serverless DEL fire-and-forget có thể không bao giờ chạy
+    // (xem MembersService.invalidateMemberCaches). SafeCache.del không throw.
+    await this.cache.del(CACHE_KEY_MEMBERS_CLAN);
 
     return relationship;
   }
@@ -253,6 +265,7 @@ export class RelationshipsService {
 
     // Gỡ một cạnh có thể biến cả một nhánh thành gốc mới.
     this.generationService.enqueueRecompute();
+    await this.cache.del(CACHE_KEY_MEMBERS_CLAN);
 
     return deleted;
   }
@@ -289,6 +302,7 @@ export class RelationshipsService {
     });
 
     this.generationService.enqueueRecompute();
+    await this.cache.del(CACHE_KEY_MEMBERS_CLAN);
     return { id: restored.id, warnings: [] as string[] };
   }
 }

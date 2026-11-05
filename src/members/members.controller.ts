@@ -19,7 +19,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { MembersService, MEMBER_SORT_FIELDS, MEMBER_GENDERS, MemberSortField, SortOrder } from './members.service';
 import { MEMBER_VIEWS, resolveView } from './members.view';
 import { LIFE_STATUSES } from './life-status';
-import { MEMBER_MISSING_FIELDS, buildMemberListFilters } from './member-filters';
+import { MEMBER_CLAN_FILTERS, MEMBER_MISSING_FIELDS, buildMemberListFilters } from './member-filters';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
 import {
@@ -89,6 +89,14 @@ export class MembersController {
   @ApiQuery({ name: 'gender', required: false, enum: MEMBER_GENDERS, description: 'Lọc theo giới tính' })
   @ApiQuery({ name: 'lifeStatus', required: false, enum: LIFE_STATUSES, description: 'Lọc theo trạng thái sống/mất (UNKNOWN = cần bổ sung)' })
   @ApiQuery({
+    name: 'clan',
+    required: false,
+    enum: MEMBER_CLAN_FILTERS,
+    description:
+      'Lọc theo dòng họ (nội tộc, theo dòng cha). `in` = cụ tổ và hậu duệ qua người cha; ' +
+      '`out` = người ngoài (con dâu, con rể, con của con gái). Bỏ trống = tất cả.',
+  })
+  @ApiQuery({
     name: 'missing',
     required: false,
     type: String,
@@ -125,6 +133,7 @@ export class MembersController {
     @Query('gender') gender?: string,
     @CanSeePii() canSeePii?: boolean,
     @Query('lifeStatus') lifeStatus?: string,
+    @Query('clan') clan?: string,
     @Query('missing') missing?: string | string[],
     // `any` + ParseOptionalIntPipe: cùng lý do với `generation` ở trên.
     @Query('birthYearFrom', ParseOptionalIntPipe) birthYearFrom?: any,
@@ -133,7 +142,7 @@ export class MembersController {
     return this.membersService.getAllMembers(
       page, pageSize, name, generation, sortBy, sortOrder,
       resolveView(view), treeId, gender, canSeePii,
-      buildMemberListFilters({ lifeStatus, missing, birthYearFrom, birthYearTo }),
+      buildMemberListFilters({ lifeStatus, clan, missing, birthYearFrom, birthYearTo }),
     );
   }
 

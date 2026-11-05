@@ -14,8 +14,13 @@ export type MemberMissingField = (typeof MEMBER_MISSING_FIELDS)[number];
 export const BIRTH_YEAR_MIN = 1000;
 export const BIRTH_YEAR_MAX = 2200;
 
+/** Lọc theo dòng họ (nội tộc) — xem clan-lineage.ts cho định nghĩa. */
+export const MEMBER_CLAN_FILTERS = ['in', 'out'] as const;
+export type MemberClanFilter = (typeof MEMBER_CLAN_FILTERS)[number];
+
 export interface MemberListFilters {
   lifeStatus?: LifeStatus;
+  clan?: MemberClanFilter;
   missing?: MemberMissingField[];
   birthYearFrom?: number;
   birthYearTo?: number;
@@ -39,6 +44,7 @@ export function parseMissingFields(raw?: string | string[]): MemberMissingField[
  */
 export function buildMemberListFilters(query: {
   lifeStatus?: string;
+  clan?: string;
   missing?: string | string[];
   birthYearFrom?: number;
   birthYearTo?: number;
@@ -54,6 +60,10 @@ export function buildMemberListFilters(query: {
   }
   return {
     lifeStatus: isLifeStatus(query.lifeStatus) ? query.lifeStatus : undefined,
+    // Giá trị lạ (kể cả 'all') = không lọc, giống lifeStatus.
+    clan: (MEMBER_CLAN_FILTERS as readonly string[]).includes(query.clan ?? '')
+      ? (query.clan as MemberClanFilter)
+      : undefined,
     missing: parseMissingFields(query.missing),
     birthYearFrom,
     birthYearTo,

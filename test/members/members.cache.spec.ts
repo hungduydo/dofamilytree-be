@@ -5,6 +5,7 @@ import { QStashService } from '../../src/queue/qstash.service';
 import { TasksService } from '../../src/queue/tasks.service';
 import { GenerationService } from '../../src/generation/generation.service';
 import {
+  CACHE_KEY_MEMBERS_CLAN,
   CACHE_KEY_MEMBERS_COMMITTEE,
   CACHE_KEY_MEMBERS_NOTABLE,
   CACHE_KEY_MEMBERS_STATS,
@@ -117,6 +118,8 @@ describe('MembersService — caching', () => {
     const expectAllKeysDeleted = () => {
       expect(mockRedis.del).toHaveBeenCalledWith(
         CACHE_KEY_MEMBERS_COMMITTEE, CACHE_KEY_MEMBERS_NOTABLE, CACHE_KEY_MEMBERS_STATS,
+        // Dòng họ đổi theo gender / thêm-xoá member.
+        CACHE_KEY_MEMBERS_CLAN,
         ...CONTACT_INFO_CACHE_KEYS,
         // lifeStatus hiện trên thống kê, dấu † của cây và danh sách tổ tiên.
         CACHE_KEY_STATS, CACHE_KEY_FULL,

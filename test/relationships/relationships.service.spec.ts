@@ -25,6 +25,7 @@ const mockPrisma = withAuditTx({
 
 const mockQStashService = { publish: jest.fn() };
 const mockGenerationService = { enqueueRecompute: jest.fn(), recomputeAll: jest.fn() };
+const mockRedis = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
 
 /** Dòng đọc được khi xoá — service include tên hai bên để ghi tóm tắt audit. */
 const REL_ROW = {
@@ -43,6 +44,7 @@ describe('RelationshipsService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: QStashService, useValue: mockQStashService },
         { provide: GenerationService, useValue: mockGenerationService },
+        { provide: 'REDIS_CLIENT', useValue: mockRedis },
       ],
     }).compile();
 
@@ -65,6 +67,8 @@ describe('RelationshipsService', () => {
       expect(result).toHaveProperty('id', 'rel-1');
       // Trigger chính: thêm một cạnh đổi thế hệ của cả nhánh bên dưới.
       expect(mockGenerationService.enqueueRecompute).toHaveBeenCalled();
+      // Dòng họ (bộ lọc ?clan=) suy từ đồ thị quan hệ ⇒ cache phải bị xoá.
+      expect(mockRedis.del).toHaveBeenCalledWith('members:clan');
     });
 
     it('should throw BadRequestException on self-relation', async () => {
@@ -290,6 +294,15 @@ describe('RelationshipsService', () => {
 
       await service.deleteRelationship('rel-1');
       expect(mockGenerationService.enqueueRecompute).toHaveBeenCalled();
+      expect(mockRedis.del).toHaveBeenCalledWith('members:clan');
+    });
+
+    it('Redis chết không làm hỏng lệnh xoá đã commit', async () => {
+      mockPrisma.memberRelationship.findUnique.mockResolvedValue(REL_ROW);
+      mockPrisma.memberRelationship.delete.mockResolvedValue({ id: 'rel-1' });
+      mockRedis.del.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+
+      await expect(service.deleteRelationship('rel-1')).resolves.toEqual({ id: 'rel-1' });
     });
 
     it('KHÔNG xếp hàng khi quan hệ không tồn tại', async () => {
@@ -355,6 +368,7 @@ describe('RelationshipsService', () => {
       expect(mockPrisma.memberRelationship.create.mock.calls[0][0].data.id).toBe('rel-1');
       expect(mockPrisma.auditLog.create.mock.calls[0][0].data.action).toBe('RESTORE');
       expect(mockGenerationService.enqueueRecompute).toHaveBeenCalled();
+      expect(mockRedis.del).toHaveBeenCalledWith('members:clan');
     });
   });
 });

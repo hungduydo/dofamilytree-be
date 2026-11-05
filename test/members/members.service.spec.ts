@@ -29,6 +29,9 @@ const mockPrisma = withAuditTx({
     deleteMany: jest.fn(),
     findUnique: jest.fn(),
   },
+  memberRelationship: {
+    findMany: jest.fn(),
+  },
   $transaction: jest.fn(),
   $executeRaw: jest.fn(),
   $queryRaw: jest.fn(),
@@ -275,6 +278,55 @@ describe('MembersService', () => {
       expect(whereArg()).toEqual({ AND: [{ id: { in: ['a', 'b'] } }] });
       // count phải dùng CÙNG where, nếu không total lệch với data.
       expect(mockPrisma.member.count.mock.calls[0][0].where).toEqual(whereArg());
+    });
+
+    it('clan=in / clan=out: tính tập trong họ rồi lọc id IN / NOT IN', async () => {
+      // founder ── wife ; son là con của cả hai.
+      mockPrisma.member.findMany.mockImplementation((args: { select?: { gender?: boolean } }) =>
+        Promise.resolve(
+          args?.select?.gender
+            ? [{ id: 'founder', gender: 'M' }, { id: 'wife', gender: 'F' }, { id: 'son', gender: 'M' }]
+            : [],
+        ),
+      );
+      mockPrisma.memberRelationship.findMany.mockResolvedValue([
+        { parent_id: 'founder', child_id: 'wife', type: 'SPOUSE' },
+        { parent_id: 'founder', child_id: 'son', type: 'BIOLOGICAL' },
+        { parent_id: 'wife', child_id: 'son', type: 'BIOLOGICAL' },
+      ]);
+      // calls[0] là query nạp đồ thị; query trang là lần gọi có `where`.
+      const pageWhere = () => mockPrisma.member.findMany.mock.calls.find((c) => c[0]?.where)?.[0].where;
+      await call({ clan: 'in' });
+      expect(pageWhere()).toEqual({ AND: [{ id: { in: ['founder', 'son'] } }] });
+      expect(mockPrisma.member.count.mock.calls[0][0].where).toEqual(pageWhere());
+
+      mockPrisma.member.findMany.mockClear();
+      await call({ clan: 'out' });
+      expect(pageWhere()).toEqual({ AND: [{ id: { notIn: ['founder', 'son'] } }] });
+    });
+
+    it('clan: cache hit thì KHÔNG nạp lại đồ thị; cache miss thì ghi cache', async () => {
+      mockPrisma.memberRelationship.findMany.mockResolvedValue([]);
+      mockPrisma.member.findMany.mockResolvedValue([{ id: 'solo', gender: 'M' }]);
+      await call({ clan: 'in' });
+      expect(mockRedis.set).toHaveBeenCalledWith('members:clan', JSON.stringify(['solo']), { ex: 3600 });
+
+      mockPrisma.memberRelationship.findMany.mockClear();
+      mockPrisma.member.findMany.mockClear();
+      mockRedis.get.mockResolvedValueOnce(['a', 'b']);
+      await call({ clan: 'in' });
+      expect(mockPrisma.memberRelationship.findMany).not.toHaveBeenCalled();
+      expect(whereArg()).toEqual({ AND: [{ id: { in: ['a', 'b'] } }] });
+    });
+
+    it('ghi member (create/update/delete) xoá luôn cache dòng họ', async () => {
+      const { MEMBERS_CACHE_KEYS } = await import('../../src/members/members.cache-keys');
+      expect(MEMBERS_CACHE_KEYS).toContain('members:clan');
+    });
+
+    it('không lọc dòng họ thì KHÔNG nạp đồ thị quan hệ', async () => {
+      await call({ lifeStatus: 'ALIVE' });
+      expect(mockPrisma.memberRelationship.findMany).not.toHaveBeenCalled();
     });
 
     it('không lọc năm sinh thì KHÔNG chạy query phụ', async () => {
