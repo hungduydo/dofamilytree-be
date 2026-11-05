@@ -20,6 +20,22 @@ Trên Vercel, `src/vercel.ts` flush ngay sau request có log để function khô
 message. Nest logger vẫn là log console/Vercel; `Sentry.logger` chỉ dùng cho
 những sự kiện đáng tra cứu.
 
+## Dùng `logEvent`, không gọi `Sentry.logger` trực tiếp
+
+```ts
+import { errorAttributes, logEvent, logEventThrottled } from '../observability/log-event';
+
+logEvent('auth.login.failed', 'warn', 'Login failed', { 'auth.reason': 'deactivated' });
+logEvent('mail.send_failed', 'error', 'Mail send failed', { 'mail.recipients': 2, ...errorAttributes(err) });
+// Sự kiện có thể lặp theo từng request khi hạ tầng hỏng: tối đa 1 log / phút / khoá.
+logEventThrottled('cache.degraded', 'warn', 'Cache degraded, falling back', attrs, 'TreeService:get');
+```
+
+- `event.name` lấy từ union `LogEventName` — tên sai là lỗi biên dịch. Danh mục đầy
+  đủ và lý do từng sự kiện: `docs/SENTRY_LOG_EVENTS.md`.
+- `user.id` / `user.roles` của người gọi đã được `JwtStrategy` gắn sẵn lên scope
+  request — không truyền lại; đối tượng bị tác động dùng `target.user.id`.
+
 ## Quy tắc viết log
 
 1. **Message cố định, chi tiết ở thuộc tính.** Message giống nhau ⇒ gom nhóm,

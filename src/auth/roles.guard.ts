@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ROLES_KEY } from './roles.decorator';
 import { highestRole, roleRank } from './roles.constants';
 import { resolveCallerMeta } from './user-meta';
+import { logEvent } from '../observability/log-event';
 
 /**
  * PHÂN CẤP: guest < member < editor < admin. `@Roles('editor')` nghĩa là
@@ -29,13 +30,22 @@ export class RolesGuard implements CanActivate {
     if (!required?.length) return true;
 
     const req = context.switchToHttp().getRequest();
-    if (!req.user?.id) throw new ForbiddenException('Authentication required');
+    const forbidden = (reason: string, message: string) => {
+      logEvent('auth.forbidden', 'warn', 'Request forbidden by role guard', {
+        'auth.reason': reason,
+        'auth.required_roles': required.join(','),
+        'http.request.method': req.method,
+        'http.route': req.route?.path,
+      });
+      return new ForbiddenException(message);
+    };
+    if (!req.user?.id) throw forbidden('unauthenticated', 'Authentication required');
 
     // Toàn role lạ (gõ sai tên trong @Roles) ⇒ chặn, KHÔNG cho qua. Một typo
     // phải làm route hỏng ồn ào chứ không phải mở toang nó.
     const threshold = Math.min(...required.map(roleRank).filter((rank) => rank >= 0));
     if (!Number.isFinite(threshold)) {
-      throw new ForbiddenException(`Unknown role requirement: ${required.join(', ')}`);
+      throw forbidden('unknown_role_requirement', `Unknown role requirement: ${required.join(', ')}`);
     }
 
     // KHÔNG dùng `user.roles` từ JWT payload: token phát hành trước khi admin đổi
@@ -43,7 +53,7 @@ export class RolesGuard implements CanActivate {
     const { roles } = await resolveCallerMeta(req, this.prisma);
 
     if (roleRank(highestRole(roles)) < threshold) {
-      throw new ForbiddenException(`Requires one of roles: ${required.join(', ')}`);
+      throw forbidden('insufficient_role', `Requires one of roles: ${required.join(', ')}`);
     }
     return true;
   }

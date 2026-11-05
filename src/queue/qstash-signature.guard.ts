@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { Receiver } from '@upstash/qstash';
 import { queueCallbackUrl } from './queue.constants';
+import { logEvent } from '../observability/log-event';
 
 /**
  * Xác thực chữ ký QStash cho POST /v2/queue/callback/:task.
@@ -30,6 +31,12 @@ export class QStashSignatureGuard implements CanActivate {
       // Thiếu key trên production là lỗi cấu hình, KHÔNG được im lặng cho qua —
       // đó chính là trạng thái không bảo vệ mà ta đang sửa.
       if (process.env.NODE_ENV === 'production') {
+        // Lỗi cấu hình: MỌI job đang hỏng ⇒ error, không phải warn.
+        logEvent('queue.signature.invalid', 'error', 'QStash signing keys not configured', {
+          'queue.reason': 'keys_not_configured',
+          'messaging.system': 'qstash',
+          'messaging.destination.name': req.params?.task,
+        });
         throw new UnauthorizedException('QStash signing keys chưa được cấu hình');
       }
       this.logger.warn('QSTASH_*_SIGNING_KEY chưa cấu hình — BỎ QUA verify (chỉ dev/test)');
@@ -42,6 +49,11 @@ export class QStashSignatureGuard implements CanActivate {
     // rawBody undefined nghĩa là bootstrap quên `rawBody: true`. Fail closed:
     // thà mọi job hỏng ồn ào còn hơn chấp nhận callback không kiểm chứng.
     if (!signature || body === undefined) {
+      logEvent('queue.signature.invalid', 'warn', 'QStash callback rejected', {
+        'queue.reason': !signature ? 'missing_signature' : 'missing_raw_body',
+        'messaging.system': 'qstash',
+        'messaging.destination.name': req.params?.task,
+      });
       throw new UnauthorizedException('Thiếu chữ ký QStash hoặc raw body');
     }
 
@@ -49,7 +61,14 @@ export class QStashSignatureGuard implements CanActivate {
       .verify({ signature, body, url: queueCallbackUrl(req.params.task) })
       .catch(() => false);
 
-    if (!isValid) throw new UnauthorizedException('Chữ ký QStash không hợp lệ');
+    if (!isValid) {
+      logEvent('queue.signature.invalid', 'warn', 'QStash callback rejected', {
+        'queue.reason': 'invalid_signature',
+        'messaging.system': 'qstash',
+        'messaging.destination.name': req.params?.task,
+      });
+      throw new UnauthorizedException('Chữ ký QStash không hợp lệ');
+    }
     return true;
   }
 }

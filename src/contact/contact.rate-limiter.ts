@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import type { Redis as UpstashRedis } from '@upstash/redis';
 import { CONTACT_RATE_LIMITS, hashIp } from './contact.constants';
+import { errorAttributes, logEvent, logEventThrottled } from '../observability/log-event';
 
 /**
  * Bộ đếm tần suất cho `POST /v2/contact/messages` — endpoint GHI DUY NHẤT
@@ -57,10 +58,20 @@ export class ContactRateLimiter {
         // Redis chết ⇒ CHO QUA, giống SafeCache. Đánh đổi CÓ Ý THỨC: thà nhận
         // spam trong lúc Upstash sập còn hơn chặn cả dòng họ khỏi form liên hệ.
         this.logger.warn(`Redis rate limit lỗi, cho qua: ${(err as Error).message}`);
+        logEventThrottled('cache.degraded', 'warn', 'Rate limit store unavailable, request allowed', {
+          'cache.component': 'contact-rate-limit',
+          'cache.operation': 'get',
+          ...errorAttributes(err),
+        }, 'contact-rate-limit:get');
         return;
       }
 
       if (used >= limit.max) {
+        logEvent('contact.rate_limited', 'warn', 'Contact message rate limited', {
+          'rate_limit.scope': 'ip',
+          'rate_limit.window_s': limit.windowSeconds,
+          'rate_limit.max': limit.max,
+        });
         throw new HttpException(
           {
             statusCode: HttpStatus.TOO_MANY_REQUESTS,
@@ -94,6 +105,11 @@ export class ContactRateLimiter {
         if (count === 1) await this.redis.expire(key, limit.windowSeconds);
       } catch (err) {
         this.logger.warn(`Không ghi được bộ đếm tần suất (non-fatal): ${(err as Error).message}`);
+        logEventThrottled('cache.degraded', 'warn', 'Rate limit counter not recorded', {
+          'cache.component': 'contact-rate-limit',
+          'cache.operation': 'incr',
+          ...errorAttributes(err),
+        }, 'contact-rate-limit:incr');
       }
     }
   }

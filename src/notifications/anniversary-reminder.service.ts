@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
+import { errorAttributes, logEvent } from '../observability/log-event';
 import type { Redis as UpstashRedis } from '@upstash/redis';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
@@ -58,7 +59,7 @@ export class AnniversaryReminderService {
       this.logger.error('Không gửi được nhắc ngày giỗ: thiếu RESEND_API_KEY/MAIL_FROM');
       // Cấu hình sai không phải exception nên SentryGlobalFilter không thấy —
       // log `error` là tín hiệu duy nhất (đặt alert trên log này).
-      Sentry.logger.error('Anniversary reminders skipped: mail is not configured', {
+      logEvent('reminder.mail_not_configured', 'error', 'Anniversary reminders skipped: mail is not configured', {
         'reminder.date': date,
       });
       return result;
@@ -98,10 +99,10 @@ export class AnniversaryReminderService {
       if (!to) {
         this.logger.warn(`Tài khoản ${plan.user_id} không có email — bỏ qua nhắc ngày giỗ`);
         // Message cố định, chi tiết ở thuộc tính ⇒ gom nhóm & đếm được trong Logs UI.
-        // user.id là UUID nội bộ, KHÔNG phải email — email không bao giờ vào log.
-        Sentry.logger.warn('Anniversary reminder skipped: account has no email', {
+        // target.user.id là UUID nội bộ, KHÔNG phải email — email không bao giờ vào log.
+        logEvent('reminder.recipient_skipped', 'warn', 'Anniversary reminder skipped: account has no email', {
           'reminder.date': date,
-          'user.id': plan.user_id,
+          'target.user.id': plan.user_id,
         });
         continue;
       }
@@ -128,11 +129,11 @@ export class AnniversaryReminderService {
         this.logger.error(`Gửi nhắc ngày giỗ cho ${plan.user_id} lỗi: ${(err as Error).message}`);
         // Lỗi đã được xử lý (retry qua QStash) nên không captureException từng
         // người — log error, rồi exception tổng ở cuối hàm mới thành issue.
-        Sentry.logger.error('Anniversary reminder email failed', {
+        // Người nhận là đối tượng (target), không phải người gọi API.
+        logEvent('reminder.send_failed', 'error', 'Anniversary reminder email failed', {
           'reminder.date': date,
-          'user.id': plan.user_id,
-          'error.type': (err as Error).name,
-          'error.message': (err as Error).message,
+          'target.user.id': plan.user_id,
+          ...errorAttributes(err),
         });
         await this.release(key);
       }
@@ -142,7 +143,9 @@ export class AnniversaryReminderService {
     // Một log tóm tắt / lần chạy job (wide event) thay vì một dòng / email.
     // `fmt` giữ template cố định cho việc gom nhóm, tham số thành thuộc tính
     // tìm kiếm được; các con số đi kèm để vẽ biểu đồ / alert theo `reminder.failed`.
-    Sentry.logger[result.failed ? 'warn' : 'info'](
+    logEvent(
+      'reminder.run.completed',
+      result.failed ? 'warn' : 'info',
       Sentry.logger.fmt`Anniversary reminders for ${date}: ${result.sent} sent, ${result.failed} failed`,
       {
         'reminder.date': result.date,

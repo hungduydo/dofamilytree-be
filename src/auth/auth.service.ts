@@ -25,6 +25,7 @@ import { SetActiveDto } from './dto/set-active.dto';
 import { QStashService } from '../queue/qstash.service';
 import { QUEUE_ACCOUNT_PENDING } from '../queue/queue.constants';
 import { runInBackground } from '../utils/run-in-background';
+import { logEvent } from '../observability/log-event';
 
 // Nguồn sự thật đã chuyển sang roles.constants.ts. Re-export để import cũ
 // (`from './auth.service'`) không vỡ.
@@ -195,6 +196,12 @@ export class AuthService {
     const { data, error } = await this.supabase.auth.signInWithPassword({ email, password });
 
     if (error || !data.user) {
+      // Không ghi email (PII). `auth.provider_code` là mã của Supabase, vd.
+      // `invalid_credentials`, `email_not_confirmed` — đủ để phân biệt mà không lộ ai.
+      logEvent('auth.login.failed', 'warn', 'Login failed', {
+        'auth.reason': 'invalid_credentials',
+        'auth.provider_code': (error as { code?: string } | null)?.code,
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -203,12 +210,21 @@ export class AuthService {
     });
 
     if (!userMetadata) {
+      // Có tài khoản Supabase nhưng thiếu UserMetadata — dữ liệu lệch, cần xem.
+      logEvent('auth.login.failed', 'error', 'Login failed', {
+        'auth.reason': 'profile_missing',
+        'user.id': data.user.id,
+      });
       throw new UnauthorizedException('User profile data missing');
     }
 
     // Kiểm tra SAU khi mật khẩu đúng: người không có mật khẩu không được biết
     // tài khoản nào đang bị khoá.
     if (userMetadata.deactivated_at) {
+      logEvent('auth.login.failed', 'warn', 'Login failed', {
+        'auth.reason': 'deactivated',
+        'user.id': data.user.id,
+      });
       throw new ForbiddenException({
         statusCode: 403,
         code: ACCOUNT_DEACTIVATED,
@@ -394,6 +410,14 @@ export class AuthService {
       data: { roles: [role] },
     });
 
+    // Nhật ký quản trị duy nhất cho tài khoản (audit DB chỉ phủ member /
+    // relationship). Người thao tác = user.id trên scope request.
+    logEvent('admin.user.roles_changed', 'info', 'User roles changed', {
+      'target.user.id': targetUserId,
+      'roles.before': targetMeta.roles.join(','),
+      'roles.after': updated.roles.join(','),
+    });
+
     return { message: `Roles updated for user ${targetUserId}`, roles: updated.roles, role };
   }
 
@@ -514,6 +538,12 @@ export class AuthService {
             deactivated_at: targetMeta.deactivated_at ?? new Date(),
             deactivated_by: targetMeta.deactivated_by ?? requesterId,
           },
+    });
+
+    logEvent('admin.user.activation_changed', dto.active ? 'info' : 'warn', 'User activation changed', {
+      'target.user.id': targetUserId,
+      'user.active.before': targetMeta.deactivated_at === null,
+      'user.active.after': updated.deactivated_at === null,
     });
 
     return {

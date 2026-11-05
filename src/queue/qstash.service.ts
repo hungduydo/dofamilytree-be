@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Client } from '@upstash/qstash';
 import { queueCallbackUrl } from './queue.constants';
+import { errorAttributes, logEvent } from '../observability/log-event';
 
 @Injectable()
 export class QStashService {
@@ -33,6 +34,14 @@ export class QStashService {
       });
     } catch (error) {
       this.logger.error(`Failed to publish task ${task} to QStash`, error);
+      // Nhiều chỗ gọi publish trong runInBackground (lỗi bị nuốt) — log này là
+      // dấu vết duy nhất rằng job không bao giờ được chạy.
+      logEvent('queue.publish.failed', 'error', 'Failed to publish QStash task', {
+        'messaging.system': 'qstash',
+        'messaging.destination.name': task,
+        'queue.delay_s': opts?.delay,
+        ...errorAttributes(error),
+      });
       throw error;
     }
   }

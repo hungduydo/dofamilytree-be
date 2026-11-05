@@ -38,6 +38,7 @@ import type {
 } from './dto/contact.dto';
 import { CONTACT_STATUSES } from './contact.constants';
 import { CONTACT_ACTIVE_STATUSES, ContactStatus, ContactTopic } from './contact.constants';
+import { errorAttributes, logEvent } from '../observability/log-event';
 
 /** Dòng singleton của contact_info — xem ContactInfo trong schema.prisma. */
 const CONTACT_INFO_ID = 'default';
@@ -295,6 +296,13 @@ export class ContactService {
         // thư này không bao giờ được ghi mà file vẫn nằm lại tính tiền mãi mãi.
         await this.deleteAttachments(uploaded);
         this.logger.error(`Upload tệp đính kèm thất bại: ${(err as Error).message}`);
+        // Thành 400 cho người gửi ⇒ SentryGlobalFilter bỏ qua; log là tín hiệu duy nhất.
+        logEvent('contact.attachment.upload_failed', 'error', 'Contact attachment upload failed', {
+          'contact.attachment.mime_type': file.mimetype,
+          'contact.attachment.bytes': buffer.length,
+          'contact.attachments_uploaded': uploaded.length,
+          ...errorAttributes(err),
+        });
         throw new BadRequestException(
           'Không tải được tệp đính kèm lên. Vui lòng thử lại, hoặc gửi tin nhắn không kèm tệp.',
         );

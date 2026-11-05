@@ -5,6 +5,7 @@ import { RolesGuard } from '../../src/auth/roles.guard';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ROLES_KEY } from '../../src/auth/roles.decorator';
 import { MediaController } from '../../src/media/media.controller';
+import * as logEvents from '../../src/observability/log-event';
 
 const mockPrisma = { userMetadata: { findUnique: jest.fn() } };
 
@@ -46,6 +47,25 @@ describe('RolesGuard', () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['admin']);
     mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['member'] });
     await expect(guard.canActivate(ctxFor({ id: 'u1' }))).rejects.toThrow(ForbiddenException);
+  });
+
+  it('chặn ⇒ ghi auth.forbidden với role yêu cầu và route', async () => {
+    const logEvent = jest.spyOn(logEvents, 'logEvent').mockImplementation(() => undefined);
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['admin']);
+    mockPrisma.userMetadata.findUnique.mockResolvedValue({ roles: ['member'] });
+    const ctx = {
+      switchToHttp: () => ({ getRequest: () => ({ user: { id: 'u1' }, method: 'PUT', route: { path: '/v2/auth/users/:userId/roles' } }) }),
+      getHandler: () => function handler() {},
+      getClass: () => class Ctrl {},
+    } as unknown as ExecutionContext;
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+    expect(logEvent).toHaveBeenCalledWith('auth.forbidden', 'warn', 'Request forbidden by role guard', {
+      'auth.reason': 'insufficient_role',
+      'auth.required_roles': 'admin',
+      'http.request.method': 'PUT',
+      'http.route': '/v2/auth/users/:userId/roles',
+    });
+    logEvent.mockRestore();
   });
 
   it('chặn khi không có UserMetadata', async () => {

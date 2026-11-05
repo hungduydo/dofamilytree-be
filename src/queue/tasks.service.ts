@@ -1,5 +1,5 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
-import * as Sentry from '@sentry/nestjs';
+import { errorAttributes, logEvent, logEventThrottled } from '../observability/log-event';
 import { PrismaService } from '../prisma/prisma.service';
 import { Redis as UpstashRedis } from '@upstash/redis';
 import sharp from 'sharp';
@@ -42,6 +42,11 @@ export class TasksService {
       await this.redis.set(mediaProgressKey(mediaId), JSON.stringify(data), { ex: MEDIA_PROGRESS_TTL });
     } catch (err) {
       this.logger.warn(`Redis SET progress ${mediaId} failed (non-fatal): ${(err as Error).message}`);
+      logEventThrottled('cache.degraded', 'warn', 'Cache degraded, falling back', {
+        'cache.component': 'media-progress',
+        'cache.operation': 'set',
+        ...errorAttributes(err),
+      }, 'media-progress:set');
     }
   }
 
@@ -219,7 +224,7 @@ export class TasksService {
       await this.invalidateMediaStatsCache();
       this.logger.log(`Media ${mediaId} processed and uploaded: ${url}`);
       // Không đưa `url` vào: chỉ cần id để tra ngược; số đo giúp theo dõi tỉ lệ nén.
-      Sentry.logger.info('Media processed', {
+      logEvent('media.processed', 'info', 'Media processed', {
         'media.id': mediaId,
         'media.mime_type': mimetype,
         'media.input_bytes': bufferObj.length,
@@ -228,12 +233,11 @@ export class TasksService {
       });
     } catch (error) {
       this.logger.error(`Failed to process media ${mediaId}`, error);
-      Sentry.logger.error('Media processing failed', {
+      logEvent('media.processing_failed', 'error', 'Media processing failed', {
         'media.id': mediaId,
         'media.mime_type': mimetype,
         'media.input_bytes': bufferObj.length,
-        'error.type': (error as Error).name,
-        'error.message': (error as Error).message,
+        ...errorAttributes(error),
       });
       // Đánh dấu failed để record không kẹt ở pending; nuốt lỗi update để không
       // che mất lỗi gốc.
