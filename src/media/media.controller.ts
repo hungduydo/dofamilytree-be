@@ -6,12 +6,16 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes, ApiQuery,
-  ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse, ApiForbiddenResponse,
+  ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse, ApiForbiddenResponse, ApiNotFoundResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Public } from '../auth/public.decorator';
+import { CallerMetaGuard } from '../auth/caller-meta.guard';
+import { CurrentMeta } from '../auth/caller-meta.decorator';
+import { CallerMeta } from '../auth/user-meta';
+import { MoveMediaDto, MoveMediaResponseDto } from './dto/move-media.dto';
 import { ParseOptionalIntPipe } from '../utils/parse-optional-int.pipe';
 import { MediaService } from './media.service';
 import {
@@ -119,6 +123,23 @@ export class MediaController {
       profile_member_id: req.user.profileMemberId,
       display_name: req.user.displayName,
     });
+  }
+
+  @Post('move')
+  @Roles('member')
+  @UseGuards(CallerMetaGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Chuyển media đã upload vào một album (album_id: null = gỡ khỏi album)',
+    description:
+      'editor/admin chuyển được mọi media; member chỉ media do chính mình upload — media của người khác ' +
+      'nằm trong `skipped` (not_owner), ID không tồn tại ⇒ `skipped` (not_found), phần còn lại vẫn được chuyển. ' +
+      'Album đích không tồn tại ⇒ 404 "Không tìm thấy album." và không chuyển gì.',
+  })
+  @ApiOkResponse({ type: MoveMediaResponseDto })
+  @ApiNotFoundResponse({ description: 'Không tìm thấy album.' })
+  moveMedia(@Body() body: MoveMediaDto, @Request() req: any, @CurrentMeta() caller: CallerMeta) {
+    return this.mediaService.moveMedia(req.user.id, caller.roles, body);
   }
 
   @Post(':id/complete')

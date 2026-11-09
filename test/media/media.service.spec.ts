@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   NotFoundException, BadRequestException,
@@ -32,6 +33,7 @@ const mockPrisma = {
   },
   mediaAlbum: {
     findMany: jest.fn(),
+    findUnique: jest.fn(),
     create: jest.fn(),
     delete: jest.fn(),
   },
@@ -614,6 +616,96 @@ describe('MediaService', () => {
       expect(mockTasksService.handleDriveImport).toHaveBeenCalledWith(
         expect.objectContaining({ mediaId: 'media-1', driveFileId: ID_A }),
       );
+    });
+  });
+  describe('moveMedia', () => {
+    const ALBUM = '11111111-1111-4111-8111-111111111111';
+    const MINE = '22222222-2222-4222-8222-222222222222';
+    const THEIRS = '33333333-3333-4333-8333-333333333333';
+    const GHOST = '44444444-4444-4444-8444-444444444444';
+
+    beforeEach(() => {
+      mockPrisma.mediaAlbum.findUnique.mockResolvedValue({ id: ALBUM });
+      mockPrisma.media.findMany.mockResolvedValue([
+        { id: MINE, uploader_id: 'user-1' },
+        { id: THEIRS, uploader_id: 'user-2' },
+      ]);
+      mockPrisma.media.updateMany.mockResolvedValue({ count: 0 });
+      mockRedis.del.mockResolvedValue(1);
+    });
+
+    it('editor chuyển được media của bất kỳ ai', async () => {
+      const res = await service.moveMedia('user-9', ['editor'], { media_ids: [MINE, THEIRS], album_id: ALBUM });
+
+      expect(res).toEqual({ album_id: ALBUM, moved: [MINE, THEIRS], skipped: [] });
+      expect(mockPrisma.media.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [MINE, THEIRS] } }, data: { album_id: ALBUM },
+      });
+      expect(mockRedis.del).toHaveBeenCalledWith('media:stats', 'media:albums');
+    });
+
+    it('admin cũng chuyển được mọi media', async () => {
+      const res = await service.moveMedia('user-9', ['admin'], { media_ids: [THEIRS], album_id: ALBUM });
+      expect(res.moved).toEqual([THEIRS]);
+    });
+
+    it('member chuyển media của mình, media người khác ⇒ not_owner', async () => {
+      const res = await service.moveMedia('user-1', ['member'], { media_ids: [MINE, THEIRS], album_id: ALBUM });
+
+      expect(res).toEqual({
+        album_id: ALBUM, moved: [MINE], skipped: [{ media_id: THEIRS, reason: 'not_owner' }],
+      });
+      expect(mockPrisma.media.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [MINE] } }, data: { album_id: ALBUM },
+      });
+    });
+
+    it('không được phép gì ⇒ 200 với mọi thứ trong skipped, không ghi, không xoá cache', async () => {
+      const res = await service.moveMedia('user-1', ['member'], { media_ids: [THEIRS], album_id: ALBUM });
+      expect(res).toEqual({ album_id: ALBUM, moved: [], skipped: [{ media_id: THEIRS, reason: 'not_owner' }] });
+      expect(mockPrisma.media.updateMany).not.toHaveBeenCalled();
+      expect(mockRedis.del).not.toHaveBeenCalled();
+    });
+
+    it('album_id: null gỡ khỏi album, không tra album', async () => {
+      const res = await service.moveMedia('user-1', ['member'], { media_ids: [MINE], album_id: null });
+      expect(res).toEqual({ album_id: null, moved: [MINE], skipped: [] });
+      expect(mockPrisma.mediaAlbum.findUnique).not.toHaveBeenCalled();
+      expect(mockPrisma.media.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [MINE] } }, data: { album_id: null },
+      });
+    });
+
+    it('album không tồn tại ⇒ 404 "Không tìm thấy album." và không chuyển gì', async () => {
+      mockPrisma.mediaAlbum.findUnique.mockResolvedValue(null);
+      const err = await service
+        .moveMedia('user-9', ['admin'], { media_ids: [MINE], album_id: ALBUM })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(NotFoundException);
+      expect(err.message).toBe('Không tìm thấy album.');
+      expect(mockPrisma.media.findMany).not.toHaveBeenCalled();
+      expect(mockPrisma.media.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('album bị xoá ngay trước khi ghi (P2003) ⇒ vẫn là 404', async () => {
+      mockPrisma.media.updateMany.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('fk', { code: 'P2003', clientVersion: 'test' }),
+      );
+      await expect(
+        service.moveMedia('user-9', ['admin'], { media_ids: [MINE], album_id: ALBUM }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('ID không tồn tại ⇒ not_found, phần còn lại vẫn chuyển; trùng lặp bị gộp', async () => {
+      const res = await service.moveMedia('user-1', ['member'], {
+        media_ids: [MINE, GHOST, MINE], album_id: ALBUM,
+      });
+      expect(res).toEqual({
+        album_id: ALBUM, moved: [MINE], skipped: [{ media_id: GHOST, reason: 'not_found' }],
+      });
+      expect(mockPrisma.media.findMany).toHaveBeenCalledWith({
+        where: { id: { in: [MINE, GHOST] } }, select: { id: true, uploader_id: true },
+      });
     });
   });
 });

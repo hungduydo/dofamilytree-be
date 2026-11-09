@@ -1655,6 +1655,32 @@ paths:
       security:
         - 
           bearer: []
+  /v2/media/move:
+    post:
+      operationId: MediaController_moveMedia
+      summary: "Chuyển media đã upload vào một album (album_id: null = gỡ khỏi album)"
+      description: editor/admin chuyển được mọi media; member chỉ media do chính mình upload — media của người khác nằm trong `skipped` (not_owner), ID không tồn tại ⇒ `skipped` (not_found), phần còn lại vẫn được chuyển. Album đích không tồn tại ⇒ 404 "Không tìm thấy album." và không chuyển gì.
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveMediaDto"
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoveMediaResponseDto"
+        404:
+          description: Không tìm thấy album.
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
   /v2/media/{id}/complete:
     post:
       operationId: MediaController_completeUpload
@@ -5111,6 +5137,57 @@ components:
         - batch_id
         - accepted
         - rejected
+    MoveMediaDto:
+      type: object
+      properties:
+        media_ids:
+          description: ID media cần chuyển (1–200). Trùng lặp bị gộp.
+          type: array
+          items:
+            type: string
+            format: uuid
+        album_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Album đích. `null` = gỡ khỏi mọi album. Bắt buộc có mặt (không được bỏ trống).
+      required:
+        - media_ids
+        - album_id
+    MoveMediaSkippedDto:
+      type: object
+      properties:
+        media_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          enum:
+            - not_found
+            - not_owner
+      required:
+        - media_id
+        - reason
+    MoveMediaResponseDto:
+      type: object
+      properties:
+        album_id:
+          type: string
+          format: uuid
+          nullable: true
+        moved:
+          description: Media đã nằm trong album đích sau lời gọi (kể cả media vốn đã ở đó).
+          type: array
+          items:
+            type: string
+        skipped:
+          type: array
+          items:
+            $ref: "#/components/schemas/MoveMediaSkippedDto"
+      required:
+        - album_id
+        - moved
+        - skipped
     MediaProgressResponseDto:
       type: object
       properties:
