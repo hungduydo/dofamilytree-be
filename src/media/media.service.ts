@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { Redis as UpstashRedis } from '@upstash/redis';
 import { PrismaService } from '../prisma/prisma.service';
+import { hasAtLeast } from '../auth/roles.constants';
 import { TasksService, MediaUploadProgress, DriveImportJob } from '../queue/tasks.service';
 import { QStashService } from '../queue/qstash.service';
 import { QUEUE_DRIVE_IMPORT, qstashCallbacksReachable } from '../queue/queue.constants';
@@ -868,6 +869,66 @@ export class MediaService {
   // ─── Albums ─────────────────────────────────────────────────────────────────
 
   /** Albums với số media, cho lưới "Album nổi bật". Cache (đổi hiếm). */
+  /**
+   * Chuyển media đã upload vào một album (hoặc ra khỏi mọi album với `null`).
+   *
+   * Phân quyền ở mức RECORD (route chỉ chặn `member` trở lên): editor/admin
+   * chuyển được mọi media; member chỉ media do chính mình upload — phần còn lại
+   * trả về `skipped` với `not_owner`, không ném. ID không tồn tại ⇒ `not_found`.
+   * Album đích không tồn tại ⇒ 404 và không chuyển gì.
+   */
+  async moveMedia(
+    callerId: string,
+    callerRoles: string[] | null | undefined,
+    dto: { media_ids: string[]; album_id: string | null },
+  ): Promise<{
+    album_id: string | null;
+    moved: string[];
+    skipped: Array<{ media_id: string; reason: 'not_found' | 'not_owner' }>;
+  }> {
+    const albumId = dto.album_id;
+    const ids = [...new Set(dto.media_ids)];
+
+    if (albumId !== null) {
+      const album = await this.prisma.mediaAlbum.findUnique({ where: { id: albumId }, select: { id: true } });
+      if (!album) throw new NotFoundException('Không tìm thấy album.');
+    }
+
+    const found = await this.prisma.media.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, uploader_id: true },
+    });
+    const uploaderOf = new Map(found.map((m) => [m.id, m.uploader_id]));
+    const canMoveAny = hasAtLeast(callerRoles, 'editor');
+
+    const moved: string[] = [];
+    const skipped: Array<{ media_id: string; reason: 'not_found' | 'not_owner' }> = [];
+    for (const id of ids) {
+      if (!uploaderOf.has(id)) skipped.push({ media_id: id, reason: 'not_found' });
+      else if (!canMoveAny && uploaderOf.get(id) !== callerId) skipped.push({ media_id: id, reason: 'not_owner' });
+      else moved.push(id);
+    }
+
+    if (moved.length > 0) {
+      try {
+        await this.prisma.media.updateMany({ where: { id: { in: moved } }, data: { album_id: albumId } });
+      } catch (error) {
+        // Album bị xoá giữa lúc kiểm tra và lúc ghi ⇒ vỡ FK. Cùng nghĩa với 404 ở trên.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+          throw new NotFoundException('Không tìm thấy album.');
+        }
+        throw error;
+      }
+      // Số đếm album (`/media/albums`) đổi ở cả album nguồn lẫn album đích.
+      await this.invalidateMediaCaches();
+    }
+
+    this.logger.log(
+      `User ${callerId} moved ${moved.length} media to album ${albumId ?? '(none)'}; skipped ${skipped.length}`,
+    );
+    return { album_id: albumId, moved, skipped };
+  }
+
   async getAlbums(limit?: number) {
     // Chỉ cache danh sách đầy đủ (limit không truyền); biến thể có limit lấy từ
     // đó rồi cắt, để một khoá cache phục vụ cả hai.
