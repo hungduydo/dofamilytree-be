@@ -19,7 +19,7 @@ function setup() {
   const mail = { isConfigured: jest.fn().mockReturnValue(true), send: jest.fn().mockResolvedValue(undefined) };
   const emails: Record<string, string | null> = { u1: 'chau@x.vn', a1: 'truongtoc@x.vn', a2: 'thuky@x.vn' };
   const supabaseUsers = { getEmail: jest.fn(async (id: string) => emails[id] ?? null) };
-  const service = new TasksService(prisma as any, {} as any, {} as any, {} as any, mail as any, supabaseUsers as any);
+  const service = new TasksService(prisma as any, {} as any, {} as any, {} as any, mail as any, supabaseUsers as any, {} as any);
   return { service, prisma, mail, emails };
 }
 

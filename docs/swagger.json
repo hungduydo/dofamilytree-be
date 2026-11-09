@@ -2417,7 +2417,7 @@
     "/v2/media/upload": {
       "post": {
         "operationId": "MediaController_uploadMedia",
-        "summary": "Upload media (ảnh → thu về ≤3000px + nén bằng sharp, thay bản gốc; video/audio/tài liệu → upload thẳng)",
+        "summary": "Upload media (ảnh → thu về ≤3840px (4K) + chuyển WebP, thay bản gốc; video/audio/tài liệu → upload thẳng)",
         "description": "File đi QUA serverless function nên chịu trần request body của platform (Vercel: 4.5MB nếu chưa bật Fluid Compute, 100MB nếu đã bật). Với file lớn hơn, dùng POST /v2/media/upload-url.",
         "parameters": [],
         "requestBody": {
@@ -2494,7 +2494,7 @@
       "post": {
         "operationId": "MediaController_importFromGoogleDrive",
         "summary": "Import nhiều file từ Google Drive — server kéo thẳng từ Drive, người dùng không phải tải về máy",
-        "description": "FE chọn file bằng Google Picker (scope drive.file) rồi gửi file_ids + access_token. Backend kiểm tra metadata, tạo record pending cho file hợp lệ và xếp mỗi file một job nền. Theo dõi từng file qua GET /v2/media/:id/progress. File không hợp lệ nằm trong `rejected` kèm lý do. access_token sai/hết hạn ⇒ 400. Chi tiết: docs/GOOGLE_DRIVE_IMPORT.md.",
+        "description": "Hai chế độ: (1) Google Picker (scope drive.file) — gửi file_ids + access_token; (2) link chia sẻ — gửi file_ids (+ resource_keys nếu có), KHÔNG access_token: backend đọc bằng key server GOOGLE_DRIVE_API_KEY, file phải chia sẻ \"Bất kỳ ai có đường liên kết\"; thiếu key ⇒ 503. Backend kiểm tra metadata, tạo record pending cho file hợp lệ và xếp mỗi file một job nền. Theo dõi từng file qua GET /v2/media/:id/progress. File không hợp lệ nằm trong `rejected` kèm lý do. access_token sai/hết hạn ⇒ 400. Ảnh được lưu dưới dạng WebP, cạnh dài ≤ 3840px. Chi tiết: docs/GOOGLE_DRIVE_IMPORT.md.",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -5071,7 +5071,7 @@
   },
   "info": {
     "title": "Family Tree API v2",
-    "description": "## Vietnamese Family Tree Management API\n\n**Base URL:** `/v2` (local: `http://localhost:3002/v2`)\n\n**Authentication:** Bearer JWT (POST /v2/auth/login). Phân quyền theo route: docs/USERS_AND_ROLES.md\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ BIOLOGICAL/ADOPTED/SPOUSE + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày kỵ lặp lại theo âm/dương lịch (hôm nay, sắp tới, theo tháng)\n- **Events** — Sự kiện dòng họ\n- **Media** — Thư viện media (ảnh thu về ≤3000px + nén bằng sharp) → Cloudflare R2; phân trang/lọc/tìm kiếm + album\n- **Graves / Grave areas** — Mộ phần với tọa độ GPS, khu an táng\n- **Audit** — Lịch sử thay đổi member/quan hệ + thùng rác 30 ngày (admin)\n- **Notifications** — Tuỳ chọn email nhắc ngày giỗ, link tắt nhắc\n- **Export** — GEDCOM 5.5.1 + sách gia phả HTML để in\n\n### Queue Jobs (QStash)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → storage → cập nhật avatar_url |\n| media-process | Hoàn tất upload | Ảnh: thu về ≤3000px + nén; sinh metadata |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| generation-recompute | Đổi quan hệ cha/con | Tính lại đời cho toàn cây |\n| account-pending | Đăng ký mới | Email báo admin |\n| anniversary-reminder | Lịch 07:00 VN hằng ngày | Email nhắc giỗ còn 7 / 1 ngày |\n",
+    "description": "## Vietnamese Family Tree Management API\n\n**Base URL:** `/v2` (local: `http://localhost:3002/v2`)\n\n**Authentication:** Bearer JWT (POST /v2/auth/login). Phân quyền theo route: docs/USERS_AND_ROLES.md\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ BIOLOGICAL/ADOPTED/SPOUSE + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày kỵ lặp lại theo âm/dương lịch (hôm nay, sắp tới, theo tháng)\n- **Events** — Sự kiện dòng họ\n- **Media** — Thư viện media (ảnh thu về ≤3840px (4K) + chuyển WebP bằng sharp) → Cloudflare R2; phân trang/lọc/tìm kiếm + album\n- **Graves / Grave areas** — Mộ phần với tọa độ GPS, khu an táng\n- **Audit** — Lịch sử thay đổi member/quan hệ + thùng rác 30 ngày (admin)\n- **Notifications** — Tuỳ chọn email nhắc ngày giỗ, link tắt nhắc\n- **Export** — GEDCOM 5.5.1 + sách gia phả HTML để in\n\n### Queue Jobs (QStash)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → storage → cập nhật avatar_url |\n| media-process | Hoàn tất upload | Ảnh: thu về ≤3840px (4K) + chuyển WebP; sinh metadata |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| generation-recompute | Đổi quan hệ cha/con | Tính lại đời cho toàn cây |\n| account-pending | Đăng ký mới | Email báo admin |\n| anniversary-reminder | Lịch 07:00 VN hằng ngày | Email nhắc giỗ còn 7 / 1 ngày |\n",
     "version": "2.0.0",
     "contact": {
       "name": "Family Tree Team",
@@ -7349,7 +7349,17 @@
         "properties": {
           "access_token": {
             "type": "string",
-            "description": "OAuth access token Google của người dùng (scope drive.file), lấy từ Google Identity Services. Backend chỉ giữ tạm trong Redis tối đa 1 giờ cho đợt import, không lưu refresh token."
+            "description": "OAuth access token Google của người dùng (scope drive.file), lấy từ Google Identity Services. Backend chỉ giữ tạm trong Redis tối đa 1 giờ cho đợt import, không lưu refresh token. Bỏ trống ⇒ chế độ link chia sẻ: file phải được chia sẻ \"Bất kỳ ai có đường liên kết\"."
+          },
+          "resource_keys": {
+            "description": "Chỉ dùng ở chế độ link chia sẻ: resource key của các file cũ, mỗi phần tử dạng \"fileId/resourceKey\" (định dạng header X-Goog-Drive-Resource-Keys). Tối đa 200.",
+            "example": [
+              "1AbCdEfGhIjKlMnOpQrStUvWxYz012345/0-AbCdEfGh"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "file_ids": {
             "description": "ID các file đã chọn trong Google Picker (tối đa 200). Trùng lặp bị gộp.",
@@ -7385,7 +7395,6 @@
           }
         },
         "required": [
-          "access_token",
           "file_ids"
         ]
       },

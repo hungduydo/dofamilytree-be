@@ -12,7 +12,10 @@ import { QStashService } from '../queue/qstash.service';
 import { QUEUE_DRIVE_IMPORT, qstashCallbacksReachable } from '../queue/queue.constants';
 import { logEvent } from '../observability/log-event';
 import { mapWithConcurrency } from '../utils/map-with-concurrency';
-import { getDriveFileMeta, DriveApiError, DriveFileMeta } from './google-drive';
+import { REDIS_DURABLE_CLIENT } from '../redis.provider';
+import {
+  getDriveFileMeta, DriveApiError, DriveFileMeta, DriveAuth, driveServerApiKey, toStoredDriveAuth,
+} from './google-drive';
 import { StorageService } from '../storage/storage.service';
 import { SupabaseUsersService } from '../supabase/supabase-users.service';
 import { runInBackground } from '../utils/run-in-background';
@@ -116,6 +119,7 @@ export class MediaService {
     private readonly supabaseUsers: SupabaseUsersService,
     @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
     private readonly qstash: QStashService,
+    @Inject(REDIS_DURABLE_CLIENT) private readonly durableRedis: UpstashRedis,
   ) {
     this.cache = new SafeCache(this.redis, this.logger, MEDIA_CACHE_TTL_ALBUMS);
     this.warnIfUploadLimitUnreachable();
@@ -362,13 +366,18 @@ export class MediaService {
    * (thư mục, Google Docs, quá lớn, mất quyền) trả về `rejected` ngay thay vì
    * thành record `failed` rác trong DB.
    *
+   * Hai chế độ xác thực Drive: có `access_token` ⇒ Picker (token người dùng);
+   * không có ⇒ link chia sẻ, đọc bằng key server `GOOGLE_DRIVE_API_KEY` (thiếu
+   * ⇒ 503, không bao giờ rơi về cách khác).
+   *
    * Token hỏng ⇒ 400 (KHÔNG 401: FE hiểu 401 là JWT của app hết hạn và đăng
    * xuất người dùng).
    */
   async importFromGoogleDrive(
     uploaderId: string,
     dto: {
-      access_token: string;
+      access_token?: string;
+      resource_keys?: string[];
       file_ids: string[];
       album_id?: string;
       member_id?: string;
@@ -383,15 +392,33 @@ export class MediaService {
     const fileIds = [...new Set(dto.file_ids)];
     const rejected: DriveImportResult['rejected'] = [];
 
+    let auth: DriveAuth;
+    if (dto.access_token) {
+      auth = { kind: 'token', accessToken: dto.access_token };
+    } else {
+      const apiKey = driveServerApiKey();
+      if (!apiKey) {
+        this.logger.error('Import Drive từ link bị gọi nhưng thiếu GOOGLE_DRIVE_API_KEY');
+        throw new ServiceUnavailableException('Import từ link Google Drive chưa được cấu hình.');
+      }
+      auth = { kind: 'apiKey', apiKey, resourceKeys: [...new Set(dto.resource_keys ?? [])] };
+    }
+    const notFoundMessage =
+      auth.kind === 'token'
+        ? 'Không tìm thấy file hoặc không có quyền truy cập.'
+        : "File chưa được chia sẻ công khai — hãy đặt quyền 'Bất kỳ ai có đường liên kết'.";
+
     const metas = await mapWithConcurrency(fileIds, DRIVE_IMPORT_CONCURRENCY, async (id) => {
       try {
-        return { id, meta: await getDriveFileMeta(dto.access_token, id) };
+        return { id, meta: await getDriveFileMeta(auth, id) };
       } catch (error) {
         return { id, error };
       }
     });
 
-    if (metas.some((m) => m.error instanceof DriveApiError && m.error.isAuthError)) {
+    // Chỉ token người dùng mới "hết hạn" được. Ở chế độ link, 401 nghĩa là key
+    // server hỏng — lỗi cấu hình, không phải lỗi của người dùng.
+    if (auth.kind === 'token' && metas.some((m) => m.error instanceof DriveApiError && m.error.isAuthError)) {
       throw new BadRequestException(
         'Access token Google không hợp lệ hoặc đã hết hạn — hãy đăng nhập Google và chọn ảnh lại.',
       );
@@ -404,7 +431,7 @@ export class MediaService {
         rejected.push(
           retryable
             ? { drive_file_id: id, reason: 'drive_unavailable', message: 'Google Drive tạm thời lỗi — hãy thử lại file này.' }
-            : { drive_file_id: id, reason: 'not_found', message: 'Không tìm thấy file hoặc không có quyền truy cập.' },
+            : { drive_file_id: id, reason: 'not_found', message: notFoundMessage },
         );
         continue;
       }
@@ -418,12 +445,13 @@ export class MediaService {
 
     if (candidates.length === 0) return { batch_id: batchId, accepted: [], rejected };
 
-    // Token PHẢI nằm trong Redis trước khi job nào chạy — lỗi ở đây là lỗi thật
-    // (không phải cache best-effort), nên không đi qua SafeCache.
+    // Auth PHẢI nằm trong Redis trước khi job nào chạy — lỗi ở đây là lỗi thật
+    // (không phải cache best-effort), nên không đi qua SafeCache. Chế độ link
+    // chỉ lưu resource key — API key không bao giờ rời env.
     try {
-      await this.redis.set(
+      await this.durableRedis.set(
         mediaDriveTokenKey(batchId),
-        { access_token: dto.access_token },
+        toStoredDriveAuth(auth),
         { ex: MEDIA_DRIVE_TOKEN_TTL },
       );
     } catch (error) {
@@ -513,6 +541,7 @@ export class MediaService {
       'media.accepted': accepted.length,
       'media.rejected': rejected.length,
       'queue.mode': mode,
+      'media.drive_auth': auth.kind,
     });
 
     return { batch_id: batchId, accepted, rejected };

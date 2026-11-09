@@ -3,14 +3,74 @@
  * cần: đọc metadata và tải nội dung file. Dùng `fetch` toàn cục (không kéo
  * `googleapis` ~80MB vào bundle function).
  *
- * Access token do FE lấy qua Google Picker (scope `drive.file`) và gửi lên;
- * backend KHÔNG giữ refresh token — token sống ~1 giờ, đủ cho một đợt import.
+ * Hai cách xác thực (`DriveAuth`):
+ * - `token`: access token do FE lấy qua Google Picker (scope `drive.file`);
+ *   backend KHÔNG giữ refresh token — token sống ~1 giờ, đủ cho một đợt import.
+ * - `apiKey`: import từ link chia sẻ ("Bất kỳ ai có đường liên kết"). Dùng key
+ *   server `GOOGLE_DRIVE_API_KEY` (khác key của FE — key FE bị khoá theo
+ *   referrer nên mọi lời gọi từ server đều 403) kèm header
+ *   `X-Goog-Drive-Resource-Keys` cho file cũ được bảo vệ bằng resource key.
  */
 
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 
 /** ID file Drive: chữ, số, `-`, `_`. Chặn sớm để không nội suy chuỗi lạ vào URL. */
 export const DRIVE_FILE_ID_PATTERN = /^[A-Za-z0-9_-]{10,200}$/;
+
+/**
+ * Dạng lưu trong Redis (`mediaDriveTokenKey`). Chế độ link chỉ giữ resource
+ * key — API key đọc lại từ env lúc job chạy, không bao giờ nằm trong Redis.
+ */
+export type StoredDriveAuth =
+  | { kind: 'token'; accessToken: string }
+  | { kind: 'apiKey'; resourceKeys: string[] };
+
+/** Key server cho chế độ link; `undefined` khi chưa cấu hình. */
+export function driveServerApiKey(): string | undefined {
+  return process.env.GOOGLE_DRIVE_API_KEY?.trim() || undefined;
+}
+
+export function toStoredDriveAuth(auth: DriveAuth): StoredDriveAuth {
+  return auth.kind === 'token'
+    ? { kind: 'token', accessToken: auth.accessToken }
+    : { kind: 'apiKey', resourceKeys: auth.resourceKeys };
+}
+
+/**
+ * Dựng lại `DriveAuth` từ Redis. Chấp nhận cả dạng cũ `{ access_token }` (đợt
+ * import xếp hàng trước khi bản này deploy).
+ * - `expired`: không có gì trong Redis (TTL hết) hoặc dữ liệu hỏng.
+ * - `not_configured`: batch link nhưng env không còn `GOOGLE_DRIVE_API_KEY`.
+ */
+export function fromStoredDriveAuth(
+  stored: unknown,
+): { auth: DriveAuth } | { error: 'expired' | 'not_configured' } {
+  if (!stored || typeof stored !== 'object') return { error: 'expired' };
+  const s = stored as Record<string, unknown>;
+  if (s.kind === 'token' && typeof s.accessToken === 'string' && s.accessToken) {
+    return { auth: { kind: 'token', accessToken: s.accessToken } };
+  }
+  if (typeof s.access_token === 'string' && s.access_token) {
+    return { auth: { kind: 'token', accessToken: s.access_token } };
+  }
+  if (s.kind === 'apiKey') {
+    const apiKey = driveServerApiKey();
+    if (!apiKey) return { error: 'not_configured' };
+    const resourceKeys = Array.isArray(s.resourceKeys)
+      ? s.resourceKeys.filter((k): k is string => typeof k === 'string')
+      : [];
+    return { auth: { kind: 'apiKey', apiKey, resourceKeys } };
+  }
+  return { error: 'expired' };
+}
+
+/** Một phần tử `fileId/resourceKey` — đúng định dạng header `X-Goog-Drive-Resource-Keys`. */
+export const DRIVE_RESOURCE_KEY_PATTERN = /^[A-Za-z0-9_-]{10,200}\/[A-Za-z0-9_-]{1,200}$/;
+
+/** Cách xác thực một lời gọi Drive — xem đầu file. */
+export type DriveAuth =
+  | { kind: 'token'; accessToken: string }
+  | { kind: 'apiKey'; apiKey: string; resourceKeys: string[] };
 
 export interface DriveFileMeta {
   id: string;
@@ -69,9 +129,19 @@ async function toDriveError(res: Response): Promise<DriveApiError> {
 }
 
 /** fetch hỏng ở tầng mạng (DNS, reset…) ⇒ luôn thử lại được. */
-async function driveFetch(url: string, accessToken: string): Promise<Response> {
+async function driveFetch(fileId: string, params: Record<string, string>, auth: DriveAuth): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (auth.kind === 'token') {
+    headers.Authorization = `Bearer ${auth.accessToken}`;
+  } else {
+    params = { ...params, key: auth.apiKey };
+    // Chỉ gửi resource key của chính file này — header gọn, không lộ link file khác.
+    const keys = auth.resourceKeys.filter((rk) => rk.startsWith(`${fileId}/`));
+    if (keys.length > 0) headers['X-Goog-Drive-Resource-Keys'] = keys.join(',');
+  }
+  const url = fileUrl(fileId, params);
   try {
-    return await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    return await fetch(url, { headers });
   } catch (err) {
     throw new DriveApiError(`Không kết nối được Google Drive: ${(err as Error).message}`, 0, true);
   }
@@ -86,8 +156,8 @@ function fileUrl(fileId: string, params: Record<string, string>): string {
   return `${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}?${qs}`;
 }
 
-export async function getDriveFileMeta(accessToken: string, fileId: string): Promise<DriveFileMeta> {
-  const res = await driveFetch(fileUrl(fileId, { fields: 'id,name,mimeType,size,trashed' }), accessToken);
+export async function getDriveFileMeta(auth: DriveAuth, fileId: string): Promise<DriveFileMeta> {
+  const res = await driveFetch(fileId, { fields: 'id,name,mimeType,size,trashed' }, auth);
   if (!res.ok) throw await toDriveError(res);
   const body = (await res.json()) as {
     id: string;
@@ -110,11 +180,11 @@ export async function getDriveFileMeta(accessToken: string, fileId: string): Pro
  * tin `size` trong metadata (file có thể bị thay giữa lúc chọn và lúc tải).
  */
 export async function downloadDriveFile(
-  accessToken: string,
+  auth: DriveAuth,
   fileId: string,
   maxBytes: number,
 ): Promise<Buffer> {
-  const res = await driveFetch(fileUrl(fileId, { alt: 'media' }), accessToken);
+  const res = await driveFetch(fileId, { alt: 'media' }, auth);
   if (!res.ok) throw await toDriveError(res);
 
   const declared = Number(res.headers.get('content-length'));

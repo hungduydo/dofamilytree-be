@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { REDIS_DURABLE_CLIENT } from '../../src/redis.provider';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   NotFoundException, BadRequestException,
@@ -59,6 +60,8 @@ const mockStorage = {
 };
 // SafeCache best-effort — trả null (miss) để mọi read rơi về DB.
 const mockRedis = { get: jest.fn().mockResolvedValue(null), set: jest.fn(), del: jest.fn() };
+/** Client riêng cho dữ liệu bắt buộc (auth import Drive) — timeout rộng, có retry. */
+const mockDurableRedis = { get: jest.fn(), set: jest.fn() };
 
 // Mock Vercel Blob
 jest.mock('@vercel/blob', () => ({
@@ -77,6 +80,7 @@ describe('MediaService', () => {
         { provide: StorageService, useValue: mockStorage },
         { provide: SupabaseUsersService, useValue: mockSupabaseUsers },
         { provide: 'REDIS_CLIENT', useValue: mockRedis },
+        { provide: REDIS_DURABLE_CLIENT, useValue: mockDurableRedis },
         { provide: QStashService, useValue: mockQStash },
       ],
     }).compile();
@@ -512,7 +516,7 @@ describe('MediaService', () => {
       getMeta = jest.spyOn(drive, 'getDriveFileMeta').mockImplementation(async (_t, id) => meta(id));
       let n = 0;
       mockPrisma.media.create.mockImplementation(async () => ({ id: `media-${++n}` }));
-      mockRedis.set.mockResolvedValue('OK');
+      mockDurableRedis.set.mockResolvedValue('OK');
       mockQStash.publish.mockResolvedValue(undefined);
     });
     afterEach(() => {
@@ -533,11 +537,12 @@ describe('MediaService', () => {
           }),
         }),
       );
-      expect(mockRedis.set).toHaveBeenCalledWith(
+      expect(mockDurableRedis.set).toHaveBeenCalledWith(
         `media:drive-import:token:${res.batch_id}`,
-        { access_token: 'tok' },
+        { kind: 'token', accessToken: 'tok' },
         { ex: 3600 },
       );
+      expect(getMeta).toHaveBeenCalledWith({ kind: 'token', accessToken: 'tok' }, ID_A);
       expect(mockQStash.publish).toHaveBeenCalledTimes(2);
       const [task, payload, opts] = mockQStash.publish.mock.calls[0];
       expect(task).toBe('drive-import');
@@ -553,7 +558,7 @@ describe('MediaService', () => {
       getMeta.mockRejectedValue(new DriveApiError('x', 401, false));
       await expect(service.importFromGoogleDrive('user-1', dto([ID_A]))).rejects.toThrow(BadRequestException);
       expect(mockPrisma.media.create).not.toHaveBeenCalled();
-      expect(mockRedis.set).not.toHaveBeenCalled();
+      expect(mockDurableRedis.set).not.toHaveBeenCalled();
     });
 
     it('loại file không hợp lệ trước khi tạo record', async () => {
@@ -574,7 +579,7 @@ describe('MediaService', () => {
         'unsupported_type', 'unsupported_type', 'too_large', 'trashed', 'not_found',
       ]);
       expect(mockPrisma.media.create).not.toHaveBeenCalled();
-      expect(mockRedis.set).not.toHaveBeenCalled();
+      expect(mockDurableRedis.set).not.toHaveBeenCalled();
     });
 
     it('lỗi tạm khi đọc metadata ⇒ drive_unavailable, file khác vẫn đi tiếp', async () => {
@@ -601,7 +606,7 @@ describe('MediaService', () => {
     });
 
     it('Redis không lưu được token ⇒ 503, không tạo record', async () => {
-      mockRedis.set.mockRejectedValue(new Error('redis down'));
+      mockDurableRedis.set.mockRejectedValue(new Error('redis down'));
       await expect(service.importFromGoogleDrive('user-1', dto([ID_A]))).rejects.toThrow(ServiceUnavailableException);
       expect(mockPrisma.media.create).not.toHaveBeenCalled();
     });
@@ -616,6 +621,55 @@ describe('MediaService', () => {
       expect(mockTasksService.handleDriveImport).toHaveBeenCalledWith(
         expect.objectContaining({ mediaId: 'media-1', driveFileId: ID_A }),
       );
+    });
+    describe('chế độ link chia sẻ (không access_token)', () => {
+      const linkDto = (file_ids: string[], resource_keys?: string[]) => ({
+        file_ids, resource_keys, album_id: 'album-1', display_name: 'Chú Ba',
+      });
+      beforeEach(() => {
+        process.env.GOOGLE_DRIVE_API_KEY = 'server-key';
+      });
+
+      it('đọc metadata bằng key server, Redis chỉ giữ resource key — không bao giờ giữ key', async () => {
+        const res = await service.importFromGoogleDrive('user-1', linkDto([ID_A, ID_B], [`${ID_A}/rk`, `${ID_A}/rk`]));
+
+        expect(getMeta).toHaveBeenCalledWith(
+          { kind: 'apiKey', apiKey: 'server-key', resourceKeys: [`${ID_A}/rk`] }, ID_A,
+        );
+        expect(res.accepted).toHaveLength(2);
+        expect(mockDurableRedis.set).toHaveBeenCalledWith(
+          `media:drive-import:token:${res.batch_id}`,
+          { kind: 'apiKey', resourceKeys: [`${ID_A}/rk`] },
+          { ex: 3600 },
+        );
+        expect(JSON.stringify(mockDurableRedis.set.mock.calls)).not.toContain('server-key');
+        expect(JSON.stringify(mockQStash.publish.mock.calls)).not.toContain('server-key');
+      });
+
+      it('thiếu GOOGLE_DRIVE_API_KEY ⇒ 503 và không gọi Drive', async () => {
+        delete process.env.GOOGLE_DRIVE_API_KEY;
+        const err = await service.importFromGoogleDrive('user-1', linkDto([ID_A])).catch((e) => e);
+        expect(err).toBeInstanceOf(ServiceUnavailableException);
+        expect(err.message).toBe('Import từ link Google Drive chưa được cấu hình.');
+        expect(getMeta).not.toHaveBeenCalled();
+        expect(mockPrisma.media.create).not.toHaveBeenCalled();
+      });
+
+      it('404 ⇒ not_found với hướng dẫn chia sẻ link', async () => {
+        getMeta.mockRejectedValue(new DriveApiError('x', 404, false));
+        const res = await service.importFromGoogleDrive('user-1', linkDto([ID_A]));
+        expect(res.rejected).toEqual([{
+          drive_file_id: ID_A,
+          reason: 'not_found',
+          message: "File chưa được chia sẻ công khai — hãy đặt quyền 'Bất kỳ ai có đường liên kết'.",
+        }]);
+      });
+
+      it('401 ở chế độ link KHÔNG ra 400 "token không hợp lệ"', async () => {
+        getMeta.mockRejectedValue(new DriveApiError('x', 401, false));
+        const res = await service.importFromGoogleDrive('user-1', linkDto([ID_A]));
+        expect(res.rejected).toEqual([expect.objectContaining({ reason: 'not_found' })]);
+      });
     });
   });
   describe('moveMedia', () => {
