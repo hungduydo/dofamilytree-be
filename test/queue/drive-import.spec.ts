@@ -2,11 +2,10 @@ import { TasksService, DriveImportJob } from '../../src/queue/tasks.service';
 import { DriveApiError, DriveFileTooLargeError } from '../../src/media/google-drive';
 import * as drive from '../../src/media/google-drive';
 
-jest.mock('sharp', () =>
-  jest.fn(() => ({
-    rotate: () => ({ jpeg: () => ({ toBuffer: async () => Buffer.from('compressed') }) }),
-  })),
-);
+// Ảnh thật đi qua sharp được test riêng ở test/media/image-optimize.spec.ts.
+jest.mock('../../src/media/image-optimize', () => ({
+  optimizeImage: jest.fn(async () => ({ buffer: Buffer.from('compressed'), optimized: true, width: 3000, height: 2000 })),
+}));
 
 const JOB: DriveImportJob = {
   mediaId: 'm1',

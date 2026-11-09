@@ -2,12 +2,12 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { errorAttributes, logEvent, logEventThrottled } from '../observability/log-event';
 import { PrismaService } from '../prisma/prisma.service';
 import { Redis as UpstashRedis } from '@upstash/redis';
-import sharp from 'sharp';
 import { GenerationService } from '../generation/generation.service';
 import { StorageService } from '../storage/storage.service';
 import {
   mediaProgressKey, MEDIA_PROGRESS_TTL, MEDIA_CACHE_KEYS, mediaDriveTokenKey,
 } from '../media/media.cache-keys';
+import { optimizeImage } from '../media/image-optimize';
 import { storageKeyFor, MAX_DRIVE_IMPORT_BYTES, formatBytes } from '../media/media.constants';
 import { downloadDriveFile, DriveApiError, DriveFileTooLargeError } from '../media/google-drive';
 import { computeTreeStats } from '../tree/tree-stats';
@@ -171,28 +171,7 @@ export class TasksService {
   }
 
   /**
-   * Nén ẢNH lossless (giữ nguyên kích thước & định dạng, không giảm chất lượng
-   * nhìn thấy) bằng sharp. `.rotate()` áp EXIF orientation TRƯỚC khi sharp strip
-   * metadata (mặc định) — nếu không ảnh chụp dọc sẽ bị xoay. Định dạng không nén
-   * được (gif…) trả nguyên buffer.
-   */
-  private async compressImageLossless(buffer: Buffer, mimetype: string): Promise<Buffer> {
-    const img = sharp(buffer).rotate();
-    switch (mimetype) {
-      case 'image/jpeg':
-        // mozjpeg tối ưu bảng Huffman; quality 100 ≈ không mất chất lượng nhìn thấy.
-        return img.jpeg({ mozjpeg: true, quality: 100 }).toBuffer();
-      case 'image/png':
-        return img.png({ compressionLevel: 9, effort: 10 }).toBuffer();
-      case 'image/webp':
-        return img.webp({ lossless: true, effort: 6 }).toBuffer();
-      default:
-        return buffer;
-    }
-  }
-
-  /**
-   * Xử lý mọi loại media off-request: ẢNH → nén lossless rồi lên Blob; video /
+   * Xử lý mọi loại media off-request: ẢNH → thu nhỏ + nén rồi lên storage; video /
    * audio / tài liệu → upload thẳng. Cập nhật record sang `ready` (kèm size mới),
    * hoặc `failed` khi lỗi để record không kẹt vĩnh viễn ở `pending`.
    */
@@ -218,9 +197,9 @@ export class TasksService {
     const startedAt = Date.now();
 
     try {
-      const outBuffer = mimetype.startsWith('image/')
-        ? await this.compressImageLossless(input, mimetype)
-        : input;
+      // Ảnh: thu về ≤ MAX_IMAGE_DIMENSION px và nén lossy, THAY bản gốc.
+      const image = mimetype.startsWith('image/') ? await optimizeImage(input, mimetype) : null;
+      const outBuffer = image?.buffer ?? input;
 
       await this.setMediaProgress(mediaId, { status: 'processing', progress: 50 });
 
@@ -247,6 +226,7 @@ export class TasksService {
         'media.mime_type': mimetype,
         'media.input_bytes': input.length,
         'media.output_bytes': outBuffer.length,
+        ...(image?.width ? { 'media.width': image.width, 'media.height': image.height } : {}),
         'media.duration_ms': Date.now() - startedAt,
       });
     } catch (error) {

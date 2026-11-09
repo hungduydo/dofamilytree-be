@@ -82,6 +82,9 @@ export interface GetMediaQuery {
   sortOrder?: SortOrder;
 }
 
+/** Số ảnh xem trước của một album trong `getMediaFeed`. */
+const FEED_ALBUM_PREVIEW = 4;
+
 export type DriveImportRejectReason =
   | 'not_found' | 'unsupported_type' | 'too_large' | 'trashed' | 'drive_unavailable' | 'enqueue_failed';
 
@@ -220,7 +223,7 @@ export class MediaService {
    * 100MB có Fluid) — trần đó nằm NGOÀI tầm kiểm soát của code. Đường này file
    * không chạm function nên không dính trần nào.
    *
-   * Đánh đổi: server không cầm buffer nên KHÔNG nén ảnh lossless như luồng
+   * Đánh đổi: server không cầm buffer nên KHÔNG thu nhỏ / nén ảnh như luồng
    * multipart. Ảnh nhỏ vẫn nên đi `POST /media/upload` để được nén; đường này
    * dành cho audio/video/file lớn vốn dĩ không nén ở server.
    */
@@ -598,17 +601,8 @@ export class MediaService {
     const page = Math.max(query.page ?? 1, 1);
     const skip = (page - 1) * take;
 
-    const where: Prisma.MediaWhereInput = { status: 'ready' };
-    if (query.type && (MEDIA_TYPES as readonly string[]).includes(query.type)) where.type = query.type;
+    const where = this.mediaListWhere(query);
     if (query.album_id) where.album_id = query.album_id;
-    if (query.member_id) where.member_id = query.member_id;
-    if (query.uploader_id) where.uploader_id = query.uploader_id;
-    if (query.event_id) where.event_id = query.event_id;
-    if (query.tag) where.tags = { has: query.tag };
-
-    const createdAt = this.dateRangeWhere(query.from, query.to);
-    if (createdAt) where.created_at = createdAt;
-
     const search = this.titleSearchWhere(query.q);
     if (search) where.OR = search;
 
@@ -629,6 +623,111 @@ export class MediaService {
     ]);
 
     return { data, total, page, pageSize: take };
+  }
+
+  /**
+   * Lưới "Media mới nhất" dạng dòng thời gian: media thuộc một album được GỘP
+   * thành MỘT mục (tên album, số lượng, vài ảnh xem trước), đứng ở vị trí của
+   * ảnh mới nhất trong album. Không gộp thì một đợt tải 160 ảnh đám tang lên
+   * album chiếm trọn các trang đầu và đẩy mọi thứ khác ra sau.
+   *
+   * Media không thuộc album vẫn hiện từng cái. Bộ lọc type/tag/event/thời gian
+   * áp cho cả hai loại (đếm và xem trước của album chỉ tính media khớp lọc).
+   *
+   * Phân trang trên MỤC, không phải trên media. Số album nhỏ (vài chục) nên lấy
+   * hết nhóm bằng groupBy rồi trộn với `skip + take` media lẻ mới nhất — đủ để
+   * cắt đúng trang mà không phải viết SQL thô lặp lại bộ lọc.
+   */
+  async getMediaFeed(query: Omit<GetMediaQuery, 'album_id' | 'q' | 'sortBy' | 'sortOrder'>) {
+    const take = Math.min(Math.max(query.pageSize ?? 12, 1), 100);
+    const page = Math.max(query.page ?? 1, 1);
+    const skip = (page - 1) * take;
+    const where = this.mediaListWhere(query);
+    const looseWhere: Prisma.MediaWhereInput = { ...where, album_id: null };
+
+    const [loose, looseTotal, groups] = await Promise.all([
+      this.prisma.media.findMany({
+        where: looseWhere,
+        take: skip + take,
+        orderBy: [{ created_at: 'desc' }, { id: 'asc' }],
+        select: MEDIA_CARD_SELECT,
+      }),
+      this.prisma.media.count({ where: looseWhere }),
+      this.prisma.media.groupBy({
+        by: ['album_id'],
+        where: { ...where, album_id: { not: null } },
+        _max: { created_at: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    type Slot =
+      | { kind: 'media'; at: Date; media: (typeof loose)[number] }
+      | { kind: 'album'; at: Date; albumId: string; count: number };
+    const slots: Slot[] = [
+      ...loose.map((media): Slot => ({ kind: 'media', at: media.created_at, media })),
+      ...groups.map(
+        (g): Slot => ({ kind: 'album', at: g._max.created_at!, albumId: g.album_id!, count: g._count._all }),
+      ),
+    ];
+    // Mới nhất trước; cùng thời điểm thì album trước (ổn định giữa các trang).
+    slots.sort((a, b) => b.at.getTime() - a.at.getTime() || (a.kind === b.kind ? 0 : a.kind === 'album' ? -1 : 1));
+    const pageSlots = slots.slice(skip, skip + take);
+
+    const albumIds = pageSlots.flatMap((s) => (s.kind === 'album' ? [s.albumId] : []));
+    const [albums, previews] = await Promise.all([
+      this.prisma.mediaAlbum.findMany({
+        where: { id: { in: albumIds } },
+        select: { id: true, name: true, cover_url: true, date: true },
+      }),
+      Promise.all(
+        albumIds.map((id) =>
+          this.prisma.media.findMany({
+            where: { ...where, album_id: id },
+            take: FEED_ALBUM_PREVIEW,
+            orderBy: [{ created_at: 'desc' }, { id: 'asc' }],
+            select: MEDIA_CARD_SELECT,
+          }),
+        ),
+      ),
+    ]);
+    const albumById = new Map(albums.map((a) => [a.id, a]));
+    const previewById = new Map(albumIds.map((id, i) => [id, previews[i]]));
+
+    const data = pageSlots.map((slot) =>
+      slot.kind === 'media'
+        ? { kind: 'media' as const, media: slot.media }
+        : {
+            kind: 'album' as const,
+            album: albumById.get(slot.albumId) ?? { id: slot.albumId, name: '', cover_url: null, date: null },
+            count: slot.count,
+            latest_at: slot.at,
+            preview: previewById.get(slot.albumId) ?? [],
+          },
+    );
+
+    return {
+      data,
+      /** Số MỤC (media lẻ + album) — dùng cho phân trang. */
+      total: slots.length,
+      /** Số MEDIA khớp lọc — dùng cho nhãn "N mục". */
+      media_total: looseTotal + groups.reduce((sum, g) => sum + g._count._all, 0),
+      page,
+      pageSize: take,
+    };
+  }
+
+  /** Bộ lọc chung của `getMedia` và `getMediaFeed`: chỉ `ready` + type/member/uploader/event/tag/thời gian. */
+  private mediaListWhere(query: GetMediaQuery): Prisma.MediaWhereInput {
+    const where: Prisma.MediaWhereInput = { status: 'ready' };
+    if (query.type && (MEDIA_TYPES as readonly string[]).includes(query.type)) where.type = query.type;
+    if (query.member_id) where.member_id = query.member_id;
+    if (query.uploader_id) where.uploader_id = query.uploader_id;
+    if (query.event_id) where.event_id = query.event_id;
+    if (query.tag) where.tags = { has: query.tag };
+    const createdAt = this.dateRangeWhere(query.from, query.to);
+    if (createdAt) where.created_at = createdAt;
+    return where;
   }
 
   private titleSearchWhere(q?: string): Prisma.MediaWhereInput[] | undefined {

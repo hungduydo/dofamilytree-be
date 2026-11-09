@@ -22,6 +22,7 @@ const mockPrisma = {
     updateMany: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
+    groupBy: jest.fn(),
   },
   userMetadata: {
     findUnique: jest.fn(),
@@ -164,6 +165,88 @@ describe('MediaService', () => {
       expect(mockPrisma.media.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: [{ views: 'desc' }, { id: 'asc' }] }),
       );
+    });
+  });
+
+  describe('getMediaFeed', () => {
+    const at = (min: number) => new Date(Date.UTC(2026, 10, 9, 10, min));
+    const loose = (id: string, min: number) => ({ id, album_id: null, created_at: at(min) });
+
+    beforeEach(() => {
+      // Album "đám tang" vừa nhận 160 ảnh (mới nhất 10:50); album cũ 3 ảnh (10:05).
+      mockPrisma.media.groupBy.mockResolvedValue([
+        { album_id: 'funeral', _max: { created_at: at(50) }, _count: { _all: 160 } },
+        { album_id: 'old', _max: { created_at: at(5) }, _count: { _all: 3 } },
+      ]);
+      mockPrisma.mediaAlbum.findMany.mockImplementation(({ where }) =>
+        Promise.resolve(
+          [
+            { id: 'funeral', name: 'Đám tang ông A', cover_url: null, date: null },
+            { id: 'old', name: 'Giỗ tổ', cover_url: null, date: null },
+          ].filter((a) => where.id.in.includes(a.id)),
+        ),
+      );
+    });
+
+    it('collapses an album into one entry placed at its newest photo', async () => {
+      mockPrisma.media.findMany.mockImplementation(({ where }) =>
+        Promise.resolve(
+          where.album_id === null
+            ? [loose('m-new', 55), loose('m-mid', 30), loose('m-old', 1)]
+            : [{ id: `${where.album_id}-p1` }, { id: `${where.album_id}-p2` }],
+        ),
+      );
+      mockPrisma.media.count.mockResolvedValue(3);
+
+      const result = await service.getMediaFeed({ page: 1, pageSize: 12 });
+
+      expect(result.data.map((e: any) => (e.kind === 'album' ? `album:${e.album.id}` : e.media.id))).toEqual([
+        'm-new', 'album:funeral', 'm-mid', 'album:old', 'm-old',
+      ]);
+      expect(result).toMatchObject({ total: 5, media_total: 166, page: 1, pageSize: 12 });
+      expect(result.data[1]).toMatchObject({
+        kind: 'album',
+        album: { name: 'Đám tang ông A' },
+        count: 160,
+        preview: [{ id: 'funeral-p1' }, { id: 'funeral-p2' }],
+      });
+      // Previews only take a handful, never the whole album.
+      expect(mockPrisma.media.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ album_id: 'funeral' }), take: 4 }),
+      );
+    });
+
+    it('paginates over entries, not media', async () => {
+      mockPrisma.media.findMany.mockImplementation(({ where, take }) =>
+        Promise.resolve(
+          where.album_id === null
+            ? [loose('m-new', 55), loose('m-mid', 30), loose('m-old', 1)].slice(0, take)
+            : [],
+        ),
+      );
+      mockPrisma.media.count.mockResolvedValue(3);
+
+      const page2 = await service.getMediaFeed({ page: 2, pageSize: 2 });
+
+      // Page 1 = m-new, funeral → page 2 = m-mid, old.
+      expect(page2.data.map((e: any) => (e.kind === 'album' ? e.album.id : e.media.id))).toEqual(['m-mid', 'old']);
+      expect(mockPrisma.media.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ album_id: null }), take: 4 }),
+      );
+    });
+
+    it('applies the same filters to loose media, album counts and previews', async () => {
+      mockPrisma.media.findMany.mockResolvedValue([]);
+      mockPrisma.media.count.mockResolvedValue(0);
+
+      await service.getMediaFeed({ type: 'image', tag: 'tang lễ' });
+
+      const filters = expect.objectContaining({ status: 'ready', type: 'image', tags: { has: 'tang lễ' } });
+      expect(mockPrisma.media.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({ by: ['album_id'], where: expect.objectContaining({ album_id: { not: null } }) }),
+      );
+      expect(mockPrisma.media.groupBy.mock.calls[0][0].where).toEqual(filters);
+      expect(mockPrisma.media.count.mock.calls[0][0].where).toEqual(filters);
     });
   });
 
