@@ -512,6 +512,16 @@ paths:
               - UNKNOWN
             type: string
         - 
+          name: clan
+          required: false
+          in: query
+          description: Lọc theo dòng họ (nội tộc, theo dòng cha). `in` = cụ tổ và hậu duệ qua người cha; `out` = người ngoài (con dâu, con rể, con của con gái). Bỏ trống = tất cả.
+          schema:
+            enum:
+              - in
+              - out
+            type: string
+        - 
           name: birthYearTo
           required: false
           in: query
@@ -1616,6 +1626,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UploadUrlResponseDto"
+      tags:
+        - Media
+      security:
+        - 
+          bearer: []
+  /v2/media/import/google-drive:
+    post:
+      operationId: MediaController_importFromGoogleDrive
+      summary: Import nhiều file từ Google Drive — server kéo thẳng từ Drive, người dùng không phải tải về máy
+      description: "FE chọn file bằng Google Picker (scope drive.file) rồi gửi file_ids + access_token. Backend kiểm tra metadata, tạo record pending cho file hợp lệ và xếp mỗi file một job nền. Theo dõi từng file qua GET /v2/media/:id/progress. File không hợp lệ nằm trong `rejected` kèm lý do. access_token sai/hết hạn ⇒ 400. Chi tiết: docs/GOOGLE_DRIVE_IMPORT.md."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportGoogleDriveDto"
+      responses:
+        201:
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportGoogleDriveResponseDto"
       tags:
         - Media
       security:
@@ -4905,6 +4939,100 @@ components:
         - headers
         - expires_in
         - public_url
+    ImportGoogleDriveDto:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: OAuth access token Google của người dùng (scope drive.file), lấy từ Google Identity Services. Backend chỉ giữ tạm trong Redis tối đa 1 giờ cho đợt import, không lưu refresh token.
+        file_ids:
+          description: ID các file đã chọn trong Google Picker (tối đa 200). Trùng lặp bị gộp.
+          example:
+            - 1AbCdEfGhIjKlMnOpQrStUvWxYz012345
+          type: array
+          items:
+            type: string
+        album_id:
+          type: string
+          format: uuid
+        member_id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        uploader_name:
+          type: string
+          example: Nguyễn Văn An
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+        - access_token
+        - file_ids
+    DriveImportAcceptedDto:
+      type: object
+      properties:
+        media_id:
+          type: string
+          format: uuid
+          description: Record media vừa tạo (pending) — poll GET /v2/media/:id/progress
+        drive_file_id:
+          type: string
+        filename:
+          type: string
+        mime_type:
+          type: string
+          example: image/jpeg
+        size_bytes:
+          type: number
+          nullable: true
+      required:
+        - media_id
+        - drive_file_id
+        - filename
+        - mime_type
+        - size_bytes
+    DriveImportRejectedDto:
+      type: object
+      properties:
+        drive_file_id:
+          type: string
+        reason:
+          type: string
+          enum:
+            - not_found
+            - unsupported_type
+            - too_large
+            - trashed
+            - drive_unavailable
+            - enqueue_failed
+        message:
+          type: string
+          description: Message tiếng Việt hiển thị thẳng cho người dùng
+      required:
+        - drive_file_id
+        - reason
+        - message
+    ImportGoogleDriveResponseDto:
+      type: object
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        accepted:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriveImportAcceptedDto"
+        rejected:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriveImportRejectedDto"
+      required:
+        - batch_id
+        - accepted
+        - rejected
     MediaProgressResponseDto:
       type: object
       properties:

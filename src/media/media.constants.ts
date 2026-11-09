@@ -118,3 +118,17 @@ export function storageKeyFor(mediaId: string, filename: string): string {
 
 /** Hạn mức lưu trữ hiển thị ở thẻ "Dung lượng lưu trữ" (mặc định 100 GB). */
 export const STORAGE_QUOTA_BYTES = 100 * 1024 ** 3;
+
+/**
+ * Trần size mỗi file khi import từ Google Drive. File được tải VÀO BỘ NHỚ
+ * function (để nén ảnh bằng sharp như luồng multipart) nên không thể rộng như
+ * đường presigned. Ảnh gốc 25MB còn dư nhiều; video lớn hơn nên tải về rồi đi
+ * `POST /v2/media/upload-url`.
+ */
+export const MAX_DRIVE_IMPORT_BYTES = 100 * 1024 * 1024; // 100 MB
+
+/** Số file tối đa trong một lần gọi `POST /v2/media/import/google-drive`. */
+export const MAX_DRIVE_IMPORT_FILES = 200;
+
+/** Số lời gọi Drive/QStash song song trong request import (đọc metadata, publish job). */
+export const DRIVE_IMPORT_CONCURRENCY = 10;

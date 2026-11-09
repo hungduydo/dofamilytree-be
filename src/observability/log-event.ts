@@ -22,6 +22,8 @@ export type LogEventName =
   // media / storage
   | 'media.processed'
   | 'media.processing_failed'
+  | 'media.drive_import.requested'
+  | 'media.drive_import.failed'
   | 'storage.delete.failed'
   | 'storage.provider.fallback'
   // contact / mail

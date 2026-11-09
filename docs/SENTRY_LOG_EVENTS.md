@@ -84,6 +84,8 @@ thêm `AUDIT_ENTITY.user`, giữ log nhưng hạ xuống chỉ để alert.
 | | Ưu tiên | `event.name` | Mức | Nơi | Thuộc tính |
 | --- | --- | --- | --- | --- | --- |
 | ✅ | — | `media.processed` / `media.processing_failed` | info/error | `TasksService.handleMediaProcess` | `media.*`, `error.*` |
+| ✅ | P1 | `media.drive_import.requested` | info | `MediaService.importFromGoogleDrive` | `media.batch_id`, `media.accepted`, `media.rejected`, `queue.mode` (`qstash` \| `inline`) — không ghi token/tên file |
+| ✅ | P1 | `media.drive_import.failed` | error (warn khi `drive_unavailable` — QStash sẽ retry) | `TasksService.handleDriveImport` | `media.id`, `media.mime_type`, `media.reason`: `token_expired` \| `too_large` \| `drive_forbidden` \| `drive_unavailable`, `http.response.status_code`, `error.*` |
 | 🆕 | P1 | `media.upload.rejected` | warn | `MulterErrorFilter`, allowlist MIME | `media.reason`: `too_large` \| `mime_not_allowed` \| …, `media.mime_type`, `media.input_bytes` |
 | 🆕 | P1 | `media.presigned.completed` | info | `MediaService.completeUpload` | `media.id`, `media.mime_type`, `media.size_bytes` |
 | 🆕 | P1 | `media.presigned.object_missing` | warn | `completeUpload` (400) | `media.id` |

@@ -107,6 +107,7 @@ const TABLE: Array<[string, any, Record<string, Expectation>]> = [
     getMedia: 'public', getMediaStats: 'public', getAlbums: 'public', incrementViews: 'public',
     getMemberMedia: 'auth',
     uploadMedia: 'member', createUploadUrl: 'member', completeUpload: 'member', getUploadProgress: 'member',
+    importFromGoogleDrive: 'member',
     createAlbum: 'editor',
     getBlobStorageUsage: 'admin', deleteMedia: 'admin', deleteAlbum: 'admin',
   }],

@@ -8,7 +8,10 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 import { TasksService } from '../../src/queue/tasks.service';
 import { StorageService } from '../../src/storage/storage.service';
 import { SupabaseUsersService } from '../../src/supabase/supabase-users.service';
-import { classifyMediaType } from '../../src/media/media.constants';
+import { classifyMediaType, MAX_DRIVE_IMPORT_BYTES } from '../../src/media/media.constants';
+import { QStashService } from '../../src/queue/qstash.service';
+import * as drive from '../../src/media/google-drive';
+import { DriveApiError } from '../../src/media/google-drive';
 
 const mockPrisma = {
   media: {
@@ -16,6 +19,7 @@ const mockPrisma = {
     findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
   },
@@ -31,9 +35,12 @@ const mockPrisma = {
     delete: jest.fn(),
   },
   $queryRaw: jest.fn(),
+  // Mảng promise (create…) ⇒ chạy tuần tự như Prisma batch transaction.
+  $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
-const mockTasksService = { handleMediaProcess: jest.fn() };
+const mockTasksService = { handleMediaProcess: jest.fn(), handleDriveImport: jest.fn() };
+const mockQStash = { publish: jest.fn() };
 // Mặc định: provider KHÔNG hỗ trợ presign → các test cũ (multipart) không đổi
 // hành vi; test presign tự bật lại cờ này.
 // Mặc định Supabase không có display name → các test cũ giữ nguyên hành vi.
@@ -67,6 +74,7 @@ describe('MediaService', () => {
         { provide: StorageService, useValue: mockStorage },
         { provide: SupabaseUsersService, useValue: mockSupabaseUsers },
         { provide: 'REDIS_CLIENT', useValue: mockRedis },
+        { provide: QStashService, useValue: mockQStash },
       ],
     }).compile();
 
@@ -398,6 +406,131 @@ describe('MediaService', () => {
     it('throws NotFoundException when media not found', async () => {
       mockPrisma.media.findUnique.mockResolvedValue(null);
       await expect(service.deleteMedia('bad-id')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('importFromGoogleDrive', () => {
+    const ID_A = '1AAAAAAAAAAAAAAAAAAAAA';
+    const ID_B = '1BBBBBBBBBBBBBBBBBBBBB';
+    const env = process.env;
+    let getMeta: jest.SpyInstance;
+
+    const meta = (id: string, extra: Partial<drive.DriveFileMeta> = {}): drive.DriveFileMeta => ({
+      id, name: `${id}.jpg`, mimeType: 'image/jpeg', size: 25 * 1024 * 1024, trashed: false, ...extra,
+    });
+    const dto = (file_ids: string[]) => ({
+      access_token: 'tok', file_ids, album_id: 'album-1', display_name: 'Chú Ba',
+    });
+
+    beforeEach(() => {
+      process.env = { ...env, QSTASH_TOKEN: 'q', APP_URL: 'https://api.giapha.example' };
+      getMeta = jest.spyOn(drive, 'getDriveFileMeta').mockImplementation(async (_t, id) => meta(id));
+      let n = 0;
+      mockPrisma.media.create.mockImplementation(async () => ({ id: `media-${++n}` }));
+      mockRedis.set.mockResolvedValue('OK');
+      mockQStash.publish.mockResolvedValue(undefined);
+    });
+    afterEach(() => {
+      getMeta.mockRestore();
+      process.env = env;
+    });
+
+    it('tạo record pending, lưu token vào Redis và publish mỗi file một job (không kèm token)', async () => {
+      const res = await service.importFromGoogleDrive('user-1', dto([ID_A, ID_B, ID_A]));
+
+      expect(getMeta).toHaveBeenCalledTimes(2); // ID trùng bị gộp
+      expect(res.accepted.map((a) => a.media_id)).toEqual(['media-1', 'media-2']);
+      expect(res.rejected).toEqual([]);
+      expect(mockPrisma.media.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'pending', album_id: 'album-1', uploader_name: 'Chú Ba', mime_type: 'image/jpeg', type: 'image',
+          }),
+        }),
+      );
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        `media:drive-import:token:${res.batch_id}`,
+        { access_token: 'tok' },
+        { ex: 3600 },
+      );
+      expect(mockQStash.publish).toHaveBeenCalledTimes(2);
+      const [task, payload, opts] = mockQStash.publish.mock.calls[0];
+      expect(task).toBe('drive-import');
+      expect(payload).toEqual({
+        mediaId: 'media-1', batchId: res.batch_id, driveFileId: ID_A, filename: `${ID_A}.jpg`, mimetype: 'image/jpeg',
+      });
+      expect(JSON.stringify(payload)).not.toContain('tok');
+      expect(opts).toEqual({ deduplicationId: 'drive-import-media-1' });
+      expect(mockTasksService.handleDriveImport).not.toHaveBeenCalled();
+    });
+
+    it('token Google hỏng ⇒ 400 (không phải 401) và không tạo gì', async () => {
+      getMeta.mockRejectedValue(new DriveApiError('x', 401, false));
+      await expect(service.importFromGoogleDrive('user-1', dto([ID_A]))).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.media.create).not.toHaveBeenCalled();
+      expect(mockRedis.set).not.toHaveBeenCalled();
+    });
+
+    it('loại file không hợp lệ trước khi tạo record', async () => {
+      const ids = ['1CCCCCCCCCCCCCCCCCCCCC', '1DDDDDDDDDDDDDDDDDDDDD', '1EEEEEEEEEEEEEEEEEEEEE', '1FFFFFFFFFFFFFFFFFFFFF', '1GGGGGGGGGGGGGGGGGGGGG'];
+      getMeta.mockImplementation(async (_t, id) => {
+        switch (id) {
+          case ids[0]: return meta(id, { mimeType: 'application/vnd.google-apps.folder' });
+          case ids[1]: return meta(id, { mimeType: 'application/vnd.google-apps.document' });
+          case ids[2]: return meta(id, { size: MAX_DRIVE_IMPORT_BYTES + 1 });
+          case ids[3]: return meta(id, { trashed: true });
+          default: throw new DriveApiError('x', 404, false);
+        }
+      });
+      const res = await service.importFromGoogleDrive('user-1', dto(ids));
+
+      expect(res.accepted).toEqual([]);
+      expect(res.rejected.map((r) => r.reason)).toEqual([
+        'unsupported_type', 'unsupported_type', 'too_large', 'trashed', 'not_found',
+      ]);
+      expect(mockPrisma.media.create).not.toHaveBeenCalled();
+      expect(mockRedis.set).not.toHaveBeenCalled();
+    });
+
+    it('lỗi tạm khi đọc metadata ⇒ drive_unavailable, file khác vẫn đi tiếp', async () => {
+      getMeta.mockImplementation(async (_t, id) => {
+        if (id === ID_B) throw new DriveApiError('x', 503, true);
+        return meta(id);
+      });
+      const res = await service.importFromGoogleDrive('user-1', dto([ID_A, ID_B]));
+      expect(res.accepted.map((a) => a.drive_file_id)).toEqual([ID_A]);
+      expect(res.rejected).toEqual([expect.objectContaining({ drive_file_id: ID_B, reason: 'drive_unavailable' })]);
+    });
+
+    it('publish hỏng ⇒ record bị đánh dấu failed và chuyển sang rejected', async () => {
+      mockQStash.publish.mockImplementation(async (_t: string, job: { mediaId: string }) => {
+        if (job.mediaId === 'media-2') throw new Error('qstash down');
+      });
+      const res = await service.importFromGoogleDrive('user-1', dto([ID_A, ID_B]));
+
+      expect(res.accepted.map((a) => a.media_id)).toEqual(['media-1']);
+      expect(res.rejected).toEqual([expect.objectContaining({ drive_file_id: ID_B, reason: 'enqueue_failed' })]);
+      expect(mockPrisma.media.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['media-2'] } }, data: { status: 'failed' },
+      });
+    });
+
+    it('Redis không lưu được token ⇒ 503, không tạo record', async () => {
+      mockRedis.set.mockRejectedValue(new Error('redis down'));
+      await expect(service.importFromGoogleDrive('user-1', dto([ID_A]))).rejects.toThrow(ServiceUnavailableException);
+      expect(mockPrisma.media.create).not.toHaveBeenCalled();
+    });
+
+    it('dev-local (APP_URL localhost) ⇒ chạy job trong process thay vì QStash', async () => {
+      process.env.APP_URL = 'http://localhost:3002';
+      mockTasksService.handleDriveImport.mockResolvedValue(undefined);
+      await service.importFromGoogleDrive('user-1', dto([ID_A]));
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockQStash.publish).not.toHaveBeenCalled();
+      expect(mockTasksService.handleDriveImport).toHaveBeenCalledWith(
+        expect.objectContaining({ mediaId: 'media-1', driveFileId: ID_A }),
+      );
     });
   });
 });

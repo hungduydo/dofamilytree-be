@@ -21,6 +21,7 @@ import {
 import { UploadMediaDto } from './dto/upload-media.dto';
 import { CreateUploadUrlDto } from './dto/create-upload-url.dto';
 import { UploadUrlResponseDto } from './dto/upload-url-response.dto';
+import { ImportGoogleDriveDto, ImportGoogleDriveResponseDto } from './dto/import-google-drive.dto';
 import { UploadPayloadTooLargeFilter } from './upload-exception.filter';
 import { CreateAlbumDto } from './dto/create-album.dto';
 import {
@@ -94,6 +95,25 @@ export class MediaController {
   @ApiCreatedResponse({ type: UploadUrlResponseDto })
   createUploadUrl(@Body() body: CreateUploadUrlDto, @Request() req: any) {
     return this.mediaService.createUploadUrl(req.user.id, {
+      ...body,
+      profile_member_id: req.user.profileMemberId,
+      display_name: req.user.displayName,
+    });
+  }
+
+  @Post('import/google-drive')
+  @Roles('member')
+  @ApiOperation({
+    summary: 'Import nhiều file từ Google Drive — server kéo thẳng từ Drive, người dùng không phải tải về máy',
+    description:
+      'FE chọn file bằng Google Picker (scope drive.file) rồi gửi file_ids + access_token. ' +
+      'Backend kiểm tra metadata, tạo record pending cho file hợp lệ và xếp mỗi file một job nền. ' +
+      'Theo dõi từng file qua GET /v2/media/:id/progress. File không hợp lệ nằm trong `rejected` kèm lý do. ' +
+      'access_token sai/hết hạn ⇒ 400. Chi tiết: docs/GOOGLE_DRIVE_IMPORT.md.',
+  })
+  @ApiCreatedResponse({ type: ImportGoogleDriveResponseDto })
+  importFromGoogleDrive(@Body() body: ImportGoogleDriveDto, @Request() req: any) {
+    return this.mediaService.importFromGoogleDrive(req.user.id, {
       ...body,
       profile_member_id: req.user.profileMemberId,
       display_name: req.user.displayName,
