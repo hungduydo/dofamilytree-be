@@ -44,7 +44,7 @@ export class MediaController {
   @Post('upload')
   @Roles('member')
   @ApiOperation({
-    summary: 'Upload media (ảnh → thu về ≤3000px + nén bằng sharp, thay bản gốc; video/audio/tài liệu → upload thẳng)',
+    summary: 'Upload media (ảnh → thu về ≤3840px (4K) + chuyển WebP, thay bản gốc; video/audio/tài liệu → upload thẳng)',
     description:
       'File đi QUA serverless function nên chịu trần request body của platform ' +
       '(Vercel: 4.5MB nếu chưa bật Fluid Compute, 100MB nếu đã bật). ' +
@@ -107,10 +107,12 @@ export class MediaController {
   @ApiOperation({
     summary: 'Import nhiều file từ Google Drive — server kéo thẳng từ Drive, người dùng không phải tải về máy',
     description:
-      'FE chọn file bằng Google Picker (scope drive.file) rồi gửi file_ids + access_token. ' +
+      'Hai chế độ: (1) Google Picker (scope drive.file) — gửi file_ids + access_token; ' +
+      '(2) link chia sẻ — gửi file_ids (+ resource_keys nếu có), KHÔNG access_token: backend đọc bằng key server ' +
+      'GOOGLE_DRIVE_API_KEY, file phải chia sẻ "Bất kỳ ai có đường liên kết"; thiếu key ⇒ 503. ' +
       'Backend kiểm tra metadata, tạo record pending cho file hợp lệ và xếp mỗi file một job nền. ' +
       'Theo dõi từng file qua GET /v2/media/:id/progress. File không hợp lệ nằm trong `rejected` kèm lý do. ' +
-      'access_token sai/hết hạn ⇒ 400. Chi tiết: docs/GOOGLE_DRIVE_IMPORT.md.',
+      'access_token sai/hết hạn ⇒ 400. Ảnh được lưu dưới dạng WebP, cạnh dài ≤ 3840px. Chi tiết: docs/GOOGLE_DRIVE_IMPORT.md.',
   })
   @ApiCreatedResponse({ type: ImportGoogleDriveResponseDto })
   importFromGoogleDrive(@Body() body: ImportGoogleDriveDto, @Request() req: any) {

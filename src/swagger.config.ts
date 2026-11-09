@@ -24,7 +24,7 @@ export function buildSwaggerConfig() {
         `- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n` +
         `- **Anniversaries** — Ngày kỵ lặp lại theo âm/dương lịch (hôm nay, sắp tới, theo tháng)\n` +
         `- **Events** — Sự kiện dòng họ\n` +
-        `- **Media** — Thư viện media (ảnh thu về ≤3000px + nén bằng sharp) → Cloudflare R2; phân trang/lọc/tìm kiếm + album\n` +
+        `- **Media** — Thư viện media (ảnh thu về ≤3840px (4K) + chuyển WebP bằng sharp) → Cloudflare R2; phân trang/lọc/tìm kiếm + album\n` +
         `- **Graves / Grave areas** — Mộ phần với tọa độ GPS, khu an táng\n` +
         `- **Audit** — Lịch sử thay đổi member/quan hệ + thùng rác 30 ngày (admin)\n` +
         `- **Notifications** — Tuỳ chọn email nhắc ngày giỗ, link tắt nhắc\n` +
@@ -33,7 +33,7 @@ export function buildSwaggerConfig() {
         `| Queue | Trigger | Action |\n` +
         `|-------|---------|--------|\n` +
         `| avatar-upload | Create/Update member với file | Upload → storage → cập nhật avatar_url |\n` +
-        `| media-process | Hoàn tất upload | Ảnh: thu về ≤3000px + nén; sinh metadata |\n` +
+        `| media-process | Hoàn tất upload | Ảnh: thu về ≤3840px (4K) + chuyển WebP; sinh metadata |\n` +
         `| report-generate | Create/Delete member | Tính stats → lưu Redis |\n` +
         `| generation-recompute | Đổi quan hệ cha/con | Tính lại đời cho toàn cây |\n` +
         `| account-pending | Đăng ký mới | Email báo admin |\n` +

@@ -3,10 +3,25 @@
 Người dùng chọn ảnh trên Google Drive, **server tự kéo file từ Drive về storage** (R2/Blob).
 Máy người dùng không tải xuống / upload lên gì cả — 100 ảnh × 25MB chỉ mất vài phút.
 
+Hai chế độ, cùng một endpoint và cùng pipeline phía sau:
+
+| Chế độ | FE gửi | Backend đọc Drive bằng |
+| --- | --- | --- |
+| **Picker** | `access_token` + `file_ids` | Token OAuth của người dùng (scope `drive.file`) |
+| **Link chia sẻ** | `file_ids` (+ `resource_keys`), **không** `access_token` | Key server `GOOGLE_DRIVE_API_KEY` |
+
+Chế độ link tồn tại vì Picker với scope `drive.file` không hiện được thumbnail: FE tự liệt kê
+thư mục/file từ link người dùng dán (bằng key trình duyệt của FE), hiện lưới ảnh, rồi gửi các
+ID đã chọn. File phải được chia sẻ **"Bất kỳ ai có đường liên kết"**.
+
+Ảnh (JPEG/PNG/WebP) được thu về cạnh dài **≤ 3840px (4K)** và lưu dưới dạng **WebP**
+(PNG → WebP lossless) — bản gốc không được giữ. `mime_type` của media chuyển thành
+`image/webp` khi xử lý xong. GIF/HEIC giữ nguyên.
+
 ```
 FE (Google Picker) ──file_ids + access_token──▶ POST /v2/media/import/google-drive
                                                    │ đọc metadata, tạo record pending
-                                                   │ token → Redis (TTL 1h)
+                                                   │ auth → Redis (TTL 1h, không bao giờ chứa API key)
                                                    ▼
                                         QStash: 1 job / file  (dev: chạy thẳng trong process)
                                                    │ Drive API alt=media → sharp → storage
@@ -28,7 +43,23 @@ FE poll GET /v2/media/:id/progress ◀── pending → processing → ready | 
 4. Đưa vào env **của FE**: `GOOGLE_CLIENT_ID`, `GOOGLE_API_KEY`, `GOOGLE_APP_ID`
    (= *project number*, cần để Picker cấp quyền `drive.file` cho file được chọn).
 
-Backend **không cần** env Google nào — nó chỉ dùng access token người dùng gửi lên.
+Chế độ Picker: backend **không cần** env Google nào — nó chỉ dùng access token người dùng gửi lên.
+
+### 1b. Key server cho chế độ link chia sẻ
+
+Key của FE ở trên **không dùng được** từ server: nó bị khoá theo HTTP referrer, mà lời gọi
+từ server không có referrer ⇒ `403 Requests from referer <empty> are blocked`. Tạo một key
+**riêng**:
+
+1. *Credentials → Create credentials → API key* (cùng project, Google Drive API đã bật).
+2. *API restrictions*: **chỉ** Google Drive API.
+3. *Application restrictions*: **None** (server-to-server).
+4. Đặt vào env **backend** `GOOGLE_DRIVE_API_KEY` (Vercel → project backend → Settings →
+   Environment Variables, cả Production lẫn Preview). Thiếu biến này thì chế độ link trả
+   `503` "Import từ link Google Drive chưa được cấu hình."; chế độ Picker vẫn chạy.
+
+Key chỉ đọc được file đã chia sẻ công khai bằng link — nó không mở thêm quyền gì trên Drive
+của ai. Không bao giờ ghi key vào Redis, payload QStash hay log.
 
 ## 2. Phía FE
 
@@ -77,7 +108,8 @@ cho chọn cả thư mục (scope `drive.file` chỉ cấp quyền cho từng fi
 
 | Trường | Kiểu | |
 | --- | --- | --- |
-| `access_token` | string | Bắt buộc. Token Google từ bước 1. |
+| `access_token` | string | Chế độ Picker: token Google từ bước 1. **Bỏ trống ⇒ chế độ link chia sẻ.** |
+| `resource_keys` | string[] | Chỉ chế độ link, tuỳ chọn. Mỗi phần tử `"fileId/resourceKey"` (định dạng header `X-Goog-Drive-Resource-Keys`) cho file cũ có resource key. Tối đa 200. |
 | `file_ids` | string[] | Bắt buộc, 1–200 ID, trùng lặp bị gộp. |
 | `album_id`, `member_id`, `event_id` | uuid | Tuỳ chọn, áp cho mọi file. |
 | `tags` | string[] | Tuỳ chọn. |
@@ -97,7 +129,8 @@ Response `201`:
 }
 ```
 
-`reason` của `rejected`: `not_found` (xoá/mất quyền), `unsupported_type` (thư mục,
+`reason` của `rejected`: `not_found` (xoá/mất quyền; ở chế độ link message là "File chưa được
+chia sẻ công khai — hãy đặt quyền 'Bất kỳ ai có đường liên kết'."), `unsupported_type` (thư mục,
 Google Docs, định dạng ngoài allowlist), `too_large` (> 100MB), `trashed`,
 `drive_unavailable` (Drive lỗi tạm — gửi lại file đó), `enqueue_failed` (QStash lỗi — gửi lại).
 `message` là tiếng Việt, hiển thị thẳng được.
@@ -105,17 +138,23 @@ Google Docs, định dạng ngoài allowlist), `too_large` (> 100MB), `trashed`,
 Lỗi:
 
 - `400` — `access_token` sai/hết hạn (cố ý **không** dùng 401 để FE không đăng xuất
-  người dùng khỏi app). FE xin token mới rồi gửi lại.
-- `503` — Redis không lưu được token; thử lại sau.
+  người dùng khỏi app). FE xin token mới rồi gửi lại. Chỉ xảy ra khi có gửi token.
+- `503` — Redis không lưu được auth; thử lại sau. Hoặc chế độ link mà backend thiếu
+  `GOOGLE_DRIVE_API_KEY` ("Import từ link Google Drive chưa được cấu hình.").
 
 Theo dõi: `GET /v2/media/:id/progress` cho từng `media_id` (như luồng upload thường).
 `failed` kèm `error`, ví dụ "Phiên Google Drive đã hết hạn — hãy chọn lại ảnh để import."
 
 ## 4. Vận hành
 
-- **Token**: lưu ở Redis key `media:drive-import:token:<batch_id>`, TTL 1 giờ, không
-  nằm trong payload QStash. Không lưu refresh token. Job chạy sau khi token hết hạn ⇒
-  `failed` (`token_expired`), người dùng import lại.
+- **Auth**: lưu ở Redis key `media:drive-import:token:<batch_id>`, TTL 1 giờ, không
+  nằm trong payload QStash. Picker: `{ kind: 'token', accessToken }`; link:
+  `{ kind: 'apiKey', resourceKeys }` — API key đọc lại từ env lúc job chạy. Không lưu
+  refresh token. Job chạy sau khi token hết hạn ⇒ `failed` (`token_expired`), người dùng
+  import lại. Batch link không có `token_expired`; env mất key giữa chừng ⇒ `failed`
+  (`not_configured`).
+- **Ảnh**: sharp xoay theo EXIF, thu về ≤ 3840px, mã hoá WebP (q85; PNG lossless), bỏ
+  metadata (kể cả GPS). Key storage đổi đuôi thành `.webp`.
 - **Retry**: lỗi tạm (mạng, 429/5xx Drive, storage) ⇒ job ném lỗi để QStash retry; lỗi
   vĩnh viễn (401/403/404, quá lớn) ⇒ `failed` luôn. QStash giao lặp với media đã `ready` là no-op.
 - **Dev-local / không có QStash**: khi thiếu `QSTASH_TOKEN` hoặc `APP_URL` là localhost,

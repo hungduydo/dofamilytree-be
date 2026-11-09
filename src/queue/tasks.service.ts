@@ -2,14 +2,15 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { errorAttributes, logEvent, logEventThrottled } from '../observability/log-event';
 import { PrismaService } from '../prisma/prisma.service';
 import { Redis as UpstashRedis } from '@upstash/redis';
+import { REDIS_DURABLE_CLIENT } from '../redis.provider';
 import { GenerationService } from '../generation/generation.service';
 import { StorageService } from '../storage/storage.service';
 import {
   mediaProgressKey, MEDIA_PROGRESS_TTL, MEDIA_CACHE_KEYS, mediaDriveTokenKey,
 } from '../media/media.cache-keys';
-import { optimizeImage } from '../media/image-optimize';
+import { filenameForMime, optimizeImage } from '../media/image-optimize';
 import { storageKeyFor, MAX_DRIVE_IMPORT_BYTES, formatBytes } from '../media/media.constants';
-import { downloadDriveFile, DriveApiError, DriveFileTooLargeError } from '../media/google-drive';
+import { downloadDriveFile, DriveApiError, DriveFileTooLargeError, fromStoredDriveAuth } from '../media/google-drive';
 import { computeTreeStats } from '../tree/tree-stats';
 import { CACHE_KEY_STATS, CACHE_TTL } from '../tree/tree.cache-keys';
 import { MailService } from '../mail/mail.service';
@@ -23,7 +24,7 @@ export type MediaUploadProgress = {
   error?: string;
 };
 
-/** Payload job `drive-import` — KHÔNG chứa access token (token nằm trong Redis theo batchId). */
+/** Payload job `drive-import` — KHÔNG chứa token/key (auth nằm trong Redis theo batchId). */
 export type DriveImportJob = {
   mediaId: string;
   batchId: string;
@@ -43,6 +44,7 @@ export class TasksService {
     private readonly storage: StorageService,
     private readonly mail: MailService,
     private readonly supabaseUsers: SupabaseUsersService,
+    @Inject(REDIS_DURABLE_CLIENT) private readonly durableRedis: UpstashRedis,
   ) {}
 
   /**
@@ -197,19 +199,30 @@ export class TasksService {
     const startedAt = Date.now();
 
     try {
-      // Ảnh: thu về ≤ MAX_IMAGE_DIMENSION px và nén lossy, THAY bản gốc.
+      // Ảnh: thu về ≤ MAX_IMAGE_DIMENSION px (4K) và chuyển sang WebP, THAY bản
+      // gốc — nên key storage, Content-Type và `mime_type` đi theo bản WebP.
       const image = mimetype.startsWith('image/') ? await optimizeImage(input, mimetype) : null;
       const outBuffer = image?.buffer ?? input;
+      const outMime = image?.mimetype ?? mimetype;
 
       await this.setMediaProgress(mediaId, { status: 'processing', progress: 50 });
 
-      const url = await this.storage.put(storageKeyFor(mediaId, filename), outBuffer, mimetype);
+      const url = await this.storage.put(
+        storageKeyFor(mediaId, filenameForMime(filename, outMime)),
+        outBuffer,
+        outMime,
+      );
 
       await this.setMediaProgress(mediaId, { status: 'processing', progress: 90 });
 
       await this.prisma.media.update({
         where: { id: mediaId },
-        data: { file_path: url, size_bytes: outBuffer.length, status: 'ready' },
+        data: {
+          file_path: url,
+          size_bytes: outBuffer.length,
+          status: 'ready',
+          ...(outMime !== mimetype ? { mime_type: outMime } : {}),
+        },
       });
 
       await this.setMediaProgress(mediaId, { status: 'ready', progress: 100, url });
@@ -224,6 +237,7 @@ export class TasksService {
       logEvent('media.processed', 'info', 'Media processed', {
         'media.id': mediaId,
         'media.mime_type': mimetype,
+        'media.output_mime_type': outMime,
         'media.input_bytes': input.length,
         'media.output_bytes': outBuffer.length,
         ...(image?.width ? { 'media.width': image.width, 'media.height': image.height } : {}),
@@ -260,8 +274,11 @@ export class TasksService {
    * Quy ước ném lỗi — quyết định QStash có retry hay không:
    * - Lỗi tạm (mạng, 429, 5xx Drive, storage) ⇒ đánh dấu failed rồi NÉM ⇒ QStash
    *   gọi lại; lần sau thấy `failed` (khác `ready`) nên chạy lại từ đầu.
-   * - Lỗi vĩnh viễn (token hết hạn, mất quyền, file quá lớn) ⇒ failed và
-   *   KHÔNG ném: retry chỉ tốn lượt và ra cùng kết quả.
+   * - Lỗi vĩnh viễn (token hết hạn, mất quyền, file quá lớn, thiếu key server)
+   *   ⇒ failed và KHÔNG ném: retry chỉ tốn lượt và ra cùng kết quả.
+   *
+   * Chỉ batch dùng token người dùng mới có `token_expired`; batch link chia sẻ
+   * không có gì để hết hạn.
    */
   async handleDriveImport(job: DriveImportJob): Promise<void> {
     const { mediaId, batchId, driveFileId, filename, mimetype } = job;
@@ -277,15 +294,29 @@ export class TasksService {
 
     await this.setMediaProgress(mediaId, { status: 'processing', progress: 5 });
 
-    const stored = await this.redis.get<{ access_token: string }>(mediaDriveTokenKey(batchId));
-    if (!stored?.access_token) {
-      await this.failDriveImport(job, 'token_expired', 'Phiên Google Drive đã hết hạn — hãy chọn lại ảnh để import.');
+    let stored: unknown;
+    try {
+      stored = await this.durableRedis.get<unknown>(mediaDriveTokenKey(batchId));
+    } catch (error) {
+      // Không đọc được ≠ hết hạn. Đánh dấu failed (để record không kẹt ở
+      // `processing` khi chạy inline) rồi NÉM để QStash retry.
+      await this.failDriveImport(job, 'redis_unavailable', 'Hệ thống hàng đợi tạm thời lỗi — đang thử lại.', error);
+      throw error;
+    }
+    const restored = fromStoredDriveAuth(stored);
+    if ('error' in restored) {
+      if (restored.error === 'not_configured') {
+        await this.failDriveImport(job, 'not_configured', 'Import từ link Google Drive chưa được cấu hình.');
+      } else {
+        await this.failDriveImport(job, 'token_expired', 'Phiên Google Drive đã hết hạn — hãy chọn lại ảnh để import.');
+      }
       return;
     }
+    const { auth } = restored;
 
     let buffer: Buffer;
     try {
-      buffer = await downloadDriveFile(stored.access_token, driveFileId, MAX_DRIVE_IMPORT_BYTES);
+      buffer = await downloadDriveFile(auth, driveFileId, MAX_DRIVE_IMPORT_BYTES);
     } catch (error) {
       if (error instanceof DriveFileTooLargeError) {
         await this.failDriveImport(
@@ -294,10 +325,15 @@ export class TasksService {
         return;
       }
       if (error instanceof DriveApiError && !error.retryable) {
-        const message = error.isAuthError
-          ? 'Phiên Google Drive đã hết hạn — hãy chọn lại ảnh để import.'
-          : 'Không đọc được file trên Google Drive (đã bị xoá hoặc mất quyền truy cập).';
-        await this.failDriveImport(job, error.isAuthError ? 'token_expired' : 'drive_forbidden', message, error);
+        if (auth.kind === 'token' && error.isAuthError) {
+          await this.failDriveImport(job, 'token_expired', 'Phiên Google Drive đã hết hạn — hãy chọn lại ảnh để import.', error);
+        } else {
+          const message =
+            auth.kind === 'token'
+              ? 'Không đọc được file trên Google Drive (đã bị xoá hoặc mất quyền truy cập).'
+              : "Không đọc được file trên Google Drive — file đã bị xoá hoặc không còn chia sẻ 'Bất kỳ ai có đường liên kết'.";
+          await this.failDriveImport(job, 'drive_forbidden', message, error);
+        }
         return;
       }
       await this.failDriveImport(job, 'drive_unavailable', 'Google Drive tạm thời lỗi — đang thử lại.', error);
@@ -310,15 +346,18 @@ export class TasksService {
 
   private async failDriveImport(
     job: DriveImportJob,
-    reason: 'token_expired' | 'too_large' | 'drive_forbidden' | 'drive_unavailable',
+    reason:
+      | 'token_expired' | 'not_configured' | 'too_large' | 'drive_forbidden' | 'drive_unavailable'
+      | 'redis_unavailable',
     message: string,
     error?: unknown,
   ): Promise<void> {
     this.logger.warn(`Drive import ${job.mediaId} failed (${reason}): ${(error as Error | undefined)?.message ?? message}`);
-    logEvent('media.drive_import.failed', reason === 'drive_unavailable' ? 'warn' : 'error', 'Google Drive import failed', {
+    logEvent('media.drive_import.failed', reason === 'drive_unavailable' || reason === 'redis_unavailable' ? 'warn' : 'error', 'Google Drive import failed', {
       'media.id': job.mediaId,
       'media.mime_type': job.mimetype,
       'media.reason': reason,
+      'media.batch_id': job.batchId,
       'http.response.status_code': error instanceof DriveApiError ? error.status : undefined,
       ...(error ? errorAttributes(error) : {}),
     });
