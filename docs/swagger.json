@@ -761,6 +761,19 @@
             }
           },
           {
+            "name": "clan",
+            "required": false,
+            "in": "query",
+            "description": "Lọc theo dòng họ (nội tộc, theo dòng cha). `in` = cụ tổ và hậu duệ qua người cha; `out` = người ngoài (con dâu, con rể, con của con gái). Bỏ trống = tất cả.",
+            "schema": {
+              "enum": [
+                "in",
+                "out"
+              ],
+              "type": "string"
+            }
+          },
+          {
             "name": "birthYearTo",
             "required": false,
             "in": "query",
@@ -2404,7 +2417,7 @@
     "/v2/media/upload": {
       "post": {
         "operationId": "MediaController_uploadMedia",
-        "summary": "Upload media (ảnh → nén lossless bằng sharp; video/audio/tài liệu → upload thẳng)",
+        "summary": "Upload media (ảnh → thu về ≤3000px + nén bằng sharp, thay bản gốc; video/audio/tài liệu → upload thẳng)",
         "description": "File đi QUA serverless function nên chịu trần request body của platform (Vercel: 4.5MB nếu chưa bật Fluid Compute, 100MB nếu đã bật). Với file lớn hơn, dùng POST /v2/media/upload-url.",
         "parameters": [],
         "requestBody": {
@@ -2462,6 +2475,44 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UploadUrlResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Media"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v2/media/import/google-drive": {
+      "post": {
+        "operationId": "MediaController_importFromGoogleDrive",
+        "summary": "Import nhiều file từ Google Drive — server kéo thẳng từ Drive, người dùng không phải tải về máy",
+        "description": "FE chọn file bằng Google Picker (scope drive.file) rồi gửi file_ids + access_token. Backend kiểm tra metadata, tạo record pending cho file hợp lệ và xếp mỗi file một job nền. Theo dõi từng file qua GET /v2/media/:id/progress. File không hợp lệ nằm trong `rejected` kèm lý do. access_token sai/hết hạn ⇒ 400. Chi tiết: docs/GOOGLE_DRIVE_IMPORT.md.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportGoogleDriveDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportGoogleDriveResponseDto"
                 }
               }
             }
@@ -2690,6 +2741,114 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PaginatedMediaResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Media"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v2/media/feed": {
+      "get": {
+        "operationId": "MediaController_getMediaFeed",
+        "summary": "Media mới nhất dạng dòng thời gian — media cùng album gộp thành một mục (public)",
+        "description": "Phân trang theo MỤC: mỗi mục là một media lẻ hoặc một album (tên, số lượng, 4 ảnh xem trước) đứng ở vị trí ảnh mới nhất của album. Dùng cho lưới \"Media mới nhất\" để một đợt tải hàng trăm ảnh vào một album không đẩy mọi thứ khác sang trang sau. Lọc theo album / tìm kiếm / sắp xếp khác thì dùng GET /media.",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Số MỤC mỗi trang. Mặc định 12, tối đa 100",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "image",
+                "video",
+                "audio",
+                "document"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "member_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "uploader_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "event_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaFeedResponseDto"
                 }
               }
             }
@@ -4871,7 +5030,7 @@
   },
   "info": {
     "title": "Family Tree API v2",
-    "description": "## Vietnamese Family Tree Management API\n\n**Base URL:** `/v2` (local: `http://localhost:3002/v2`)\n\n**Authentication:** Bearer JWT (POST /v2/auth/login). Phân quyền theo route: docs/USERS_AND_ROLES.md\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ BIOLOGICAL/ADOPTED/SPOUSE + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày kỵ lặp lại theo âm/dương lịch (hôm nay, sắp tới, theo tháng)\n- **Events** — Sự kiện dòng họ\n- **Media** — Thư viện media (ảnh nén lossless bằng sharp) → Cloudflare R2; phân trang/lọc/tìm kiếm + album\n- **Graves / Grave areas** — Mộ phần với tọa độ GPS, khu an táng\n- **Audit** — Lịch sử thay đổi member/quan hệ + thùng rác 30 ngày (admin)\n- **Notifications** — Tuỳ chọn email nhắc ngày giỗ, link tắt nhắc\n- **Export** — GEDCOM 5.5.1 + sách gia phả HTML để in\n\n### Queue Jobs (QStash)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → storage → cập nhật avatar_url |\n| media-process | Hoàn tất upload | Ảnh: nén lossless; sinh metadata |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| generation-recompute | Đổi quan hệ cha/con | Tính lại đời cho toàn cây |\n| account-pending | Đăng ký mới | Email báo admin |\n| anniversary-reminder | Lịch 07:00 VN hằng ngày | Email nhắc giỗ còn 7 / 1 ngày |\n",
+    "description": "## Vietnamese Family Tree Management API\n\n**Base URL:** `/v2` (local: `http://localhost:3002/v2`)\n\n**Authentication:** Bearer JWT (POST /v2/auth/login). Phân quyền theo route: docs/USERS_AND_ROLES.md\n\n### Modules\n- **Members** — CRUD thành viên + profile + avatar (async upload)\n- **Relationships** — Quan hệ BIOLOGICAL/ADOPTED/SPOUSE + tìm tổ tiên/con cháu\n- **Tree** — Cây gia phả full (Redis cache 1h) + subtree 4 thế hệ\n- **Anniversaries** — Ngày kỵ lặp lại theo âm/dương lịch (hôm nay, sắp tới, theo tháng)\n- **Events** — Sự kiện dòng họ\n- **Media** — Thư viện media (ảnh thu về ≤3000px + nén bằng sharp) → Cloudflare R2; phân trang/lọc/tìm kiếm + album\n- **Graves / Grave areas** — Mộ phần với tọa độ GPS, khu an táng\n- **Audit** — Lịch sử thay đổi member/quan hệ + thùng rác 30 ngày (admin)\n- **Notifications** — Tuỳ chọn email nhắc ngày giỗ, link tắt nhắc\n- **Export** — GEDCOM 5.5.1 + sách gia phả HTML để in\n\n### Queue Jobs (QStash)\n| Queue | Trigger | Action |\n|-------|---------|--------|\n| avatar-upload | Create/Update member với file | Upload → storage → cập nhật avatar_url |\n| media-process | Hoàn tất upload | Ảnh: thu về ≤3000px + nén; sinh metadata |\n| report-generate | Create/Delete member | Tính stats → lưu Redis |\n| generation-recompute | Đổi quan hệ cha/con | Tính lại đời cho toàn cây |\n| account-pending | Đăng ký mới | Email báo admin |\n| anniversary-reminder | Lịch 07:00 VN hằng ngày | Email nhắc giỗ còn 7 / 1 ngày |\n",
     "version": "2.0.0",
     "contact": {
       "name": "Family Tree Team",
@@ -7144,6 +7303,136 @@
           "public_url"
         ]
       },
+      "ImportGoogleDriveDto": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "description": "OAuth access token Google của người dùng (scope drive.file), lấy từ Google Identity Services. Backend chỉ giữ tạm trong Redis tối đa 1 giờ cho đợt import, không lưu refresh token."
+          },
+          "file_ids": {
+            "description": "ID các file đã chọn trong Google Picker (tối đa 200). Trùng lặp bị gộp.",
+            "example": [
+              "1AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "album_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "member_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "uploader_name": {
+            "type": "string",
+            "example": "Nguyễn Văn An"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "access_token",
+          "file_ids"
+        ]
+      },
+      "DriveImportAcceptedDto": {
+        "type": "object",
+        "properties": {
+          "media_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Record media vừa tạo (pending) — poll GET /v2/media/:id/progress"
+          },
+          "drive_file_id": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "mime_type": {
+            "type": "string",
+            "example": "image/jpeg"
+          },
+          "size_bytes": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "media_id",
+          "drive_file_id",
+          "filename",
+          "mime_type",
+          "size_bytes"
+        ]
+      },
+      "DriveImportRejectedDto": {
+        "type": "object",
+        "properties": {
+          "drive_file_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_found",
+              "unsupported_type",
+              "too_large",
+              "trashed",
+              "drive_unavailable",
+              "enqueue_failed"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Message tiếng Việt hiển thị thẳng cho người dùng"
+          }
+        },
+        "required": [
+          "drive_file_id",
+          "reason",
+          "message"
+        ]
+      },
+      "ImportGoogleDriveResponseDto": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accepted": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DriveImportAcceptedDto"
+            }
+          },
+          "rejected": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DriveImportRejectedDto"
+            }
+          }
+        },
+        "required": [
+          "batch_id",
+          "accepted",
+          "rejected"
+        ]
+      },
       "MediaProgressResponseDto": {
         "type": "object",
         "properties": {
@@ -7203,6 +7492,117 @@
         "required": [
           "data",
           "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "MediaFeedAlbumDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "example": "Đám tang ông Đỗ Văn A"
+          },
+          "cover_url": {
+            "type": "object",
+            "nullable": true,
+            "format": "uri"
+          },
+          "date": {
+            "type": "object",
+            "nullable": true,
+            "example": "15/04/2024"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "MediaFeedEntryDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "media",
+              "album"
+            ]
+          },
+          "media": {
+            "description": "Có khi kind = media",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaResponseDto"
+              }
+            ]
+          },
+          "album": {
+            "description": "Có khi kind = album",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaFeedAlbumDto"
+              }
+            ]
+          },
+          "count": {
+            "type": "number",
+            "example": 160,
+            "description": "kind = album: số media khớp lọc trong album"
+          },
+          "latest_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "kind = album: thời điểm media mới nhất"
+          },
+          "preview": {
+            "description": "kind = album: tối đa 4 media mới nhất",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MediaResponseDto"
+            }
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "MediaFeedResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MediaFeedEntryDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 37,
+            "description": "Tổng số mục (media lẻ + album)"
+          },
+          "media_total": {
+            "type": "number",
+            "example": 412,
+            "description": "Tổng số media khớp lọc"
+          },
+          "page": {
+            "type": "number",
+            "example": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "example": 12
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "media_total",
           "page",
           "pageSize"
         ]

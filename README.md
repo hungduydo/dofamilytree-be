@@ -215,7 +215,7 @@ khai và một số route ghi yêu cầu role tối thiểu — xem bảng trong
 | Method | Path | Mô tả |
 |--------|------|--------|
 | `POST` | `/v2/media/upload-url` | Xin presigned PUT (R2) để client upload thẳng file lớn |
-| `POST` | `/v2/media/:id/complete` | Báo đã upload xong → job `media-process` (nén lossless, metadata) |
+| `POST` | `/v2/media/:id/complete` | Báo đã upload xong → job `media-process` (nén ảnh, metadata) |
 | `POST` | `/v2/media/upload` | Upload multipart (file nhỏ / provider không presign được) |
 | `GET` | `/v2/media` | Danh sách (phân trang, lọc, tìm kiếm) · `/stats` · `/albums` |
 | `DELETE` | `/v2/media/:id` | Xoá record + file trên kho (R2 hoặc Vercel Blob, theo URL) |
@@ -255,7 +255,7 @@ chứ không phải token người dùng.
 |------|---------|--------|
 | `avatar-upload` | Create/Update member có file avatar | Upload buffer → storage → cập nhật `avatar_url` |
 | `image-process` | Upload ảnh | sharp resize (thumb + full) → storage |
-| `media-process` | Hoàn tất presigned upload | Nén lossless, sinh metadata, xoá cache thống kê |
+| `media-process` | Hoàn tất presigned upload | Nén ảnh (nếu có buffer), sinh metadata, xoá cache thống kê |
 | `report-generate` | Create/Delete member | Tính stats (total, generations, deceased) → Redis |
 | `generation-recompute` | Đổi quan hệ cha/con | Tính lại đời cho toàn cây |
 | `notification` | Member/quan hệ/sự kiện mới | Log (Phase 1); mở rộng email/push sau |

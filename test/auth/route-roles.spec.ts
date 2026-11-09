@@ -104,9 +104,10 @@ const TABLE: Array<[string, any, Record<string, Expectation>]> = [
     getByMember: 'public', create: 'member', update: 'member', delete: 'member',
   }],
   ['MediaController', MediaController, {
-    getMedia: 'public', getMediaStats: 'public', getAlbums: 'public', incrementViews: 'public',
+    getMedia: 'public', getMediaFeed: 'public', getMediaStats: 'public', getAlbums: 'public', incrementViews: 'public',
     getMemberMedia: 'auth',
     uploadMedia: 'member', createUploadUrl: 'member', completeUpload: 'member', getUploadProgress: 'member',
+    importFromGoogleDrive: 'member',
     createAlbum: 'editor',
     getBlobStorageUsage: 'admin', deleteMedia: 'admin', deleteAlbum: 'admin',
   }],

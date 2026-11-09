@@ -21,11 +21,13 @@ import {
 import { UploadMediaDto } from './dto/upload-media.dto';
 import { CreateUploadUrlDto } from './dto/create-upload-url.dto';
 import { UploadUrlResponseDto } from './dto/upload-url-response.dto';
+import { ImportGoogleDriveDto, ImportGoogleDriveResponseDto } from './dto/import-google-drive.dto';
 import { UploadPayloadTooLargeFilter } from './upload-exception.filter';
 import { CreateAlbumDto } from './dto/create-album.dto';
 import {
   MediaResponseDto,
   PaginatedMediaResponseDto,
+  MediaFeedResponseDto,
   MediaAlbumResponseDto,
   MediaStatsResponseDto,
   MediaViewResponseDto,
@@ -42,7 +44,7 @@ export class MediaController {
   @Post('upload')
   @Roles('member')
   @ApiOperation({
-    summary: 'Upload media (ảnh → nén lossless bằng sharp; video/audio/tài liệu → upload thẳng)',
+    summary: 'Upload media (ảnh → thu về ≤3000px + nén bằng sharp, thay bản gốc; video/audio/tài liệu → upload thẳng)',
     description:
       'File đi QUA serverless function nên chịu trần request body của platform ' +
       '(Vercel: 4.5MB nếu chưa bật Fluid Compute, 100MB nếu đã bật). ' +
@@ -94,6 +96,25 @@ export class MediaController {
   @ApiCreatedResponse({ type: UploadUrlResponseDto })
   createUploadUrl(@Body() body: CreateUploadUrlDto, @Request() req: any) {
     return this.mediaService.createUploadUrl(req.user.id, {
+      ...body,
+      profile_member_id: req.user.profileMemberId,
+      display_name: req.user.displayName,
+    });
+  }
+
+  @Post('import/google-drive')
+  @Roles('member')
+  @ApiOperation({
+    summary: 'Import nhiều file từ Google Drive — server kéo thẳng từ Drive, người dùng không phải tải về máy',
+    description:
+      'FE chọn file bằng Google Picker (scope drive.file) rồi gửi file_ids + access_token. ' +
+      'Backend kiểm tra metadata, tạo record pending cho file hợp lệ và xếp mỗi file một job nền. ' +
+      'Theo dõi từng file qua GET /v2/media/:id/progress. File không hợp lệ nằm trong `rejected` kèm lý do. ' +
+      'access_token sai/hết hạn ⇒ 400. Chi tiết: docs/GOOGLE_DRIVE_IMPORT.md.',
+  })
+  @ApiCreatedResponse({ type: ImportGoogleDriveResponseDto })
+  importFromGoogleDrive(@Body() body: ImportGoogleDriveDto, @Request() req: any) {
+    return this.mediaService.importFromGoogleDrive(req.user.id, {
       ...body,
       profile_member_id: req.user.profileMemberId,
       display_name: req.user.displayName,
@@ -157,6 +178,39 @@ export class MediaController {
     return this.mediaService.getMedia({
       page, pageSize, type, album_id, member_id, uploader_id, event_id, tag, from, to, q, sortBy, sortOrder,
     });
+  }
+
+  @Public()
+  @Get('feed')
+  @ApiOperation({
+    summary: 'Media mới nhất dạng dòng thời gian — media cùng album gộp thành một mục (public)',
+    description:
+      'Phân trang theo MỤC: mỗi mục là một media lẻ hoặc một album (tên, số lượng, 4 ảnh xem trước) đứng ở ' +
+      'vị trí ảnh mới nhất của album. Dùng cho lưới "Media mới nhất" để một đợt tải hàng trăm ảnh vào một album ' +
+      'không đẩy mọi thứ khác sang trang sau. Lọc theo album / tìm kiếm / sắp xếp khác thì dùng GET /media.',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'pageSize', required: false, type: Number, description: 'Số MỤC mỗi trang. Mặc định 12, tối đa 100' })
+  @ApiQuery({ name: 'type', required: false, enum: MEDIA_TYPES })
+  @ApiQuery({ name: 'member_id', required: false, type: String })
+  @ApiQuery({ name: 'uploader_id', required: false, type: String })
+  @ApiQuery({ name: 'event_id', required: false, type: String })
+  @ApiQuery({ name: 'tag', required: false, type: String })
+  @ApiQuery({ name: 'from', required: false, type: String })
+  @ApiQuery({ name: 'to', required: false, type: String })
+  @ApiOkResponse({ type: MediaFeedResponseDto })
+  getMediaFeed(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('pageSize', new DefaultValuePipe(12), ParseIntPipe) pageSize: number,
+    @Query('type') type?: string,
+    @Query('member_id') member_id?: string,
+    @Query('uploader_id') uploader_id?: string,
+    @Query('event_id') event_id?: string,
+    @Query('tag') tag?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.mediaService.getMediaFeed({ page, pageSize, type, member_id, uploader_id, event_id, tag, from, to });
   }
 
   @Public()

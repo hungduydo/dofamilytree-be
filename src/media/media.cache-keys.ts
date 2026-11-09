@@ -26,3 +26,12 @@ export const MEDIA_CACHE_TTL_ALBUMS = 900;
  */
 export const mediaProgressKey = (id: string) => `media:progress:${id}`;
 export const MEDIA_PROGRESS_TTL = 300;
+
+/**
+ * Access token Google của một đợt import Drive. Job nền đọc token từ đây thay
+ * vì nhận trong payload QStash — để token không nằm trong message/log của
+ * QStash. TTL 1 giờ = đời tối đa của access token Google, quá hạn thì token
+ * cũng vô dụng.
+ */
+export const mediaDriveTokenKey = (batchId: string) => `media:drive-import:token:${batchId}`;
+export const MEDIA_DRIVE_TOKEN_TTL = 3600;

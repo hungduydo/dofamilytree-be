@@ -2,10 +2,16 @@ import {
   Injectable, NotFoundException, Inject, Logger,
   BadRequestException, PayloadTooLargeException, ServiceUnavailableException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { Redis as UpstashRedis } from '@upstash/redis';
 import { PrismaService } from '../prisma/prisma.service';
-import { TasksService, MediaUploadProgress } from '../queue/tasks.service';
+import { TasksService, MediaUploadProgress, DriveImportJob } from '../queue/tasks.service';
+import { QStashService } from '../queue/qstash.service';
+import { QUEUE_DRIVE_IMPORT, qstashCallbacksReachable } from '../queue/queue.constants';
+import { logEvent } from '../observability/log-event';
+import { mapWithConcurrency } from '../utils/map-with-concurrency';
+import { getDriveFileMeta, DriveApiError, DriveFileMeta } from './google-drive';
 import { StorageService } from '../storage/storage.service';
 import { SupabaseUsersService } from '../supabase/supabase-users.service';
 import { runInBackground } from '../utils/run-in-background';
@@ -20,6 +26,8 @@ import {
   MEDIA_CACHE_TTL_ALBUMS,
   mediaProgressKey,
   MEDIA_PROGRESS_TTL,
+  mediaDriveTokenKey,
+  MEDIA_DRIVE_TOKEN_TTL,
 } from './media.cache-keys';
 import {
   MEDIA_SORT_FIELDS,
@@ -37,6 +45,8 @@ import {
   STORAGE_QUOTA_BYTES,
   MAX_PRESIGNED_BYTES,
   PRESIGN_EXPIRES_SECONDS,
+  MAX_DRIVE_IMPORT_BYTES,
+  DRIVE_IMPORT_CONCURRENCY,
 } from './media.constants';
 
 export interface MediaStats {
@@ -72,6 +82,27 @@ export interface GetMediaQuery {
   sortOrder?: SortOrder;
 }
 
+/** Số ảnh xem trước của một album trong `getMediaFeed`. */
+const FEED_ALBUM_PREVIEW = 4;
+
+export type DriveImportRejectReason =
+  | 'not_found' | 'unsupported_type' | 'too_large' | 'trashed' | 'drive_unavailable' | 'enqueue_failed';
+
+export interface DriveImportResult {
+  batch_id: string;
+  accepted: Array<{
+    media_id: string;
+    drive_file_id: string;
+    filename: string;
+    mime_type: string;
+    size_bytes: number | null;
+  }>;
+  rejected: Array<{ drive_file_id: string; reason: DriveImportRejectReason; message: string }>;
+}
+
+/** Job chạy thẳng trong process (dev-local): ít song song để không ngốn RAM với ảnh lớn. */
+const INLINE_DRIVE_IMPORT_CONCURRENCY = 3;
+
 @Injectable()
 export class MediaService {
   private readonly logger = new Logger(MediaService.name);
@@ -83,6 +114,7 @@ export class MediaService {
     private readonly storage: StorageService,
     private readonly supabaseUsers: SupabaseUsersService,
     @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
+    private readonly qstash: QStashService,
   ) {
     this.cache = new SafeCache(this.redis, this.logger, MEDIA_CACHE_TTL_ALBUMS);
     this.warnIfUploadLimitUnreachable();
@@ -191,7 +223,7 @@ export class MediaService {
    * 100MB có Fluid) — trần đó nằm NGOÀI tầm kiểm soát của code. Đường này file
    * không chạm function nên không dính trần nào.
    *
-   * Đánh đổi: server không cầm buffer nên KHÔNG nén ảnh lossless như luồng
+   * Đánh đổi: server không cầm buffer nên KHÔNG thu nhỏ / nén ảnh như luồng
    * multipart. Ảnh nhỏ vẫn nên đi `POST /media/upload` để được nén; đường này
    * dành cho audio/video/file lớn vốn dĩ không nén ở server.
    */
@@ -321,6 +353,225 @@ export class MediaService {
   }
 
   /**
+   * Import nhiều file từ Google Drive mà người dùng KHÔNG phải tải về máy:
+   * backend đọc metadata, tạo record `pending`, rồi mỗi file thành một job nền
+   * kéo thẳng từ Drive về storage (server-to-server).
+   *
+   * Thứ tự cố ý: kiểm tra metadata TRƯỚC khi tạo record, để file không hợp lệ
+   * (thư mục, Google Docs, quá lớn, mất quyền) trả về `rejected` ngay thay vì
+   * thành record `failed` rác trong DB.
+   *
+   * Token hỏng ⇒ 400 (KHÔNG 401: FE hiểu 401 là JWT của app hết hạn và đăng
+   * xuất người dùng).
+   */
+  async importFromGoogleDrive(
+    uploaderId: string,
+    dto: {
+      access_token: string;
+      file_ids: string[];
+      album_id?: string;
+      member_id?: string;
+      event_id?: string;
+      uploader_name?: string;
+      tags?: string[];
+      profile_member_id?: string | null;
+      display_name?: string | null;
+    },
+  ): Promise<DriveImportResult> {
+    const batchId = randomUUID();
+    const fileIds = [...new Set(dto.file_ids)];
+    const rejected: DriveImportResult['rejected'] = [];
+
+    const metas = await mapWithConcurrency(fileIds, DRIVE_IMPORT_CONCURRENCY, async (id) => {
+      try {
+        return { id, meta: await getDriveFileMeta(dto.access_token, id) };
+      } catch (error) {
+        return { id, error };
+      }
+    });
+
+    if (metas.some((m) => m.error instanceof DriveApiError && m.error.isAuthError)) {
+      throw new BadRequestException(
+        'Access token Google không hợp lệ hoặc đã hết hạn — hãy đăng nhập Google và chọn ảnh lại.',
+      );
+    }
+
+    const candidates: DriveFileMeta[] = [];
+    for (const { id, meta, error } of metas) {
+      if (!meta) {
+        const retryable = error instanceof DriveApiError && error.retryable;
+        rejected.push(
+          retryable
+            ? { drive_file_id: id, reason: 'drive_unavailable', message: 'Google Drive tạm thời lỗi — hãy thử lại file này.' }
+            : { drive_file_id: id, reason: 'not_found', message: 'Không tìm thấy file hoặc không có quyền truy cập.' },
+        );
+        continue;
+      }
+      const reason = this.driveRejectReason(meta);
+      if (reason) {
+        rejected.push({ drive_file_id: id, ...reason });
+        continue;
+      }
+      candidates.push(meta);
+    }
+
+    if (candidates.length === 0) return { batch_id: batchId, accepted: [], rejected };
+
+    // Token PHẢI nằm trong Redis trước khi job nào chạy — lỗi ở đây là lỗi thật
+    // (không phải cache best-effort), nên không đi qua SafeCache.
+    try {
+      await this.redis.set(
+        mediaDriveTokenKey(batchId),
+        { access_token: dto.access_token },
+        { ex: MEDIA_DRIVE_TOKEN_TTL },
+      );
+    } catch (error) {
+      this.logger.error(`Không lưu được token import Drive: ${(error as Error).message}`);
+      throw new ServiceUnavailableException('Hệ thống hàng đợi tạm thời lỗi — hãy thử lại sau ít phút.');
+    }
+
+    const uploaderName = await this.resolveUploaderName(
+      uploaderId,
+      dto.uploader_name,
+      dto.profile_member_id,
+      dto.display_name,
+    );
+
+    const created = await this.prisma.$transaction(
+      candidates.map((meta) =>
+        this.prisma.media.create({
+          data: {
+            file_path: `/pending/${Date.now()}_${meta.name}`,
+            uploader_id: uploaderId,
+            uploader_name: uploaderName,
+            title: meta.name,
+            normalized_title: removeVietnameseTones(meta.name),
+            type: classifyMediaType(meta.mimeType),
+            mime_type: meta.mimeType,
+            member_id: dto.member_id,
+            album_id: dto.album_id,
+            event_id: dto.event_id,
+            tags: dto.tags ?? [],
+            size_bytes: meta.size,
+            status: 'pending',
+          },
+          select: { id: true },
+        }),
+      ),
+    );
+
+    const jobs: DriveImportJob[] = created.map((media, i) => ({
+      mediaId: media.id,
+      batchId,
+      driveFileId: candidates[i].id,
+      filename: candidates[i].name,
+      mimetype: candidates[i].mimeType,
+    }));
+
+    await Promise.all(
+      jobs.map((job) =>
+        this.cache.set(mediaProgressKey(job.mediaId), { status: 'pending', progress: 0 }, MEDIA_PROGRESS_TTL),
+      ),
+    );
+
+    const mode = qstashCallbacksReachable() ? 'qstash' : 'inline';
+    const enqueueFailed = mode === 'qstash' ? await this.publishDriveImports(jobs) : new Set<string>();
+    if (mode === 'inline') {
+      // Dev-local: QStash không gọi về localhost được. Trên Vercel không có
+      // QStash thì job bị giới hạn bởi maxDuration của function — xem docs.
+      runInBackground(
+        mapWithConcurrency(jobs, INLINE_DRIVE_IMPORT_CONCURRENCY, (job) =>
+          this.tasksService.handleDriveImport(job).catch(() => {}),
+        ),
+      );
+    }
+
+    const accepted: DriveImportResult['accepted'] = [];
+    jobs.forEach((job, i) => {
+      if (enqueueFailed.has(job.mediaId)) {
+        rejected.push({
+          drive_file_id: job.driveFileId,
+          reason: 'enqueue_failed',
+          message: 'Không xếp được file vào hàng đợi — hãy thử lại file này.',
+        });
+        return;
+      }
+      accepted.push({
+        media_id: job.mediaId,
+        drive_file_id: job.driveFileId,
+        filename: job.filename,
+        mime_type: job.mimetype,
+        size_bytes: candidates[i].size,
+      });
+    });
+
+    await this.invalidateMediaCaches();
+
+    logEvent('media.drive_import.requested', 'info', 'Google Drive import requested', {
+      'media.batch_id': batchId,
+      'media.accepted': accepted.length,
+      'media.rejected': rejected.length,
+      'queue.mode': mode,
+    });
+
+    return { batch_id: batchId, accepted, rejected };
+  }
+
+  /** Lý do loại một file Drive TRƯỚC khi tạo record; `null` = hợp lệ. */
+  private driveRejectReason(
+    meta: DriveFileMeta,
+  ): { reason: DriveImportRejectReason; message: string } | null {
+    if (meta.trashed) {
+      return { reason: 'trashed', message: `"${meta.name}" đang nằm trong thùng rác Google Drive.` };
+    }
+    if (meta.mimeType === 'application/vnd.google-apps.folder') {
+      return {
+        reason: 'unsupported_type',
+        message: `"${meta.name}" là thư mục — hãy mở thư mục và chọn các ảnh bên trong.`,
+      };
+    }
+    // Google Docs/Sheets… (application/vnd.google-apps.*) không tải được bằng
+    // alt=media và cũng không nằm trong allowlist ⇒ rơi vào nhánh này.
+    if (!isAllowedMime(meta.mimeType)) {
+      return { reason: 'unsupported_type', message: `"${meta.name}" có định dạng không hỗ trợ (${meta.mimeType}).` };
+    }
+    if (meta.size !== null && meta.size > MAX_DRIVE_IMPORT_BYTES) {
+      return {
+        reason: 'too_large',
+        message: `"${meta.name}" vượt quá ${formatBytes(MAX_DRIVE_IMPORT_BYTES)} — hãy tải về rồi upload trực tiếp.`,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Publish mỗi file một job QStash. Trả về tập mediaId publish hỏng — các
+   * record đó bị đánh dấu `failed` ngay, nếu không chúng kẹt `pending` mãi mãi
+   * vì không job nào tới.
+   */
+  private async publishDriveImports(jobs: DriveImportJob[]): Promise<Set<string>> {
+    const results = await mapWithConcurrency(jobs, DRIVE_IMPORT_CONCURRENCY, async (job) => {
+      try {
+        // deduplicationId: client gửi lại cùng request không sinh hai job cho một record.
+        await this.qstash.publish(QUEUE_DRIVE_IMPORT, job, { deduplicationId: `drive-import-${job.mediaId}` });
+        return null;
+      } catch {
+        return job.mediaId; // QStashService.publish đã log `queue.publish.failed`.
+      }
+    });
+    const failed = new Set(results.filter((id): id is string => id !== null));
+    if (failed.size > 0) {
+      await this.prisma.media.updateMany({ where: { id: { in: [...failed] } }, data: { status: 'failed' } });
+      await Promise.all(
+        [...failed].map((id) =>
+          this.cache.set(mediaProgressKey(id), { status: 'failed', progress: 100 }, MEDIA_PROGRESS_TTL),
+        ),
+      );
+    }
+    return failed;
+  }
+
+  /**
    * Progress upload — đọc Redis trước (nhanh, cập nhật theo từng bước xử lý ở
    * TasksService). Nếu key đã hết hạn (upload xong từ lâu / Redis lỗi), fallback
    * đọc `status` từ Postgres — nguồn sự thật cuối cùng, luôn đúng dù mất progress
@@ -350,17 +601,8 @@ export class MediaService {
     const page = Math.max(query.page ?? 1, 1);
     const skip = (page - 1) * take;
 
-    const where: Prisma.MediaWhereInput = { status: 'ready' };
-    if (query.type && (MEDIA_TYPES as readonly string[]).includes(query.type)) where.type = query.type;
+    const where = this.mediaListWhere(query);
     if (query.album_id) where.album_id = query.album_id;
-    if (query.member_id) where.member_id = query.member_id;
-    if (query.uploader_id) where.uploader_id = query.uploader_id;
-    if (query.event_id) where.event_id = query.event_id;
-    if (query.tag) where.tags = { has: query.tag };
-
-    const createdAt = this.dateRangeWhere(query.from, query.to);
-    if (createdAt) where.created_at = createdAt;
-
     const search = this.titleSearchWhere(query.q);
     if (search) where.OR = search;
 
@@ -381,6 +623,111 @@ export class MediaService {
     ]);
 
     return { data, total, page, pageSize: take };
+  }
+
+  /**
+   * Lưới "Media mới nhất" dạng dòng thời gian: media thuộc một album được GỘP
+   * thành MỘT mục (tên album, số lượng, vài ảnh xem trước), đứng ở vị trí của
+   * ảnh mới nhất trong album. Không gộp thì một đợt tải 160 ảnh đám tang lên
+   * album chiếm trọn các trang đầu và đẩy mọi thứ khác ra sau.
+   *
+   * Media không thuộc album vẫn hiện từng cái. Bộ lọc type/tag/event/thời gian
+   * áp cho cả hai loại (đếm và xem trước của album chỉ tính media khớp lọc).
+   *
+   * Phân trang trên MỤC, không phải trên media. Số album nhỏ (vài chục) nên lấy
+   * hết nhóm bằng groupBy rồi trộn với `skip + take` media lẻ mới nhất — đủ để
+   * cắt đúng trang mà không phải viết SQL thô lặp lại bộ lọc.
+   */
+  async getMediaFeed(query: Omit<GetMediaQuery, 'album_id' | 'q' | 'sortBy' | 'sortOrder'>) {
+    const take = Math.min(Math.max(query.pageSize ?? 12, 1), 100);
+    const page = Math.max(query.page ?? 1, 1);
+    const skip = (page - 1) * take;
+    const where = this.mediaListWhere(query);
+    const looseWhere: Prisma.MediaWhereInput = { ...where, album_id: null };
+
+    const [loose, looseTotal, groups] = await Promise.all([
+      this.prisma.media.findMany({
+        where: looseWhere,
+        take: skip + take,
+        orderBy: [{ created_at: 'desc' }, { id: 'asc' }],
+        select: MEDIA_CARD_SELECT,
+      }),
+      this.prisma.media.count({ where: looseWhere }),
+      this.prisma.media.groupBy({
+        by: ['album_id'],
+        where: { ...where, album_id: { not: null } },
+        _max: { created_at: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    type Slot =
+      | { kind: 'media'; at: Date; media: (typeof loose)[number] }
+      | { kind: 'album'; at: Date; albumId: string; count: number };
+    const slots: Slot[] = [
+      ...loose.map((media): Slot => ({ kind: 'media', at: media.created_at, media })),
+      ...groups.map(
+        (g): Slot => ({ kind: 'album', at: g._max.created_at!, albumId: g.album_id!, count: g._count._all }),
+      ),
+    ];
+    // Mới nhất trước; cùng thời điểm thì album trước (ổn định giữa các trang).
+    slots.sort((a, b) => b.at.getTime() - a.at.getTime() || (a.kind === b.kind ? 0 : a.kind === 'album' ? -1 : 1));
+    const pageSlots = slots.slice(skip, skip + take);
+
+    const albumIds = pageSlots.flatMap((s) => (s.kind === 'album' ? [s.albumId] : []));
+    const [albums, previews] = await Promise.all([
+      this.prisma.mediaAlbum.findMany({
+        where: { id: { in: albumIds } },
+        select: { id: true, name: true, cover_url: true, date: true },
+      }),
+      Promise.all(
+        albumIds.map((id) =>
+          this.prisma.media.findMany({
+            where: { ...where, album_id: id },
+            take: FEED_ALBUM_PREVIEW,
+            orderBy: [{ created_at: 'desc' }, { id: 'asc' }],
+            select: MEDIA_CARD_SELECT,
+          }),
+        ),
+      ),
+    ]);
+    const albumById = new Map(albums.map((a) => [a.id, a]));
+    const previewById = new Map(albumIds.map((id, i) => [id, previews[i]]));
+
+    const data = pageSlots.map((slot) =>
+      slot.kind === 'media'
+        ? { kind: 'media' as const, media: slot.media }
+        : {
+            kind: 'album' as const,
+            album: albumById.get(slot.albumId) ?? { id: slot.albumId, name: '', cover_url: null, date: null },
+            count: slot.count,
+            latest_at: slot.at,
+            preview: previewById.get(slot.albumId) ?? [],
+          },
+    );
+
+    return {
+      data,
+      /** Số MỤC (media lẻ + album) — dùng cho phân trang. */
+      total: slots.length,
+      /** Số MEDIA khớp lọc — dùng cho nhãn "N mục". */
+      media_total: looseTotal + groups.reduce((sum, g) => sum + g._count._all, 0),
+      page,
+      pageSize: take,
+    };
+  }
+
+  /** Bộ lọc chung của `getMedia` và `getMediaFeed`: chỉ `ready` + type/member/uploader/event/tag/thời gian. */
+  private mediaListWhere(query: GetMediaQuery): Prisma.MediaWhereInput {
+    const where: Prisma.MediaWhereInput = { status: 'ready' };
+    if (query.type && (MEDIA_TYPES as readonly string[]).includes(query.type)) where.type = query.type;
+    if (query.member_id) where.member_id = query.member_id;
+    if (query.uploader_id) where.uploader_id = query.uploader_id;
+    if (query.event_id) where.event_id = query.event_id;
+    if (query.tag) where.tags = { has: query.tag };
+    const createdAt = this.dateRangeWhere(query.from, query.to);
+    if (createdAt) where.created_at = createdAt;
+    return where;
   }
 
   private titleSearchWhere(q?: string): Prisma.MediaWhereInput[] | undefined {

@@ -93,6 +93,63 @@ export class PaginatedMediaResponseDto {
   pageSize: number;
 }
 
+/** Album rút gọn trong một mục feed. */
+export class MediaFeedAlbumDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ example: 'Đám tang ông Đỗ Văn A' })
+  name: string;
+
+  @ApiPropertyOptional({ nullable: true, format: 'uri' })
+  cover_url: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '15/04/2024' })
+  date: string | null;
+}
+
+/**
+ * Một mục của `GET /v2/media/feed`: hoặc một media lẻ (`kind: media`), hoặc cả
+ * một album gộp lại (`kind: album`) — xem MediaService.getMediaFeed.
+ */
+export class MediaFeedEntryDto {
+  @ApiProperty({ enum: ['media', 'album'] })
+  kind: 'media' | 'album';
+
+  @ApiPropertyOptional({ type: () => MediaResponseDto, description: 'Có khi kind = media' })
+  media?: MediaResponseDto;
+
+  @ApiPropertyOptional({ type: () => MediaFeedAlbumDto, description: 'Có khi kind = album' })
+  album?: MediaFeedAlbumDto;
+
+  @ApiPropertyOptional({ example: 160, description: 'kind = album: số media khớp lọc trong album' })
+  count?: number;
+
+  @ApiPropertyOptional({ type: String, format: 'date-time', description: 'kind = album: thời điểm media mới nhất' })
+  latest_at?: Date;
+
+  @ApiPropertyOptional({ type: () => [MediaResponseDto], description: 'kind = album: tối đa 4 media mới nhất' })
+  preview?: MediaResponseDto[];
+}
+
+/** Envelope của `GET /v2/media/feed` — phân trang theo MỤC. */
+export class MediaFeedResponseDto {
+  @ApiProperty({ type: () => [MediaFeedEntryDto] })
+  data: MediaFeedEntryDto[];
+
+  @ApiProperty({ example: 37, description: 'Tổng số mục (media lẻ + album)' })
+  total: number;
+
+  @ApiProperty({ example: 412, description: 'Tổng số media khớp lọc' })
+  media_total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 12 })
+  pageSize: number;
+}
+
 /** Thống kê cho thẻ "Thống kê media" + "Dung lượng lưu trữ". */
 export class MediaStatsResponseDto {
   @ApiProperty({ example: 1256 })
