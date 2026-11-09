@@ -533,9 +533,10 @@ describe('MediaService', () => {
       );
       expect(mockRedis.set).toHaveBeenCalledWith(
         `media:drive-import:token:${res.batch_id}`,
-        { access_token: 'tok' },
+        { kind: 'token', accessToken: 'tok' },
         { ex: 3600 },
       );
+      expect(getMeta).toHaveBeenCalledWith({ kind: 'token', accessToken: 'tok' }, ID_A);
       expect(mockQStash.publish).toHaveBeenCalledTimes(2);
       const [task, payload, opts] = mockQStash.publish.mock.calls[0];
       expect(task).toBe('drive-import');
@@ -614,6 +615,55 @@ describe('MediaService', () => {
       expect(mockTasksService.handleDriveImport).toHaveBeenCalledWith(
         expect.objectContaining({ mediaId: 'media-1', driveFileId: ID_A }),
       );
+    });
+    describe('chế độ link chia sẻ (không access_token)', () => {
+      const linkDto = (file_ids: string[], resource_keys?: string[]) => ({
+        file_ids, resource_keys, album_id: 'album-1', display_name: 'Chú Ba',
+      });
+      beforeEach(() => {
+        process.env.GOOGLE_DRIVE_API_KEY = 'server-key';
+      });
+
+      it('đọc metadata bằng key server, Redis chỉ giữ resource key — không bao giờ giữ key', async () => {
+        const res = await service.importFromGoogleDrive('user-1', linkDto([ID_A, ID_B], [`${ID_A}/rk`, `${ID_A}/rk`]));
+
+        expect(getMeta).toHaveBeenCalledWith(
+          { kind: 'apiKey', apiKey: 'server-key', resourceKeys: [`${ID_A}/rk`] }, ID_A,
+        );
+        expect(res.accepted).toHaveLength(2);
+        expect(mockRedis.set).toHaveBeenCalledWith(
+          `media:drive-import:token:${res.batch_id}`,
+          { kind: 'apiKey', resourceKeys: [`${ID_A}/rk`] },
+          { ex: 3600 },
+        );
+        expect(JSON.stringify(mockRedis.set.mock.calls)).not.toContain('server-key');
+        expect(JSON.stringify(mockQStash.publish.mock.calls)).not.toContain('server-key');
+      });
+
+      it('thiếu GOOGLE_DRIVE_API_KEY ⇒ 503 và không gọi Drive', async () => {
+        delete process.env.GOOGLE_DRIVE_API_KEY;
+        const err = await service.importFromGoogleDrive('user-1', linkDto([ID_A])).catch((e) => e);
+        expect(err).toBeInstanceOf(ServiceUnavailableException);
+        expect(err.message).toBe('Import từ link Google Drive chưa được cấu hình.');
+        expect(getMeta).not.toHaveBeenCalled();
+        expect(mockPrisma.media.create).not.toHaveBeenCalled();
+      });
+
+      it('404 ⇒ not_found với hướng dẫn chia sẻ link', async () => {
+        getMeta.mockRejectedValue(new DriveApiError('x', 404, false));
+        const res = await service.importFromGoogleDrive('user-1', linkDto([ID_A]));
+        expect(res.rejected).toEqual([{
+          drive_file_id: ID_A,
+          reason: 'not_found',
+          message: "File chưa được chia sẻ công khai — hãy đặt quyền 'Bất kỳ ai có đường liên kết'.",
+        }]);
+      });
+
+      it('401 ở chế độ link KHÔNG ra 400 "token không hợp lệ"', async () => {
+        getMeta.mockRejectedValue(new DriveApiError('x', 401, false));
+        const res = await service.importFromGoogleDrive('user-1', linkDto([ID_A]));
+        expect(res.rejected).toEqual([expect.objectContaining({ reason: 'not_found' })]);
+      });
     });
   });
 });

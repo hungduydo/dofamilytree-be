@@ -3,21 +3,42 @@ import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsOptional, IsString, IsUUID, Matches, MaxLength,
 } from 'class-validator';
 import { MAX_DRIVE_IMPORT_FILES } from '../media.constants';
-import { DRIVE_FILE_ID_PATTERN } from '../google-drive';
+import { DRIVE_FILE_ID_PATTERN, DRIVE_RESOURCE_KEY_PATTERN } from '../google-drive';
 
 /**
- * Body cho `POST /v2/media/import/google-drive`. FE lấy `file_ids` và
- * `access_token` từ Google Picker (scope `drive.file`) — xem docs/GOOGLE_DRIVE_IMPORT.md.
+ * Body cho `POST /v2/media/import/google-drive`. Hai chế độ:
+ * - Picker: FE gửi `access_token` + `file_ids` lấy từ Google Picker (scope `drive.file`).
+ * - Link chia sẻ: KHÔNG có `access_token`; backend đọc file bằng key server
+ *   `GOOGLE_DRIVE_API_KEY`, kèm `resource_keys` nếu link có resource key.
+ * Xem docs/GOOGLE_DRIVE_IMPORT.md.
  */
 export class ImportGoogleDriveDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     description:
       'OAuth access token Google của người dùng (scope drive.file), lấy từ Google Identity Services. ' +
-      'Backend chỉ giữ tạm trong Redis tối đa 1 giờ cho đợt import, không lưu refresh token.',
+      'Backend chỉ giữ tạm trong Redis tối đa 1 giờ cho đợt import, không lưu refresh token. ' +
+      'Bỏ trống ⇒ chế độ link chia sẻ: file phải được chia sẻ "Bất kỳ ai có đường liên kết".',
   })
+  @IsOptional()
   @IsString()
   @MaxLength(4096)
-  access_token: string;
+  access_token?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Chỉ dùng ở chế độ link chia sẻ: resource key của các file cũ, mỗi phần tử dạng "fileId/resourceKey" ' +
+      `(định dạng header X-Goog-Drive-Resource-Keys). Tối đa ${MAX_DRIVE_IMPORT_FILES}.`,
+    example: ['1AbCdEfGhIjKlMnOpQrStUvWxYz012345/0-AbCdEfGh'],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_DRIVE_IMPORT_FILES)
+  @Matches(DRIVE_RESOURCE_KEY_PATTERN, {
+    each: true,
+    message: 'resource_keys phải có dạng "fileId/resourceKey"',
+  })
+  resource_keys?: string[];
 
   @ApiProperty({
     type: [String],

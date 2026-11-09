@@ -4,7 +4,10 @@ import * as drive from '../../src/media/google-drive';
 
 // Ảnh thật đi qua sharp được test riêng ở test/media/image-optimize.spec.ts.
 jest.mock('../../src/media/image-optimize', () => ({
-  optimizeImage: jest.fn(async () => ({ buffer: Buffer.from('compressed'), optimized: true, width: 3000, height: 2000 })),
+  ...jest.requireActual('../../src/media/image-optimize'),
+  optimizeImage: jest.fn(async () => ({
+    buffer: Buffer.from('compressed'), mimetype: 'image/webp', optimized: true, width: 3840, height: 2560,
+  })),
 }));
 
 const JOB: DriveImportJob = {
@@ -27,7 +30,7 @@ function setup() {
     set: jest.fn().mockResolvedValue('OK'),
     del: jest.fn().mockResolvedValue(1),
   };
-  const storage = { put: jest.fn().mockResolvedValue('https://cdn.example/media/m1/Gio-To-2024.jpg') };
+  const storage = { put: jest.fn().mockResolvedValue('https://cdn.example/media/m1/Gio-To-2024.webp') };
   const service = new TasksService(prisma as any, redis as any, {} as any, storage as any, {} as any, {} as any);
   return { service, prisma, redis, storage };
 }
@@ -39,16 +42,73 @@ describe('TasksService.handleDriveImport', () => {
   });
   afterEach(() => download.mockRestore());
 
-  it('tải từ Drive bằng token trong Redis, nén rồi lưu và chuyển ready', async () => {
+  it('tải từ Drive bằng token trong Redis, chuyển WebP rồi lưu và chuyển ready', async () => {
     const { service, prisma, redis, storage } = setup();
     await service.handleDriveImport(JOB);
 
     expect(redis.get).toHaveBeenCalledWith('media:drive-import:token:b1');
-    expect(download).toHaveBeenCalledWith('tok', JOB.driveFileId, expect.any(Number));
-    expect(storage.put).toHaveBeenCalledWith('media/m1/Gio-To-2024.jpg', Buffer.from('compressed'), 'image/jpeg');
+    expect(download).toHaveBeenCalledWith({ kind: 'token', accessToken: 'tok' }, JOB.driveFileId, expect.any(Number));
+    expect(storage.put).toHaveBeenCalledWith('media/m1/Gio-To-2024.webp', Buffer.from('compressed'), 'image/webp');
     expect(prisma.media.update).toHaveBeenCalledWith({
       where: { id: 'm1' },
-      data: { file_path: 'https://cdn.example/media/m1/Gio-To-2024.jpg', size_bytes: 10, status: 'ready' },
+      data: {
+        file_path: 'https://cdn.example/media/m1/Gio-To-2024.webp', size_bytes: 10, status: 'ready', mime_type: 'image/webp',
+      },
+    });
+  });
+
+  it('dạng token mới trong Redis ({ kind: token })', async () => {
+    const { service, redis } = setup();
+    redis.get.mockResolvedValue({ kind: 'token', accessToken: 'tok2' });
+    await service.handleDriveImport(JOB);
+    expect(download).toHaveBeenCalledWith({ kind: 'token', accessToken: 'tok2' }, JOB.driveFileId, expect.any(Number));
+  });
+
+  describe('batch link chia sẻ', () => {
+    const env = process.env;
+    beforeEach(() => {
+      process.env = { ...env, GOOGLE_DRIVE_API_KEY: 'server-key' };
+    });
+    afterEach(() => {
+      process.env = env;
+    });
+
+    it('dựng auth từ resource key trong Redis + key trong env', async () => {
+      const { service, prisma, redis } = setup();
+      redis.get.mockResolvedValue({ kind: 'apiKey', resourceKeys: [`${JOB.driveFileId}/rk`] });
+      await service.handleDriveImport(JOB);
+      expect(download).toHaveBeenCalledWith(
+        { kind: 'apiKey', apiKey: 'server-key', resourceKeys: [`${JOB.driveFileId}/rk`] },
+        JOB.driveFileId,
+        expect.any(Number),
+      );
+      expect(prisma.media.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'ready' }) }),
+      );
+    });
+
+    it('404 ở chế độ link ⇒ message hướng dẫn chia sẻ link', async () => {
+      const { service, redis } = setup();
+      redis.get.mockResolvedValue({ kind: 'apiKey', resourceKeys: [] });
+      download.mockRejectedValue(new DriveApiError('x', 404, false));
+      await service.handleDriveImport(JOB);
+      expect(redis.set).toHaveBeenLastCalledWith(
+        'media:progress:m1',
+        expect.stringContaining('Bất kỳ ai có đường liên kết'),
+        expect.anything(),
+      );
+    });
+
+    it('env mất GOOGLE_DRIVE_API_KEY ⇒ failed, không tải, không ném', async () => {
+      process.env = { ...env, GOOGLE_DRIVE_API_KEY: '' };
+      const { service, prisma, redis } = setup();
+      redis.get.mockResolvedValue({ kind: 'apiKey', resourceKeys: [] });
+      await expect(service.handleDriveImport(JOB)).resolves.toBeUndefined();
+      expect(download).not.toHaveBeenCalled();
+      expect(prisma.media.update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { status: 'failed' } });
+      expect(redis.set).toHaveBeenLastCalledWith(
+        'media:progress:m1', expect.stringContaining('chưa được cấu hình'), expect.anything(),
+      );
     });
   });
 
