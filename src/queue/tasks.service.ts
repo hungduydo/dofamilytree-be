@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { errorAttributes, logEvent, logEventThrottled } from '../observability/log-event';
 import { PrismaService } from '../prisma/prisma.service';
 import { Redis as UpstashRedis } from '@upstash/redis';
+import { REDIS_DURABLE_CLIENT } from '../redis.provider';
 import { GenerationService } from '../generation/generation.service';
 import { StorageService } from '../storage/storage.service';
 import {
@@ -43,6 +44,7 @@ export class TasksService {
     private readonly storage: StorageService,
     private readonly mail: MailService,
     private readonly supabaseUsers: SupabaseUsersService,
+    @Inject(REDIS_DURABLE_CLIENT) private readonly durableRedis: UpstashRedis,
   ) {}
 
   /**
@@ -292,7 +294,16 @@ export class TasksService {
 
     await this.setMediaProgress(mediaId, { status: 'processing', progress: 5 });
 
-    const restored = fromStoredDriveAuth(await this.redis.get<unknown>(mediaDriveTokenKey(batchId)));
+    let stored: unknown;
+    try {
+      stored = await this.durableRedis.get<unknown>(mediaDriveTokenKey(batchId));
+    } catch (error) {
+      // Không đọc được ≠ hết hạn. Đánh dấu failed (để record không kẹt ở
+      // `processing` khi chạy inline) rồi NÉM để QStash retry.
+      await this.failDriveImport(job, 'redis_unavailable', 'Hệ thống hàng đợi tạm thời lỗi — đang thử lại.', error);
+      throw error;
+    }
+    const restored = fromStoredDriveAuth(stored);
     if ('error' in restored) {
       if (restored.error === 'not_configured') {
         await this.failDriveImport(job, 'not_configured', 'Import từ link Google Drive chưa được cấu hình.');
@@ -335,12 +346,14 @@ export class TasksService {
 
   private async failDriveImport(
     job: DriveImportJob,
-    reason: 'token_expired' | 'not_configured' | 'too_large' | 'drive_forbidden' | 'drive_unavailable',
+    reason:
+      | 'token_expired' | 'not_configured' | 'too_large' | 'drive_forbidden' | 'drive_unavailable'
+      | 'redis_unavailable',
     message: string,
     error?: unknown,
   ): Promise<void> {
     this.logger.warn(`Drive import ${job.mediaId} failed (${reason}): ${(error as Error | undefined)?.message ?? message}`);
-    logEvent('media.drive_import.failed', reason === 'drive_unavailable' ? 'warn' : 'error', 'Google Drive import failed', {
+    logEvent('media.drive_import.failed', reason === 'drive_unavailable' || reason === 'redis_unavailable' ? 'warn' : 'error', 'Google Drive import failed', {
       'media.id': job.mediaId,
       'media.mime_type': job.mimetype,
       'media.reason': reason,

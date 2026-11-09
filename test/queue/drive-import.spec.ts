@@ -25,14 +25,17 @@ function setup() {
       update: jest.fn().mockResolvedValue({}),
     },
   };
+  // Cache client: progress + stats. Durable client: auth của đợt import.
   const redis = {
-    get: jest.fn().mockResolvedValue({ access_token: 'tok' }),
     set: jest.fn().mockResolvedValue('OK'),
     del: jest.fn().mockResolvedValue(1),
   };
+  const durable = { get: jest.fn().mockResolvedValue({ access_token: 'tok' }) };
   const storage = { put: jest.fn().mockResolvedValue('https://cdn.example/media/m1/Gio-To-2024.webp') };
-  const service = new TasksService(prisma as any, redis as any, {} as any, storage as any, {} as any, {} as any);
-  return { service, prisma, redis, storage };
+  const service = new TasksService(
+    prisma as any, redis as any, {} as any, storage as any, {} as any, {} as any, durable as any,
+  );
+  return { service, prisma, redis, durable, storage };
 }
 
 describe('TasksService.handleDriveImport', () => {
@@ -43,10 +46,10 @@ describe('TasksService.handleDriveImport', () => {
   afterEach(() => download.mockRestore());
 
   it('tải từ Drive bằng token trong Redis, chuyển WebP rồi lưu và chuyển ready', async () => {
-    const { service, prisma, redis, storage } = setup();
+    const { service, prisma, redis, durable, storage } = setup();
     await service.handleDriveImport(JOB);
 
-    expect(redis.get).toHaveBeenCalledWith('media:drive-import:token:b1');
+    expect(durable.get).toHaveBeenCalledWith('media:drive-import:token:b1');
     expect(download).toHaveBeenCalledWith({ kind: 'token', accessToken: 'tok' }, JOB.driveFileId, expect.any(Number));
     expect(storage.put).toHaveBeenCalledWith('media/m1/Gio-To-2024.webp', Buffer.from('compressed'), 'image/webp');
     expect(prisma.media.update).toHaveBeenCalledWith({
@@ -58,8 +61,8 @@ describe('TasksService.handleDriveImport', () => {
   });
 
   it('dạng token mới trong Redis ({ kind: token })', async () => {
-    const { service, redis } = setup();
-    redis.get.mockResolvedValue({ kind: 'token', accessToken: 'tok2' });
+    const { service, redis, durable } = setup();
+    durable.get.mockResolvedValue({ kind: 'token', accessToken: 'tok2' });
     await service.handleDriveImport(JOB);
     expect(download).toHaveBeenCalledWith({ kind: 'token', accessToken: 'tok2' }, JOB.driveFileId, expect.any(Number));
   });
@@ -74,8 +77,8 @@ describe('TasksService.handleDriveImport', () => {
     });
 
     it('dựng auth từ resource key trong Redis + key trong env', async () => {
-      const { service, prisma, redis } = setup();
-      redis.get.mockResolvedValue({ kind: 'apiKey', resourceKeys: [`${JOB.driveFileId}/rk`] });
+      const { service, prisma, redis, durable } = setup();
+      durable.get.mockResolvedValue({ kind: 'apiKey', resourceKeys: [`${JOB.driveFileId}/rk`] });
       await service.handleDriveImport(JOB);
       expect(download).toHaveBeenCalledWith(
         { kind: 'apiKey', apiKey: 'server-key', resourceKeys: [`${JOB.driveFileId}/rk`] },
@@ -88,8 +91,8 @@ describe('TasksService.handleDriveImport', () => {
     });
 
     it('404 ở chế độ link ⇒ message hướng dẫn chia sẻ link', async () => {
-      const { service, redis } = setup();
-      redis.get.mockResolvedValue({ kind: 'apiKey', resourceKeys: [] });
+      const { service, redis, durable } = setup();
+      durable.get.mockResolvedValue({ kind: 'apiKey', resourceKeys: [] });
       download.mockRejectedValue(new DriveApiError('x', 404, false));
       await service.handleDriveImport(JOB);
       expect(redis.set).toHaveBeenLastCalledWith(
@@ -101,8 +104,8 @@ describe('TasksService.handleDriveImport', () => {
 
     it('env mất GOOGLE_DRIVE_API_KEY ⇒ failed, không tải, không ném', async () => {
       process.env = { ...env, GOOGLE_DRIVE_API_KEY: '' };
-      const { service, prisma, redis } = setup();
-      redis.get.mockResolvedValue({ kind: 'apiKey', resourceKeys: [] });
+      const { service, prisma, redis, durable } = setup();
+      durable.get.mockResolvedValue({ kind: 'apiKey', resourceKeys: [] });
       await expect(service.handleDriveImport(JOB)).resolves.toBeUndefined();
       expect(download).not.toHaveBeenCalled();
       expect(prisma.media.update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { status: 'failed' } });
@@ -110,6 +113,17 @@ describe('TasksService.handleDriveImport', () => {
         'media:progress:m1', expect.stringContaining('chưa được cấu hình'), expect.anything(),
       );
     });
+  });
+
+  it('Redis không đọc được ⇒ failed (không kẹt processing) rồi NÉM để retry — không coi là hết hạn', async () => {
+    const { service, prisma, durable, redis } = setup();
+    durable.get.mockRejectedValue(new Error('The operation was aborted due to timeout'));
+    await expect(service.handleDriveImport(JOB)).rejects.toThrow('timeout');
+    expect(download).not.toHaveBeenCalled();
+    expect(prisma.media.update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { status: 'failed' } });
+    expect(redis.set).toHaveBeenLastCalledWith(
+      'media:progress:m1', expect.not.stringContaining('hết hạn'), expect.anything(),
+    );
   });
 
   it('bỏ qua record đã ready (QStash giao lặp)', async () => {
@@ -128,8 +142,8 @@ describe('TasksService.handleDriveImport', () => {
   });
 
   it('token hết hạn trong Redis ⇒ failed, KHÔNG ném (retry vô ích)', async () => {
-    const { service, prisma, redis } = setup();
-    redis.get.mockResolvedValue(null);
+    const { service, prisma, redis, durable } = setup();
+    durable.get.mockResolvedValue(null);
     await expect(service.handleDriveImport(JOB)).resolves.toBeUndefined();
     expect(prisma.media.update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { status: 'failed' } });
     expect(download).not.toHaveBeenCalled();

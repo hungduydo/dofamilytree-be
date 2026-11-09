@@ -11,6 +11,7 @@ import { QStashService } from '../queue/qstash.service';
 import { QUEUE_DRIVE_IMPORT, qstashCallbacksReachable } from '../queue/queue.constants';
 import { logEvent } from '../observability/log-event';
 import { mapWithConcurrency } from '../utils/map-with-concurrency';
+import { REDIS_DURABLE_CLIENT } from '../redis.provider';
 import {
   getDriveFileMeta, DriveApiError, DriveFileMeta, DriveAuth, driveServerApiKey, toStoredDriveAuth,
 } from './google-drive';
@@ -117,6 +118,7 @@ export class MediaService {
     private readonly supabaseUsers: SupabaseUsersService,
     @Inject('REDIS_CLIENT') private readonly redis: UpstashRedis,
     private readonly qstash: QStashService,
+    @Inject(REDIS_DURABLE_CLIENT) private readonly durableRedis: UpstashRedis,
   ) {
     this.cache = new SafeCache(this.redis, this.logger, MEDIA_CACHE_TTL_ALBUMS);
     this.warnIfUploadLimitUnreachable();
@@ -446,7 +448,7 @@ export class MediaService {
     // (không phải cache best-effort), nên không đi qua SafeCache. Chế độ link
     // chỉ lưu resource key — API key không bao giờ rời env.
     try {
-      await this.redis.set(
+      await this.durableRedis.set(
         mediaDriveTokenKey(batchId),
         toStoredDriveAuth(auth),
         { ex: MEDIA_DRIVE_TOKEN_TTL },
