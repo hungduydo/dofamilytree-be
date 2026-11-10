@@ -63,7 +63,9 @@ export class MembersController {
 
   @Public()
   @Get('notable')
-  @ApiOperation({ summary: 'Get notable/distinguished members (public)' })
+  @ApiOperation({
+    summary: 'Get notable members (public) — only profiles an editor/admin flagged isNotable; description = notableSummary, never biography',
+  })
   @ApiOkResponse({ type: [NotableMemberDto] })
   getNotableMembers() {
     return this.membersService.getNotableMembers();

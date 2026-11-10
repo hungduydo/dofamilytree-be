@@ -1,0 +1,35 @@
+-- 017_notable_summary.sql
+--
+-- TÀI LIỆU HOÁ — không có runner nào tự động chạy file này (xem 001).
+--
+--   pnpm db:backup
+--   psql "$DIRECT_URL" -f prisma/manual-migrations/017_notable_summary.sql
+--
+-- Sau đó: pnpm prisma:generate. PHẢI chạy TRƯỚC khi deploy BE: Prisma liệt kê
+-- cột tường minh, nên MỌI truy vấn profiles không có `select` sẽ SELECT cột mới
+-- và lỗi nếu cột chưa có. Additive, nullable — BE cũ vẫn chạy.
+--
+-- VÌ SAO: `GET /members/notable` là endpoint PUBLIC. Trước đây nó lấy 9 người
+-- đầu tiên (theo created_at) có `biography` khác rỗng và trả NGUYÊN biography
+-- làm `description`. Hai vấn đề:
+--   1. "Tiêu biểu" chỉ có nghĩa là "được gõ tiểu sử sớm nhất".
+--   2. biography là ô tự do: dữ liệu thật có địa chỉ nhà của một người sinh
+--      1945 có thể còn sống, vị trí mộ, ghi chú ngày giỗ — tất cả ra cho khách
+--      ẩn danh.
+-- Giờ endpoint chỉ trả người có `isNotable = true` (cột đã có từ trước, index
+-- profiles_is_notable_idx ở 002 — chưa từng được ghi) và `description` lấy từ
+-- cột MỚI dưới đây, do editor/admin viết riêng để công khai. biography không
+-- bao giờ ra endpoint public nữa.
+--
+-- HỆ QUẢ NGAY SAU DEPLOY: isNotable đang false cho mọi người ⇒ endpoint trả []
+-- cho đến khi BO chọn người. Đó là chủ ý — không backfill từ biography.
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS "notableSummary" TEXT;
+
+-- KIỂM CHỨNG:
+--   SELECT column_name, data_type, is_nullable FROM information_schema.columns
+--    WHERE table_name = 'profiles' AND column_name = 'notableSummary';  -- 1 dòng, text, YES
+--   SELECT count(*) FROM profiles WHERE "isNotable";                    -- 0 cho tới khi BO chọn
+--
+-- HOÀN TÁC:  ALTER TABLE profiles DROP COLUMN IF EXISTS "notableSummary";
+--            (chỉ sau khi đã rollback BE về bản không đọc cột này)

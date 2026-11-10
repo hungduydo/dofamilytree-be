@@ -394,7 +394,7 @@ paths:
   /v2/members/notable:
     get:
       operationId: MembersController_getNotableMembers
-      summary: Get notable/distinguished members (public)
+      summary: Get notable members (public) — only profiles an editor/admin flagged isNotable; description = notableSummary, never biography
       parameters: []
       responses:
         200:
@@ -3695,7 +3695,7 @@ components:
           type: string
         description:
           type: string
-          description: Lấy từ profile.biography
+          description: Lấy từ profile.notableSummary (mô tả công khai do editor/admin viết); chuỗi rỗng nếu chưa có. KHÔNG phải biography.
         avatar:
           type: string
           format: uri
@@ -3790,6 +3790,10 @@ components:
         isNotable:
           type: boolean
           default: false
+        notableSummary:
+          type: object
+          nullable: true
+          description: Mô tả công khai cho người tiêu biểu (≤ 300 ký tự)
         created_at:
           type: string
           format: date-time
@@ -3991,6 +3995,13 @@ components:
           type: array
           items:
             type: string
+        isNotable:
+          type: boolean
+          description: Hiện ở GET /members/notable (public). Chỉ editor/admin đặt được.
+        notableSummary:
+          type: string
+          maxLength: 300
+          description: Mô tả ngắn CÔNG KHAI cho người tiêu biểu (description của /members/notable). Không ghi liên lạc/địa chỉ. Chỉ editor/admin. Chuỗi rỗng ⇒ xoá.
       required:
         - fullName
         - gender
@@ -4179,6 +4190,13 @@ components:
           type: array
           items:
             type: string
+        isNotable:
+          type: boolean
+          description: Hiện ở GET /members/notable (public). Chỉ editor/admin đặt được.
+        notableSummary:
+          type: string
+          maxLength: 300
+          description: Mô tả ngắn CÔNG KHAI cho người tiêu biểu (description của /members/notable). Không ghi liên lạc/địa chỉ. Chỉ editor/admin. Chuỗi rỗng ⇒ xoá.
     MemberRelationshipResponseDto:
       type: object
       properties:

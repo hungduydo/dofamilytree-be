@@ -60,6 +60,16 @@ export const MEMBER_GENDERS = ['M', 'F', 'O', 'U'] as const;
 /** Shape gọn cache được cho hai endpoint public (khớp CommitteeMemberDto/NotableMemberDto). */
 export interface CommitteeMember { id: string; name: string; role: string; avatar: string }
 export interface NotableMember { id: string; name: string; description: string; avatar: string }
+
+/**
+ * Trần cho `GET /members/notable`. Danh sách do người chọn tay nên thường nhỏ
+ * hơn nhiều; trần chỉ để một lần bật nhầm hàng loạt không trả cả bảng ra public.
+ */
+export const NOTABLE_MEMBERS_LIMIT = 24;
+
+/** Form BO gửi '' khi xoá ô — lưu NULL để "không có mô tả" chỉ có một cách biểu diễn. */
+const emptyToNull = (value: string | undefined): string | null | undefined =>
+  value === undefined ? undefined : value.trim() === '' ? null : value.trim();
 export interface MemberStats { total: number; male: number; female: number; newThisMonth: number; generations: number }
 
 /**
@@ -158,29 +168,37 @@ export class MembersService {
   }
 
   /**
-   * Notable members — members whose profile biography is not empty
-   * Returns shape: { id, name, description, avatar }
+   * Người tiêu biểu — endpoint PUBLIC, khách ẩn danh đọc được.
+   *
+   * NGUỒN SỰ THẬT là `profile.isNotable`, do editor/admin bật tường minh từ BO
+   * (member không tự bật được — không nằm trong MEMBER_SELF_EDITABLE_FIELDS).
+   * `description` lấy từ `profile.notableSummary`, một mô tả ngắn viết RIÊNG để
+   * công khai.
+   *
+   * TRƯỚC ĐÂY: 9 người đầu tiên theo created_at có `biography` khác rỗng, trả
+   * NGUYÊN biography. Tức là "tiêu biểu" = "được gõ tiểu sử sớm nhất", và ô tự
+   * do đó (trên dữ liệu thật có địa chỉ nhà của người có thể còn sống, vị trí
+   * mộ, ghi chú giỗ) ra cho mọi khách. `biography` KHÔNG được đọc ở đây — có
+   * test khoá điều đó (members.notable.spec.ts).
+   *
+   * Shape giữ nguyên { id, name, description, avatar } để FE không phải đổi.
    */
   async getNotableMembers() {
     const cached = await this.cache.get<NotableMember[]>(CACHE_KEY_MEMBERS_NOTABLE);
     if (cached) return cached;
 
     const members = await this.prisma.member.findMany({
-      where: {
-        profile: {
-          biography: { not: null },
-          NOT: { biography: '' },
-        },
-      },
-      select: { id: true, name: true, avatar_url: true, profile: { select: { biography: true } } },
-      orderBy: { created_at: 'asc' },
-      take: 9,
+      where: { profile: { isNotable: true } },
+      select: { id: true, name: true, avatar_url: true, profile: { select: { notableSummary: true } } },
+      // Bậc trên trước (đời nhỏ hơn), rồi theo thứ tự nhập để ổn định.
+      orderBy: [{ generation: { sort: 'asc', nulls: 'last' } }, { created_at: 'asc' }, { id: 'asc' }],
+      take: NOTABLE_MEMBERS_LIMIT,
     });
 
     const result: NotableMember[] = members.map((m) => ({
       id: m.id,
       name: m.name,
-      description: m.profile?.biography ?? '',
+      description: m.profile?.notableSummary?.trim() ?? '',
       avatar: m.avatar_url ?? '',
     }));
 
@@ -411,6 +429,8 @@ export class MembersService {
           familyPosition: dto.familyPosition,
           roleTags: dto.roleTags ?? [],
           ...(committee ?? {}),
+          isNotable: dto.isNotable ?? false,
+          notableSummary: emptyToNull(dto.notableSummary),
         },
       });
 
@@ -443,8 +463,8 @@ export class MembersService {
   /**
    * Xoá cache ba endpoint public sau một lần ghi. Xoá thừa (cả ba khoá) rẻ hơn
    * nhiều so với truy vết field nào ảnh hưởng khoá nào: create/delete đổi
-   * total + newThisMonth; update có thể đổi gender (male/female), notes
-   * (committee) hoặc biography (notable).
+   * total + newThisMonth; update có thể đổi gender (male/female), clanRole
+   * (committee) hoặc isNotable/notableSummary (notable).
    *
    * PHẢI await, KHÔNG fire-and-forget: trên Vercel serverless function có thể bị
    * đóng băng ngay khi response ghi xong ⇒ DEL không await có thể không bao giờ
@@ -580,6 +600,8 @@ export class MembersService {
       if (dto.contactEmail !== undefined) profileData.contactEmail = dto.contactEmail;
       if (dto.familyPosition !== undefined) profileData.familyPosition = dto.familyPosition;
       if (dto.roleTags !== undefined) profileData.roleTags = dto.roleTags;
+      if (dto.isNotable !== undefined) profileData.isNotable = dto.isNotable;
+      if (dto.notableSummary !== undefined) profileData.notableSummary = emptyToNull(dto.notableSummary);
       const committee = this.clanRoleToCommittee(dto.clanRole);
       if (committee) Object.assign(profileData, committee);
 
@@ -608,7 +630,7 @@ export class MembersService {
       return updatedMember;
     });
 
-    // Update có thể đổi gender/notes/biography → xoá cache ba endpoint public.
+    // Update có thể đổi gender/clanRole/isNotable/notableSummary → xoá cache endpoint public.
     await this.invalidateMemberCaches();
 
     // Một pin thủ công lan xuống toàn bộ hậu duệ, nên phải tính lại cả cây.

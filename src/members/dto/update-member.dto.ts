@@ -1,9 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
-  IsString, IsOptional, MaxLength, MinLength, IsIn, IsUUID, IsEmail, IsArray,
+  IsString, IsOptional, MaxLength, MinLength, IsIn, IsUUID, IsEmail, IsArray, IsBoolean,
 } from 'class-validator';
-import { CLAN_ROLES, toRoleTagsArray } from './create-member.dto';
+import { CLAN_ROLES, NOTABLE_SUMMARY_MAX_LENGTH, toOptionalBoolean, toRoleTagsArray } from './create-member.dto';
 import { LIFE_STATUSES, LifeStatus } from '../life-status';
 
 export class UpdateMemberDto {
@@ -98,4 +98,23 @@ export class UpdateMemberDto {
   @IsArray()
   @IsString({ each: true })
   roleTags?: string[];
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description: 'Hiện ở GET /members/notable (public). Chỉ editor/admin đặt được.',
+  })
+  @IsOptional()
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
+  isNotable?: boolean;
+
+  @ApiPropertyOptional({
+    maxLength: NOTABLE_SUMMARY_MAX_LENGTH,
+    description:
+      'Mô tả ngắn CÔNG KHAI cho người tiêu biểu (description của /members/notable). Không ghi liên lạc/địa chỉ. Chỉ editor/admin. Chuỗi rỗng ⇒ xoá.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTABLE_SUMMARY_MAX_LENGTH)
+  notableSummary?: string;
 }
