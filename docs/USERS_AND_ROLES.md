@@ -213,14 +213,19 @@ fullName, gender, birthDate, deathDate, occupation, address,
 biography, phone, contactEmail, familyPosition   (+ file avatar)
 ```
 
-Gửi kèm `generation`, `tree_id`, `clanRole`, `roleTags`, `notes` → **400** (kèm
+Gửi kèm `generation`, `tree_id`, `clanRole`, `isNotable`, `notableSummary`, `roleTags`, `notes` → **400** (kèm
 tên field vi phạm trong message). Cố ý trả 400 chứ không âm thầm bỏ qua, để FE
 biết form đang gửi thừa.
 
 Lý do chặn: `generation`/`tree_id` là dữ liệu cấu trúc cây (sửa đời của mình kéo
-theo tính lại đời của toàn bộ hậu duệ); `clanRole` bật `isCommittee`/`isNotable`
-— tức tự phong mình vào ban trị sự và danh sách người tiêu biểu, hai thứ đang
-hiển thị ở endpoint public.
+theo tính lại đời của toàn bộ hậu duệ); `clanRole` bật `isCommittee` — tức tự
+phong mình vào ban trị sự; `isNotable`/`notableSummary` đưa mình vào danh sách
+người tiêu biểu. Cả hai đang hiển thị ở endpoint public.
+
+`GET /members/notable` (public) chỉ trả người có `isNotable = true`, và
+`description` là `notableSummary` — mô tả ngắn editor/admin viết riêng để công
+khai. `biography` **không bao giờ** ra endpoint này (ô tự do, từng chứa địa chỉ
+nhà và vị trí mộ).
 
 Editor/admin không bị giới hạn này — form quản trị giữ nguyên.
 

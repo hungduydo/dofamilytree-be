@@ -77,7 +77,12 @@ model Profile {
   updated_at     DateTime @updatedAt
   committeeRole  String?
   isCommittee    Boolean  @default(false)
+  /// Bật TƯỜNG MINH bởi editor/admin — nguồn sự thật DUY NHẤT của
+  /// `GET /members/notable` (public). Member không tự bật được.
   isNotable      Boolean  @default(false)
+  /// Mô tả NGẮN viết riêng để công khai cho người tiêu biểu (≤ 300 ký tự).
+  /// `biography` KHÔNG bao giờ ra endpoint public — xem 017_notable_summary.sql.
+  notableSummary String?
   member         Member   @relation(fields: [member_id], references: [id])
 
   @@map("profiles")

@@ -108,6 +108,7 @@ export const PROFILE_FULL_SELECT = {
   committeeRole: true,
   isCommittee: true,
   isNotable: true,
+  notableSummary: true,
 } satisfies Prisma.ProfileSelect;
 
 /** PROFILE_FULL_SELECT trừ 4 cột liên lạc. */
@@ -149,9 +150,10 @@ export const memberTableSelect = (canSeePii: boolean) =>
  *
  * Cố ý KHÔNG có: `generation`, `tree_id` (dữ liệu cấu trúc cây — sửa đời của
  * mình là kéo theo tính lại đời của toàn bộ hậu duệ), `clanRole` (bật
- * isCommittee/isNotable ⇒ tự phong mình vào ban trị sự và danh sách người tiêu
- * biểu, cả hai đang hiển thị ở endpoint public), `roleTags` và `notes` (ghi chú
- * do dòng họ quản lý, không phải người đó tự khai).
+ * isCommittee ⇒ tự phong mình vào ban trị sự, đang hiển thị ở endpoint public),
+ * `isNotable`/`notableSummary` (tự đưa mình vào danh sách người tiêu biểu public
+ * — do dòng họ chọn, không tự khai), `roleTags` và `notes` (ghi chú do dòng họ
+ * quản lý, không phải người đó tự khai).
  */
 export const MEMBER_SELF_EDITABLE_FIELDS = [
   'fullName',

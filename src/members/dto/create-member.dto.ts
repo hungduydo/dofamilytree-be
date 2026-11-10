@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
-  IsString, IsNotEmpty, MaxLength, MinLength, IsOptional, IsIn, IsUUID, IsEmail, IsArray,
+  IsString, IsNotEmpty, MaxLength, MinLength, IsOptional, IsIn, IsUUID, IsEmail, IsArray, IsBoolean,
 } from 'class-validator';
 import { LIFE_STATUSES, LifeStatus } from '../life-status';
 
@@ -15,6 +15,19 @@ export const toRoleTagsArray = ({ value }: { value: unknown }): string[] | undef
   }
   return undefined;
 };
+
+/**
+ * multipart/form-data gửi boolean dưới dạng chuỗi. `Boolean('false')` là true,
+ * nên phải dịch tường minh; chuỗi lạ giữ nguyên để @IsBoolean trả 400.
+ */
+export const toOptionalBoolean = ({ value }: { value: unknown }): unknown => {
+  if (value === 'true' || value === '1') return true;
+  if (value === 'false' || value === '0') return false;
+  return value;
+};
+
+/** Trần độ dài của profile.notableSummary — đủ một hai câu cho thẻ trang chủ. */
+export const NOTABLE_SUMMARY_MAX_LENGTH = 300;
 
 /** Clan role values reused into Profile.committeeRole/isCommittee (THANH_VIEN = no committee role). */
 export const CLAN_ROLES = ['TRUONG_TOC', 'PHO_TRUONG_TOC', 'THANH_VIEN'] as const;
@@ -106,4 +119,23 @@ export class CreateMemberDto {
   @IsArray()
   @IsString({ each: true })
   roleTags?: string[];
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description: 'Hiện ở GET /members/notable (public). Chỉ editor/admin đặt được.',
+  })
+  @IsOptional()
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
+  isNotable?: boolean;
+
+  @ApiPropertyOptional({
+    maxLength: NOTABLE_SUMMARY_MAX_LENGTH,
+    description:
+      'Mô tả ngắn CÔNG KHAI cho người tiêu biểu (description của /members/notable). Không ghi liên lạc/địa chỉ. Chỉ editor/admin. Chuỗi rỗng ⇒ xoá.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTABLE_SUMMARY_MAX_LENGTH)
+  notableSummary?: string;
 }

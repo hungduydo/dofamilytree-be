@@ -56,6 +56,9 @@ export class ProfileResponseDto {
   @ApiProperty({ default: false })
   isNotable: boolean;
 
+  @ApiPropertyOptional({ nullable: true, description: 'Mô tả công khai cho người tiêu biểu (≤ 300 ký tự)' })
+  notableSummary: string | null;
+
   @ApiProperty({ type: String, format: 'date-time' })
   created_at: string;
 
@@ -368,7 +371,7 @@ export class CommitteeMemberDto {
   avatar: string;
 }
 
-/** Compact shape for `GET /v2/members/notable`. */
+/** Compact shape for `GET /v2/members/notable` — chỉ người có profile.isNotable, do editor/admin chọn. */
 export class NotableMemberDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -376,7 +379,10 @@ export class NotableMemberDto {
   @ApiProperty()
   name: string;
 
-  @ApiProperty({ description: 'Lấy từ profile.biography' })
+  @ApiProperty({
+    description:
+      'Lấy từ profile.notableSummary (mô tả công khai do editor/admin viết); chuỗi rỗng nếu chưa có. KHÔNG phải biography.',
+  })
   description: string;
 
   @ApiProperty({ format: 'uri' })

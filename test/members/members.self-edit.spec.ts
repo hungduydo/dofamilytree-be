@@ -87,6 +87,9 @@ describe('MembersService.updateMemberProfile — quyền sửa', () => {
       ['clanRole', { clanRole: 'truong-toc' }],
       ['roleTags', { roleTags: ['vip'] }],
       ['notes', { notes: 'tự ghi chú' }],
+      // Tự đưa mình vào danh sách người tiêu biểu (endpoint public).
+      ['isNotable', { isNotable: true }],
+      ['notableSummary', { notableSummary: 'Tự giới thiệu' }],
       // Người tự sửa hồ sơ của mình đang sống; trạng thái do ban quản trị quản lý.
       ['lifeStatus', { lifeStatus: 'DECEASED' }],
     ])('gửi kèm %s → 400, KHÔNG ghi gì', async (_field, patch) => {
