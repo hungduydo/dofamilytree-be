@@ -29,8 +29,31 @@ export const toOptionalBoolean = ({ value }: { value: unknown }): unknown => {
 /** Trần độ dài của profile.notableSummary — đủ một hai câu cho thẻ trang chủ. */
 export const NOTABLE_SUMMARY_MAX_LENGTH = 300;
 
-/** Clan role values reused into Profile.committeeRole/isCommittee (THANH_VIEN = no committee role). */
-export const CLAN_ROLES = ['TRUONG_TOC', 'PHO_TRUONG_TOC', 'THANH_VIEN'] as const;
+/**
+ * Mã vai trò có sẵn, lưu vào Profile.committeeRole/isCommittee (THANH_VIEN = không
+ * thuộc ban liên lạc). Nhãn hiển thị ở `committee-role.ts`.
+ *
+ * `clanRole` KHÔNG bị giới hạn trong danh sách này: dòng họ nào cũng chia việc
+ * khác nhau, nên một chức danh tự do (vd. "Phụ trách hương khói") cũng hợp lệ và
+ * được lưu nguyên văn — xem `CLAN_ROLE_MAX_LENGTH`.
+ */
+export const CLAN_ROLES = [
+  'TRUONG_TOC',
+  'PHO_TRUONG_TOC',
+  'TRUONG_BAN',
+  'PHO_BAN',
+  'THU_KY',
+  'THU_QUY',
+  'LIEN_LAC',
+  'THANH_VIEN',
+] as const;
+
+/** Trần độ dài của một chức danh tự do trong ban liên lạc. */
+export const CLAN_ROLE_MAX_LENGTH = 60;
+
+/** Cắt khoảng trắng hai đầu; giá trị không phải chuỗi giữ nguyên để @IsString trả 400. */
+export const trimString = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.trim() : value;
 
 export class CreateMemberDto {
   @ApiProperty({ example: 'Nguyễn Văn A' })
@@ -86,9 +109,18 @@ export class CreateMemberDto {
   @IsOptional()
   generation?: number;
 
-  @ApiPropertyOptional({ enum: CLAN_ROLES, description: 'Vai trò trong tộc (map vào committeeRole/isCommittee)' })
+  @ApiPropertyOptional({
+    example: 'THU_QUY',
+    maxLength: CLAN_ROLE_MAX_LENGTH,
+    description:
+      `Vai trò trong tộc / ban liên lạc (map vào committeeRole/isCommittee). Một mã có sẵn (${CLAN_ROLES.join(', ')}) ` +
+      'hoặc một chức danh tự do. THANH_VIEN = không thuộc ban liên lạc.',
+  })
   @IsOptional()
-  @IsIn(CLAN_ROLES)
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(CLAN_ROLE_MAX_LENGTH)
   clanRole?: string;
 
   @ApiPropertyOptional({ example: '0988 123 456' })

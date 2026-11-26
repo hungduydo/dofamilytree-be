@@ -1,5 +1,10 @@
+import 'reflect-metadata';
 import { MembersService } from '../../src/members/members.service';
-import { committeeRoleLabel, committeeRoleRank } from '../../src/members/committee-role';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { COMMITTEE_ROLE_LABELS, committeeRoleLabel, committeeRoleRank } from '../../src/members/committee-role';
+import { CLAN_ROLES, CLAN_ROLE_MAX_LENGTH, CreateMemberDto } from '../../src/members/dto/create-member.dto';
+import { UpdateMemberDto } from '../../src/members/dto/update-member.dto';
 import { CONTACT_INFO_CACHE_KEYS } from '../../src/contact/contact.cache-keys';
 
 /**
@@ -57,6 +62,62 @@ describe('committee-role — bảng dịch DÙNG CHUNG hai màn hình', () => {
     it('mã lạ và null cùng rơi xuống cuối', () => {
       expect(committeeRoleRank(null)).toBe(committeeRoleRank('KHONG_BIET'));
     });
+
+    it('ban liên lạc: trưởng ban → phó ban → thư ký → thủ quỹ → người liên lạc → chức danh tự do', () => {
+      const ordered = ['PHO_TRUONG_TOC', 'TRUONG_BAN', 'PHO_BAN', 'THU_KY', 'THU_QUY', 'LIEN_LAC', 'Phụ trách hương khói'];
+      const ranks = ordered.map(committeeRoleRank);
+      expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
+      expect(new Set(ranks).size).toBe(ranks.length);
+    });
+  });
+});
+
+describe('Vai trò ban liên lạc — dòng họ không có trưởng tộc', () => {
+  it('mã có sẵn nào cũng có nhãn, không lộ mã thô ra trang public', () => {
+    for (const code of CLAN_ROLES) {
+      expect(COMMITTEE_ROLE_LABELS[code]).toBeTruthy();
+    }
+    expect(committeeRoleLabel('THU_QUY')).toBe('Thủ quỹ');
+    expect(committeeRoleLabel('LIEN_LAC')).toBe('Người liên lạc');
+    expect(committeeRoleLabel('TRUONG_BAN')).toBe('Trưởng ban liên lạc');
+  });
+
+  const check = async (clanRole: unknown) => {
+    const dto = plainToInstance(UpdateMemberDto, { clanRole });
+    const errors = await validate(dto);
+    return { dto, errors: errors.filter((e) => e.property === 'clanRole') };
+  };
+
+  it('nhận mã có sẵn', async () => {
+    expect((await check('THU_QUY')).errors).toHaveLength(0);
+    expect((await check('THANH_VIEN')).errors).toHaveLength(0);
+  });
+
+  it('nhận chức danh tự do và cắt khoảng trắng hai đầu', async () => {
+    const { dto, errors } = await check('  Phụ trách hương khói  ');
+    expect(errors).toHaveLength(0);
+    expect(dto.clanRole).toBe('Phụ trách hương khói');
+  });
+
+  it('từ chối chuỗi rỗng / toàn khoảng trắng và chuỗi quá dài', async () => {
+    expect((await check('   ')).errors).not.toHaveLength(0);
+    expect((await check('x'.repeat(CLAN_ROLE_MAX_LENGTH + 1))).errors).not.toHaveLength(0);
+  });
+
+  it('CreateMemberDto dùng cùng luật', async () => {
+    const ok = await validate(plainToInstance(CreateMemberDto, { fullName: 'Nguyễn A', gender: 'M', clanRole: 'Thủ quỹ' }));
+    expect(ok.filter((e) => e.property === 'clanRole')).toHaveLength(0);
+    const bad = await validate(plainToInstance(CreateMemberDto, { fullName: 'Nguyễn A', gender: 'M', clanRole: '' }));
+    expect(bad.filter((e) => e.property === 'clanRole')).not.toHaveLength(0);
+  });
+
+  it('THANH_VIEN rời ban; mã khác hay chức danh tự do đều vào ban, lưu nguyên văn', () => {
+    const { service } = buildService();
+    const map = (service as any).clanRoleToCommittee.bind(service);
+    expect(map(undefined)).toBeUndefined();
+    expect(map('THANH_VIEN')).toEqual({ committeeRole: null, isCommittee: false });
+    expect(map('THU_QUY')).toEqual({ committeeRole: 'THU_QUY', isCommittee: true });
+    expect(map('Phụ trách hương khói')).toEqual({ committeeRole: 'Phụ trách hương khói', isCommittee: true });
   });
 });
 
