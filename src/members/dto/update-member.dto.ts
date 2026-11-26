@@ -1,9 +1,11 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
-  IsString, IsOptional, MaxLength, MinLength, IsIn, IsUUID, IsEmail, IsArray, IsBoolean,
+  IsString, IsNotEmpty, IsOptional, MaxLength, MinLength, IsIn, IsUUID, IsEmail, IsArray, IsBoolean,
 } from 'class-validator';
-import { CLAN_ROLES, NOTABLE_SUMMARY_MAX_LENGTH, toOptionalBoolean, toRoleTagsArray } from './create-member.dto';
+import {
+  CLAN_ROLES, CLAN_ROLE_MAX_LENGTH, NOTABLE_SUMMARY_MAX_LENGTH, toOptionalBoolean, toRoleTagsArray, trimString,
+} from './create-member.dto';
 import { LIFE_STATUSES, LifeStatus } from '../life-status';
 
 export class UpdateMemberDto {
@@ -65,9 +67,18 @@ export class UpdateMemberDto {
   @IsOptional()
   generation?: number;
 
-  @ApiPropertyOptional({ enum: CLAN_ROLES, description: 'Vai trò trong tộc (map vào committeeRole/isCommittee)' })
+  @ApiPropertyOptional({
+    example: 'THU_QUY',
+    maxLength: CLAN_ROLE_MAX_LENGTH,
+    description:
+      `Vai trò trong tộc / ban liên lạc (map vào committeeRole/isCommittee). Một mã có sẵn (${CLAN_ROLES.join(', ')}) ` +
+      'hoặc một chức danh tự do. THANH_VIEN = không thuộc ban liên lạc.',
+  })
   @IsOptional()
-  @IsIn(CLAN_ROLES)
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(CLAN_ROLE_MAX_LENGTH)
   clanRole?: string;
 
   @ApiPropertyOptional({ example: '0988 123 456' })

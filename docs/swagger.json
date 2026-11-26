@@ -5902,12 +5902,9 @@
           },
           "clanRole": {
             "type": "string",
-            "enum": [
-              "TRUONG_TOC",
-              "PHO_TRUONG_TOC",
-              "THANH_VIEN"
-            ],
-            "description": "Vai trò trong tộc (map vào committeeRole/isCommittee)"
+            "example": "THU_QUY",
+            "maxLength": 60,
+            "description": "Vai trò trong tộc / ban liên lạc (map vào committeeRole/isCommittee). Một mã có sẵn (TRUONG_TOC, PHO_TRUONG_TOC, TRUONG_BAN, PHO_BAN, THU_KY, THU_QUY, LIEN_LAC, THANH_VIEN) hoặc một chức danh tự do. THANH_VIEN = không thuộc ban liên lạc."
           },
           "phone": {
             "type": "string",
@@ -6169,12 +6166,9 @@
           },
           "clanRole": {
             "type": "string",
-            "enum": [
-              "TRUONG_TOC",
-              "PHO_TRUONG_TOC",
-              "THANH_VIEN"
-            ],
-            "description": "Vai trò trong tộc (map vào committeeRole/isCommittee)"
+            "example": "THU_QUY",
+            "maxLength": 60,
+            "description": "Vai trò trong tộc / ban liên lạc (map vào committeeRole/isCommittee). Một mã có sẵn (TRUONG_TOC, PHO_TRUONG_TOC, TRUONG_BAN, PHO_BAN, THU_KY, THU_QUY, LIEN_LAC, THANH_VIEN) hoặc một chức danh tự do. THANH_VIEN = không thuộc ban liên lạc."
           },
           "phone": {
             "type": "string",

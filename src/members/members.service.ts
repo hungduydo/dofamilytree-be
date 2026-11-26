@@ -107,7 +107,8 @@ export class MembersService {
 
   /**
    * Map the UI's clanRole onto the existing Profile.committeeRole/isCommittee columns.
-   * TRUONG_TOC / PHO_TRUONG_TOC => committee member; THANH_VIEN (or unset) => not a committee role.
+   * THANH_VIEN => not on the committee; any other value — a preset code (TRUONG_TOC,
+   * THU_QUY, …) or a free-text title — => on the committee, stored verbatim.
    */
   private clanRoleToCommittee(clanRole?: string): { committeeRole: string | null; isCommittee: boolean } | undefined {
     if (clanRole === undefined) return undefined;
